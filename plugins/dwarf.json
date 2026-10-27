@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "id": "dwarf",
+  "version": "1.0.1",
+  "name": "DWARF",
+  "description": "Use DWARFLAB through Astro Bridge.",
+  "category": "telescope",
+  "wifi": [
+    {
+      "prefix": "dwarf",
+      "min_suffix": 0,
+      "suffix": "any"
+    }
+  ],
+  "default_address": null,
+  "relay": {
+    "transport": "tcp",
+    "ports": [
+      9900,
+      8082,
+      554
+    ]
+  },
+  "identification": "none",
+  "discovery": {
+    "engine": "dwarf_ping"
+  },
+  "activity": "dwarf_metadata_v1",
+  "readiness": "association",
+  "validation": {
+    "level": "partial_hardware",
+    "models": [
+      "DWARF mini"
+    ],
+    "checks": [
+      "wifi",
+      "native_app",
+      "preview"
+    ],
+    "limitations": [
+      "first_discovery_unavailable",
+      "autonomous_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "DWARF passive discovery evidence",
+      "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+    },
+    {
+      "title": "DWARF mini Wi-Fi and file access defaults",
+      "url": "https://help.dwarflab.com/en/docs/help-doc-1"
+    }
+  ],
+  "onboarding": [
+    {
+      "prefix": "DWARF_mini",
+      "password": "DWARF_12345678",
+      "target_ip": "192.168.88.1"
+    },
+    {
+      "prefix": "DWARF3",
+      "password": "DWARF_12345678",
+      "target_ip": "192.168.88.1"
+    },
+    {
+      "prefix": "DWARF_3",
+      "password": "DWARF_12345678",
+      "target_ip": "192.168.88.1"
+    }
+  ]
+}

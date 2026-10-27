@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+wifi_bridge/static/i18n.js linguist-generated=true
+wifi_bridge/static/openapi.json linguist-generated=true
+wifi_bridge/static/plugins.json linguist-generated=true
+plugins/schema/manifest.schema.json linguist-generated=true

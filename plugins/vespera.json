@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "vespera",
+  "version": "1.0.0",
+  "name": "Vespera",
+  "description": "Use Singularity through Astro Bridge.",
+  "category": "telescope",
+  "wifi": [
+    {
+      "prefix": "vespera",
+      "min_suffix": 0,
+      "suffix": "any"
+    }
+  ],
+  "default_address": "10.0.0.1",
+  "relay": {
+    "transport": "tcp",
+    "ports": [
+      8082,
+      8083
+    ]
+  },
+  "identification": "none",
+  "discovery": {
+    "engine": "tcp_syn",
+    "target_mode": "original"
+  },
+  "activity": "vespera_metadata_v1",
+  "readiness": "vespera_tcp",
+  "validation": {
+    "level": "partial_hardware",
+    "models": [
+      "Vespera 2"
+    ],
+    "checks": [
+      "wifi",
+      "native_app",
+      "switching"
+    ],
+    "limitations": [
+      "images_pending",
+      "autonomous_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "Astro Bridge discovery evidence",
+      "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+    }
+  ]
+}

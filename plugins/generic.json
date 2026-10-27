@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "generic",
+  "version": "1.0.0",
+  "name": "Other telescope",
+  "description": "Connect a telescope by its IP address.",
+  "category": "generic",
+  "wifi": [],
+  "default_address": null,
+  "relay": null,
+  "identification": "none",
+  "discovery": {
+    "engine": "none"
+  },
+  "activity": "protect_all",
+  "readiness": "association",
+  "validation": {
+    "level": "unverified",
+    "models": [],
+    "checks": [],
+    "limitations": [
+      "physical_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "Astro Bridge hardware support guide",
+      "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/ADDING-HARDWARE.md"
+    }
+  ]
+}

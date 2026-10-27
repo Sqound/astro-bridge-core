@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "seestar",
+  "version": "1.0.1",
+  "name": "Seestar",
+  "description": "Use the Seestar app through Astro Bridge.",
+  "category": "telescope",
+  "wifi": [
+    {
+      "prefix": "seestar",
+      "min_suffix": 0,
+      "suffix": "any"
+    },
+    {
+      "prefix": "s50_",
+      "min_suffix": 1,
+      "suffix": "any"
+    },
+    {
+      "prefix": "s50 pro_",
+      "min_suffix": 1,
+      "suffix": "any"
+    },
+    {
+      "prefix": "s30_",
+      "min_suffix": 1,
+      "suffix": "any"
+    }
+  ],
+  "default_address": "10.0.0.1",
+  "relay": {
+    "transport": "tcp",
+    "ports": [
+      4700,
+      4800,
+      4801,
+      4804,
+      4554,
+      4555
+    ]
+  },
+  "identification": "seestar_scan_iscope",
+  "discovery": {
+    "engine": "seestar_scan_iscope"
+  },
+  "activity": "seestar_metadata_v1",
+  "readiness": "association",
+  "validation": {
+    "level": "partial_hardware",
+    "models": [
+      "Seestar S50 Pro"
+    ],
+    "checks": [
+      "wifi",
+      "native_app",
+      "preview",
+      "switching"
+    ],
+    "limitations": [
+      "autonomous_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "Seestar discovery evidence",
+      "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+    },
+    {
+      "title": "Seestar Wi-Fi defaults",
+      "url": "https://us.seestar.com/blogs/tutorial/simulated-stargazing"
+    }
+  ],
+  "onboarding": [
+    {
+      "prefix": "",
+      "password": "12345678"
+    }
+  ]
+}

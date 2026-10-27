@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "example_mount",
+  "version": "1.0.0",
+  "name": "Example mount",
+  "description": "Connect Example Wi-Fi mounts.",
+  "category": "mount",
+  "wifi": [
+    {
+      "prefix": "Example_",
+      "min_suffix": 1,
+      "suffix": "alnum-hyphen-underscore"
+    }
+  ],
+  "default_address": "192.168.5.1",
+  "relay": {
+    "transport": "tcp",
+    "ports": [
+      12345
+    ]
+  },
+  "identification": "none",
+  "discovery": {
+    "engine": "tcp_syn",
+    "target_mode": "proxy_or_original"
+  },
+  "activity": "protect_all",
+  "readiness": "association",
+  "validation": {
+    "level": "unverified",
+    "models": [],
+    "checks": [],
+    "limitations": [
+      "physical_pending",
+      "guiding_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "Replace with a manufacturer protocol reference",
+      "url": "https://manufacturer.example/protocol"
+    }
+  ]
+}

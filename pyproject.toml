@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astro-bridge-core"
+version = "1.0.0"
+description = "Smart telescope and mount connection manager"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+push = ["py-vapid==1.9.6", "http-ece==1.2.1", "cryptography>=46,<51"]
+
+[project.scripts]
+astro-bridge = "wifi_bridge.__main__:main"
+wifi-bridge = "wifi_bridge.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["wifi_bridge*"]
+
+[tool.setuptools.package-data]
+wifi_bridge = ["static/*"]
+
+[project.urls]
+Homepage = "https://github.com/Sqound/astro-bridge-core"
+Documentation = "https://github.com/Sqound/astro-bridge-core/tree/main/doc"
+Issues = "https://github.com/Sqound/astro-bridge-core/issues"

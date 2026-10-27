@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "synscan",
+  "version": "1.0.0",
+  "name": "SynScan mount",
+  "description": "Connect SynScan Wi-Fi mounts.",
+  "category": "mount",
+  "wifi": [
+    {
+      "prefix": "SynScan_",
+      "min_suffix": 1,
+      "suffix": "alnum-hyphen-underscore"
+    }
+  ],
+  "default_address": "192.168.4.1",
+  "relay": {
+    "transport": "udp",
+    "ports": [
+      11880
+    ]
+  },
+  "identification": "synscan_version",
+  "discovery": {
+    "engine": "synscan_version"
+  },
+  "activity": "protect_all",
+  "readiness": "association",
+  "validation": {
+    "level": "simulation",
+    "models": [],
+    "checks": [
+      "wifi",
+      "identity",
+      "private_proxy",
+      "hotspot_proxy",
+      "switching"
+    ],
+    "limitations": [
+      "physical_pending",
+      "guiding_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "Sky-Watcher motor-controller command set",
+      "url": "https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf"
+    }
+  ]
+}

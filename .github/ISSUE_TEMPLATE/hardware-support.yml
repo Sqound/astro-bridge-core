@@ -1,0 +1,29 @@
+name: Hardware support
+description: Propose or report support for a telescope or mount.
+title: "[Hardware]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Use English. Do not include personal names, credentials, serial numbers, private network identifiers or raw captures."
+  - type: input
+    id: model
+    attributes:
+      label: Equipment and firmware
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Astro Bridge version, deployment and adapter chipset
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol references and expected connection mechanism
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Tested steps and remaining limitations
+    validations:
+      required: true

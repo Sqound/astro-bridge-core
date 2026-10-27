@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "schema_version": 1,
+      "id": "generic",
+      "version": "1.0.0",
+      "name": "Other telescope",
+      "description": "Connect a telescope by its IP address.",
+      "category": "generic",
+      "wifi": [],
+      "default_address": null,
+      "relay": null,
+      "identification": "none",
+      "discovery": {
+        "engine": "none"
+      },
+      "activity": "protect_all",
+      "readiness": "association",
+      "validation": {
+        "level": "unverified",
+        "models": [],
+        "checks": [],
+        "limitations": [
+          "physical_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "Astro Bridge hardware support guide",
+          "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/ADDING-HARDWARE.md"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "vespera",
+      "version": "1.0.0",
+      "name": "Vespera",
+      "description": "Use Singularity through Astro Bridge.",
+      "category": "telescope",
+      "wifi": [
+        {
+          "prefix": "vespera",
+          "min_suffix": 0,
+          "suffix": "any"
+        }
+      ],
+      "default_address": "10.0.0.1",
+      "relay": {
+        "transport": "tcp",
+        "ports": [
+          8082,
+          8083
+        ]
+      },
+      "identification": "none",
+      "discovery": {
+        "engine": "tcp_syn",
+        "target_mode": "original"
+      },
+      "activity": "vespera_metadata_v1",
+      "readiness": "vespera_tcp",
+      "validation": {
+        "level": "partial_hardware",
+        "models": [
+          "Vespera 2"
+        ],
+        "checks": [
+          "wifi",
+          "native_app",
+          "switching"
+        ],
+        "limitations": [
+          "images_pending",
+          "autonomous_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "Astro Bridge discovery evidence",
+          "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "dwarf",
+      "version": "1.0.1",
+      "name": "DWARF",
+      "description": "Use DWARFLAB through Astro Bridge.",
+      "category": "telescope",
+      "wifi": [
+        {
+          "prefix": "dwarf",
+          "min_suffix": 0,
+          "suffix": "any"
+        }
+      ],
+      "default_address": null,
+      "relay": {
+        "transport": "tcp",
+        "ports": [
+          9900,
+          8082,
+          554
+        ]
+      },
+      "identification": "none",
+      "discovery": {
+        "engine": "dwarf_ping"
+      },
+      "activity": "dwarf_metadata_v1",
+      "readiness": "association",
+      "validation": {
+        "level": "partial_hardware",
+        "models": [
+          "DWARF mini"
+        ],
+        "checks": [
+          "wifi",
+          "native_app",
+          "preview"
+        ],
+        "limitations": [
+          "first_discovery_unavailable",
+          "autonomous_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "DWARF passive discovery evidence",
+          "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+        },
+        {
+          "title": "DWARF mini Wi-Fi and file access defaults",
+          "url": "https://help.dwarflab.com/en/docs/help-doc-1"
+        }
+      ],
+      "onboarding": [
+        {
+          "prefix": "DWARF_mini",
+          "password": "DWARF_12345678",
+          "target_ip": "192.168.88.1"
+        },
+        {
+          "prefix": "DWARF3",
+          "password": "DWARF_12345678",
+          "target_ip": "192.168.88.1"
+        },
+        {
+          "prefix": "DWARF_3",
+          "password": "DWARF_12345678",
+          "target_ip": "192.168.88.1"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "seestar",
+      "version": "1.0.1",
+      "name": "Seestar",
+      "description": "Use the Seestar app through Astro Bridge.",
+      "category": "telescope",
+      "wifi": [
+        {
+          "prefix": "seestar",
+          "min_suffix": 0,
+          "suffix": "any"
+        },
+        {
+          "prefix": "s50_",
+          "min_suffix": 1,
+          "suffix": "any"
+        },
+        {
+          "prefix": "s50 pro_",
+          "min_suffix": 1,
+          "suffix": "any"
+        },
+        {
+          "prefix": "s30_",
+          "min_suffix": 1,
+          "suffix": "any"
+        }
+      ],
+      "default_address": "10.0.0.1",
+      "relay": {
+        "transport": "tcp",
+        "ports": [
+          4700,
+          4800,
+          4801,
+          4804,
+          4554,
+          4555
+        ]
+      },
+      "identification": "seestar_scan_iscope",
+      "discovery": {
+        "engine": "seestar_scan_iscope"
+      },
+      "activity": "seestar_metadata_v1",
+      "readiness": "association",
+      "validation": {
+        "level": "partial_hardware",
+        "models": [
+          "Seestar S50 Pro"
+        ],
+        "checks": [
+          "wifi",
+          "native_app",
+          "preview",
+          "switching"
+        ],
+        "limitations": [
+          "autonomous_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "Seestar discovery evidence",
+          "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
+        },
+        {
+          "title": "Seestar Wi-Fi defaults",
+          "url": "https://us.seestar.com/blogs/tutorial/simulated-stargazing"
+        }
+      ],
+      "onboarding": [
+        {
+          "prefix": "",
+          "password": "12345678"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "zwo_mount",
+      "version": "1.0.1",
+      "name": "ZWO mount",
+      "description": "Connect compatible ZWO Wi-Fi mounts.",
+      "category": "mount",
+      "wifi": [
+        {
+          "prefix": "AMH_",
+          "min_suffix": 1,
+          "suffix": "alnum-hyphen"
+        }
+      ],
+      "default_address": "192.168.4.1",
+      "relay": {
+        "transport": "tcp",
+        "ports": [
+          4030
+        ]
+      },
+      "identification": "zwo_model",
+      "discovery": {
+        "engine": "tcp_syn",
+        "target_mode": "proxy_or_original"
+      },
+      "activity": "protect_all",
+      "readiness": "association",
+      "validation": {
+        "level": "partial_hardware",
+        "models": [
+          "ZWO AM5N"
+        ],
+        "checks": [
+          "wifi",
+          "identity",
+          "private_proxy"
+        ],
+        "limitations": [
+          "guiding_pending",
+          "switching_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "ZWO mount protocol v2.1",
+          "url": "https://raw.githubusercontent.com/indigo-astronomy/indigo/master/indigo_drivers/mount_asi/docs/ZWO_Mount_communication_protocol_v2.1.pdf"
+        },
+        {
+          "title": "ZWO AM5 factory Wi-Fi password",
+          "url": "https://i.zwoastro.com/wp-content/uploads/2025/04/15556de1aaee99918a91a57953f52635.pdf"
+        }
+      ],
+      "onboarding": [
+        {
+          "prefix": "AMH_",
+          "password": "12345678"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "synscan",
+      "version": "1.0.0",
+      "name": "SynScan mount",
+      "description": "Connect SynScan Wi-Fi mounts.",
+      "category": "mount",
+      "wifi": [
+        {
+          "prefix": "SynScan_",
+          "min_suffix": 1,
+          "suffix": "alnum-hyphen-underscore"
+        }
+      ],
+      "default_address": "192.168.4.1",
+      "relay": {
+        "transport": "udp",
+        "ports": [
+          11880
+        ]
+      },
+      "identification": "synscan_version",
+      "discovery": {
+        "engine": "synscan_version"
+      },
+      "activity": "protect_all",
+      "readiness": "association",
+      "validation": {
+        "level": "simulation",
+        "models": [],
+        "checks": [
+          "wifi",
+          "identity",
+          "private_proxy",
+          "hotspot_proxy",
+          "switching"
+        ],
+        "limitations": [
+          "physical_pending",
+          "guiding_pending"
+        ]
+      },
+      "references": [
+        {
+          "title": "Sky-Watcher motor-controller command set",
+          "url": "https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf"
+        }
+      ]
+    }
+  ]
+}

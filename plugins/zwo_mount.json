@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "zwo_mount",
+  "version": "1.0.1",
+  "name": "ZWO mount",
+  "description": "Connect compatible ZWO Wi-Fi mounts.",
+  "category": "mount",
+  "wifi": [
+    {
+      "prefix": "AMH_",
+      "min_suffix": 1,
+      "suffix": "alnum-hyphen"
+    }
+  ],
+  "default_address": "192.168.4.1",
+  "relay": {
+    "transport": "tcp",
+    "ports": [
+      4030
+    ]
+  },
+  "identification": "zwo_model",
+  "discovery": {
+    "engine": "tcp_syn",
+    "target_mode": "proxy_or_original"
+  },
+  "activity": "protect_all",
+  "readiness": "association",
+  "validation": {
+    "level": "partial_hardware",
+    "models": [
+      "ZWO AM5N"
+    ],
+    "checks": [
+      "wifi",
+      "identity",
+      "private_proxy"
+    ],
+    "limitations": [
+      "guiding_pending",
+      "switching_pending"
+    ]
+  },
+  "references": [
+    {
+      "title": "ZWO mount protocol v2.1",
+      "url": "https://raw.githubusercontent.com/indigo-astronomy/indigo/master/indigo_drivers/mount_asi/docs/ZWO_Mount_communication_protocol_v2.1.pdf"
+    },
+    {
+      "title": "ZWO AM5 factory Wi-Fi password",
+      "url": "https://i.zwoastro.com/wp-content/uploads/2025/04/15556de1aaee99918a91a57953f52635.pdf"
+    }
+  ],
+  "onboarding": [
+    {
+      "prefix": "AMH_",
+      "password": "12345678"
+    }
+  ]
+}
