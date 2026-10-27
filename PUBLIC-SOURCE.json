@@ -1,7 +1,7 @@
 {
   "format": 1,
   "version": "1.0.0",
-  "source_sha256": "4082e123cacaf11543596f1e7cb2cdc9b216fe0c12f20b09fccccc072f331701",
+  "source_sha256": "fca2cf3c4f2ab399ebc9bcafd91c036315d6932cb33ab4b3df3b0ccf2fefa845",
   "files": [
     ".gitattributes",
     ".github/ISSUE_TEMPLATE/hardware-support.yml",

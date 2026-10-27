@@ -18,8 +18,3 @@ jobs:
       - run: python scripts/generate_openapi.py && git diff --exit-code -- wifi_bridge/static/openapi.json
       - run: python tools/build-release.py
       - run: python tools/verify-installed.py --wheel dist/astro_bridge_core-1.0.0-py3-none-any.whl
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: core-1.0.0-candidate
-          path: dist/
-          if-no-files-found: error
