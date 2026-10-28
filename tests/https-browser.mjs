@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Guided HTTPS UI with real temporary helper effects; no OS/browser trust changes. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -96,7 +97,7 @@ try{
     await page.locator('#https-info [data-close-help]').click();await page.evaluate(()=>BridgeI18n.setLocale('en'));await page.locator('#https-action').selectOption('reset');await page.locator('#https-password').fill('synthetic-password');
     assert.equal(await page.locator('#https-reset-confirm').isChecked(),false);await page.locator('#https-reset-confirm').check();await page.locator('#https-submit').click();assert.equal(await page.locator('#https-reset-confirm').isChecked(),false);
     await page.waitForFunction(()=>document.getElementById('https-identity').textContent==='Not configured');
-    await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.ok(!(await page.content()).includes(fingerprint));assert.equal(await page.locator('#https-password').inputValue(),'');
+    await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});assert.ok(!(await page.content()).includes(fingerprint));assert.equal(await page.locator('#https-password').inputValue(),'');
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:results.length,pageErrors:errors,output},null,2));
 }finally{if(browser)await browser.close();server.stdin.end();await Promise.race([once(server,'exit'),new Promise(r=>setTimeout(r,5000))]);if(server.exitCode===null)server.kill('SIGKILL');await rm(temporary,{recursive:true,force:true});}

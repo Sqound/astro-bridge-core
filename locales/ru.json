@@ -959,5 +959,12 @@
   "Check Wi-Fi password": "Проверить пароль Wi-Fi",
   "Edit password": "Изменить пароль",
   "Edit Wi-Fi password for {name}": "Изменить пароль Wi-Fi для {name}",
-  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой."
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой.",
+  "Activity": "События",
+  "See more": "Показать больше",
+  "Back": "Назад",
+  "User menu": "Меню пользователя",
+  "Appearance": "Оформление",
+  "{count} unread events": "Непрочитанных событий: {count}",
+  "The bridge keeps up to 256 recent connection events.": "Мост хранит до 256 последних событий подключения."
 }

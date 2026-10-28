@@ -1025,7 +1025,14 @@
     "Check Wi-Fi password": "Check Wi-Fi password",
     "Edit password": "Edit password",
     "Edit Wi-Fi password for {name}": "Edit Wi-Fi password for {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Change the saved Wi-Fi password or reboot the bridge before trying again."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Change the saved Wi-Fi password or reboot the bridge before trying again.",
+    "Activity": "Activity",
+    "See more": "See more",
+    "Back": "Back",
+    "User menu": "User menu",
+    "Appearance": "Appearance",
+    "{count} unread events": "{count} unread events",
+    "The bridge keeps up to 256 recent connection events.": "The bridge keeps up to 256 recent connection events."
   },
   "fr": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Pour utiliser l’adaptateur du point d’accès avec le réseau privé, choisissez un autre adaptateur libre ou quittez le point d’accès afin que le pont puisse confirmer qu’il est vide et effectuer une tentative bornée. Libérez d’abord les protections actives.",
@@ -1988,7 +1995,14 @@
     "Check Wi-Fi password": "Vérifier le mot de passe Wi-Fi",
     "Edit password": "Modifier le mot de passe",
     "Edit Wi-Fi password for {name}": "Modifier le mot de passe Wi-Fi de {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifiez le mot de passe Wi-Fi enregistré ou redémarrez le bridge avant de réessayer."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifiez le mot de passe Wi-Fi enregistré ou redémarrez le bridge avant de réessayer.",
+    "Activity": "Activité",
+    "See more": "Voir plus",
+    "Back": "Retour",
+    "User menu": "Menu utilisateur",
+    "Appearance": "Apparence",
+    "{count} unread events": "{count} événements non lus",
+    "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents."
   },
   "ja": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "ホットスポットのアダプターをプライベートネットワークに使うには、別の空きアダプターを選ぶか、ホットスポットから切断してください。空であることを確認してから時間制限付きで試行します。既存の保護は先に解除してください。",
@@ -2951,7 +2965,14 @@
     "Check Wi-Fi password": "Wi-Fiパスワードを確認",
     "Edit password": "パスワードを変更",
     "Edit Wi-Fi password for {name}": "{name}のWi-Fiパスワードを変更",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。"
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。",
+    "Activity": "アクティビティ",
+    "See more": "もっと見る",
+    "Back": "戻る",
+    "User menu": "ユーザーメニュー",
+    "Appearance": "表示",
+    "{count} unread events": "未読のイベント：{count}件",
+    "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。"
   },
   "de": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Um den Hotspot-Adapter für Ihr privates Netzwerk zu nutzen, wählen Sie einen anderen freien Adapter oder verlassen Sie den Hotspot, damit die Bridge einen leeren Hotspot bestätigen und einen begrenzten Versuch starten kann. Bestehende Schutzmaßnahmen müssen zuerst aufgehoben werden.",
@@ -3914,7 +3935,14 @@
     "Check Wi-Fi password": "WLAN-Passwort prüfen",
     "Edit password": "Passwort ändern",
     "Edit Wi-Fi password for {name}": "WLAN-Passwort für {name} ändern",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Ändern Sie das gespeicherte WLAN-Passwort oder starten Sie die Bridge vor einem neuen Versuch neu."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Ändern Sie das gespeicherte WLAN-Passwort oder starten Sie die Bridge vor einem neuen Versuch neu.",
+    "Activity": "Aktivität",
+    "See more": "Mehr anzeigen",
+    "Back": "Zurück",
+    "User menu": "Benutzermenü",
+    "Appearance": "Darstellung",
+    "{count} unread events": "{count} ungelesene Ereignisse",
+    "The bridge keeps up to 256 recent connection events.": "Die Bridge speichert bis zu 256 aktuelle Verbindungsereignisse."
   },
   "es": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar el adaptador del punto de acceso con su red privada, elija otro adaptador libre o abandone el punto de acceso para que el puente confirme que está vacío y realice un intento limitado. Primero debe liberar las protecciones existentes.",
@@ -4877,7 +4905,14 @@
     "Check Wi-Fi password": "Comprobar contraseña Wi-Fi",
     "Edit password": "Editar contraseña",
     "Edit Wi-Fi password for {name}": "Editar contraseña Wi-Fi de {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Cambie la contraseña Wi-Fi guardada o reinicie el bridge antes de volver a intentarlo."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Cambie la contraseña Wi-Fi guardada o reinicie el bridge antes de volver a intentarlo.",
+    "Activity": "Actividad",
+    "See more": "Ver más",
+    "Back": "Volver",
+    "User menu": "Menú de usuario",
+    "Appearance": "Apariencia",
+    "{count} unread events": "{count} eventos sin leer",
+    "The bridge keeps up to 256 recent connection events.": "El bridge conserva hasta 256 eventos de conexión recientes."
   },
   "it": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Per usare l’adattatore dell’hotspot con la rete privata, scegli un altro adattatore libero oppure lascia l’hotspot, così il bridge potrà confermare che è vuoto ed eseguire un tentativo limitato. Prima devi rimuovere le protezioni esistenti.",
@@ -5840,7 +5875,14 @@
     "Check Wi-Fi password": "Verifica password Wi-Fi",
     "Edit password": "Modifica password",
     "Edit Wi-Fi password for {name}": "Modifica password Wi-Fi di {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifica la password Wi-Fi salvata o riavvia il bridge prima di riprovare."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifica la password Wi-Fi salvata o riavvia il bridge prima di riprovare.",
+    "Activity": "Attività",
+    "See more": "Mostra altro",
+    "Back": "Indietro",
+    "User menu": "Menu utente",
+    "Appearance": "Aspetto",
+    "{count} unread events": "{count} eventi non letti",
+    "The bridge keeps up to 256 recent connection events.": "Il bridge conserva fino a 256 eventi di connessione recenti."
   },
   "pt-BR": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar o adaptador do hotspot na rede privada, escolha outro adaptador livre ou saia do hotspot para o bridge confirmar que está vazio e fazer uma tentativa limitada. Libere primeiro as proteções existentes.",
@@ -6803,7 +6845,14 @@
     "Check Wi-Fi password": "Verificar senha do Wi-Fi",
     "Edit password": "Editar senha",
     "Edit Wi-Fi password for {name}": "Editar senha do Wi-Fi de {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Altere a senha do Wi-Fi salva ou reinicie o bridge antes de tentar novamente."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Altere a senha do Wi-Fi salva ou reinicie o bridge antes de tentar novamente.",
+    "Activity": "Atividade",
+    "See more": "Ver mais",
+    "Back": "Voltar",
+    "User menu": "Menu do usuário",
+    "Appearance": "Aparência",
+    "{count} unread events": "{count} eventos não lidos",
+    "The bridge keeps up to 256 recent connection events.": "O bridge mantém até 256 eventos de conexão recentes."
   },
   "zh-Hans": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "如需将热点适配器用于私有网络，请选择另一个空闲适配器，或离开热点，让网桥确认热点无人连接后进行限时尝试。请先解除现有保护。",
@@ -7766,7 +7815,14 @@
     "Check Wi-Fi password": "检查 Wi-Fi 密码",
     "Edit password": "修改密码",
     "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密码",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。"
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。",
+    "Activity": "活动",
+    "See more": "查看更多",
+    "Back": "返回",
+    "User menu": "用户菜单",
+    "Appearance": "外观",
+    "{count} unread events": "{count} 条未读事件",
+    "The bridge keeps up to 256 recent connection events.": "桥接器最多保留 256 条近期连接事件。"
   },
   "zh-Hant": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "若要將熱點網卡用於私人網路，請選擇另一張閒置網卡，或離開熱點，讓網橋確認無人連線後進行限時嘗試。請先解除現有保護。",
@@ -8729,7 +8785,14 @@
     "Check Wi-Fi password": "檢查 Wi-Fi 密碼",
     "Edit password": "修改密碼",
     "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密碼",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "請先修改已儲存的 Wi-Fi 密碼或重新啟動橋接器，然後重試。"
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "請先修改已儲存的 Wi-Fi 密碼或重新啟動橋接器，然後重試。",
+    "Activity": "活動",
+    "See more": "顯示更多",
+    "Back": "返回",
+    "User menu": "使用者選單",
+    "Appearance": "外觀",
+    "{count} unread events": "{count} 則未讀事件",
+    "The bridge keeps up to 256 recent connection events.": "橋接器最多保留 256 則近期連線事件。"
   },
   "ru": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Чтобы использовать адаптер точки доступа для частной сети, выберите другой свободный адаптер или отключитесь от точки доступа: мост должен подтвердить отсутствие клиентов и выполнить ограниченную попытку. Сначала снимите действующие защиты.",
@@ -9692,7 +9755,14 @@
     "Check Wi-Fi password": "Проверить пароль Wi-Fi",
     "Edit password": "Изменить пароль",
     "Edit Wi-Fi password for {name}": "Изменить пароль Wi-Fi для {name}",
-    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой."
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой.",
+    "Activity": "События",
+    "See more": "Показать больше",
+    "Back": "Назад",
+    "User menu": "Меню пользователя",
+    "Appearance": "Оформление",
+    "{count} unread events": "Непрочитанных событий: {count}",
+    "The bridge keeps up to 256 recent connection events.": "Мост хранит до 256 последних событий подключения."
   }
 };
   const storageKey = "astro-bridge.locale";

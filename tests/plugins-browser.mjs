@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Catalog-driven settings and an extra community manifest in an isolated demo. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -71,16 +72,16 @@ try{
  await check('mobile plugin settings and modals fit all ten languages with stable routes',async()=>{
   await page.locator('#tab-plugins').click();
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await page.locator('#locale-menu summary').click();await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
    await page.setViewportSize({width:320,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,locale);
    await page.locator('#plugin-synscan-info').click();assert.equal(await page.locator('#plugin-info').evaluate(e=>e.scrollWidth<=e.clientWidth),true,'modal '+locale);await page.keyboard.press('Escape');
   }
-  await page.locator('#locale-menu summary').click();await page.locator('#locale-menu button[data-locale="fr"]').click();await page.screenshot({path:resolve(output,'plugins-320-fr.png'),fullPage:true});
+  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="fr"]').click();await page.screenshot({path:resolve(output,'plugins-320-fr.png'),fullPage:true});
   await page.locator('#plugin-zwo_mount-info').click();await page.screenshot({path:resolve(output,'plugin-details-320-fr.png')});await page.keyboard.press('Escape');
   await page.reload();await page.locator('#dashboard').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#configuration/plugins');assert.equal(await page.locator('[data-plugin-id]').count(),7);
  });
  await check('logout clears usage and modal content; login restores catalog-driven controls',async()=>{
-  await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.locator('[data-plugin-id]').count(),0);assert.equal(await page.locator('#plugin-info-body').innerText(),'');
+  await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.locator('[data-plugin-id]').count(),0);assert.equal(await page.locator('#plugin-info-body').innerText(),'');
   await login();await page.locator('#nav-configuration').click();await page.locator('#tab-plugins').click();assert.equal(await page.locator('[data-plugin-id]').count(),7);
  });
  assert.deepEqual(errors,[]);await writeFile(resolve(output,'browser.json'),JSON.stringify({results,errors,synthetic_community_plugin:true},null,2));

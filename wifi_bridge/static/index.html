@@ -36,7 +36,20 @@
 <span>ASTRO BRIDGE<small data-i18n="YOUR TELESCOPES, CONNECTED">YOUR TELESCOPES, CONNECTED</small>
 </span>
 </a>
-<div class="header-actions"><details id="locale-menu" class="locale-menu"><summary aria-label="Interface language" data-i18n-aria-label="Interface language"><svg class="locale-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle>
+<div class="header-actions">
+<div id="activity-menu" class="activity-menu" hidden>
+<button id="activity-toggle" class="header-icon" type="button" aria-label="Activity" data-i18n-aria-label="Activity" aria-haspopup="dialog" aria-expanded="false" aria-controls="activity-popover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="activity-count" class="activity-badge" aria-hidden="true" hidden>0</span></button>
+<span id="activity-announcement" class="sr-only" role="status" aria-live="polite"></span>
+<section id="activity-popover" class="activity-popover" role="dialog" aria-labelledby="activity-preview-title" hidden>
+<div class="activity-popover-heading"><h2 id="activity-preview-title" data-i18n="Recent activity">Recent activity</h2></div>
+<p id="activity-preview-warning" class="notice" role="status" hidden></p>
+<p id="activity-preview-empty" class="small" data-i18n="No connection activity recorded yet.">No connection activity recorded yet.</p>
+<ol id="activity-preview-list" class="activity-list" tabindex="0" aria-label="Recent connection events" data-i18n-aria-label="Recent connection events"></ol>
+<a id="activity-more" class="activity-more" href="#activity" data-i18n="See more">See more</a>
+</section></div>
+<details id="user-menu" class="user-menu"><summary class="header-icon" aria-label="User menu" data-i18n-aria-label="User menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></summary>
+<div class="user-menu-panel"><p class="menu-label" data-i18n="Interface language">Interface language</p>
+<details id="locale-menu" class="locale-menu"><summary aria-label="Interface language" data-i18n-aria-label="Interface language"><svg class="locale-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle>
 <path d="M3 12h18M12 3a16 16 0 0 1 0 18 16 16 0 0 1 0-18Z"></path>
 </svg>
 <span id="locale-current">EN</span>
@@ -44,10 +57,12 @@
 </summary>
 <div id="locale-options" class="locale-options"></div>
 </details>
+<p class="menu-label" data-i18n="Appearance">Appearance</p>
 <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Automatic theme" data-i18n-aria-label="Automatic theme"><svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg>
 <span id="theme-label" aria-live="polite">Auto</span>
 </button>
-<button id="logout" class="text-button" hidden data-i18n="Sign out">Sign out</button>
+<button id="logout" class="text-button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H4V3h5M14 8l5 4-5 4M8 12h11"/></svg><span data-i18n="Sign out">Sign out</span></button>
+</div></details>
 </div>
 </header>
 <div id="demo" class="notice" hidden data-i18n="DEMONSTRATION · Networks and connections are simulated.">DEMONSTRATION · Networks and connections are simulated.</div>
@@ -87,15 +102,15 @@
 <section id="protection-summary" class="notice" role="status" hidden></section>
 <section id="pause-notice" class="notice" role="status" hidden><p id="pause-message"></p><button id="pause-recover" type="button" class="secondary" data-i18n="Recover paused connection state…">Recover paused connection state…</button></section>
 <section id="ensure-notice" class="notice" role="status" hidden><p id="ensure-message"></p><p id="ensure-endpoint" class="small"></p></section>
-<details id="activity-panel" class="card activity-panel">
-<summary><span data-i18n="Recent activity">Recent activity</span> <span id="activity-count" class="count">0</span></summary>
-<p class="small" data-i18n="Events are ordered by sequence. Device time has not been verified.">Events are ordered by sequence. Device time has not been verified.</p>
+<section id="view-activity" aria-labelledby="activity-title" hidden>
+<div class="activity-page-heading"><a id="activity-back" href="#telescopes" data-i18n="Back">Back</a><h1 id="activity-title" data-i18n="Activity">Activity</h1><button class="info-button" type="button" data-help="activity-info" aria-haspopup="dialog" aria-controls="activity-info" aria-label="More information" data-i18n-aria-label="More information">i</button></div>
 <p id="activity-warning" class="notice" role="status" hidden></p>
 <p id="activity-empty" class="small" data-i18n="No connection activity recorded yet.">No connection activity recorded yet.</p>
-<ol id="activity-list" class="activity-list" tabindex="0" aria-label="Recent connection events" data-i18n-aria-label="Recent connection events"></ol>
-</details>
-<section id="view-telescopes" aria-label="Telescope connections" data-i18n-aria-label="Telescope connections" role="tabpanel" aria-labelledby="nav-telescopes"><div class="simple-heading"><div class="eyebrow" data-i18n="READY FOR YOUR NEXT NIGHT">READY FOR YOUR NEXT NIGHT</div>
-<h1 data-i18n="Telescope connections">Telescope connections</h1>
+<ol id="activity-list" class="activity-list activity-page-list" tabindex="0" aria-label="Recent connection events" data-i18n-aria-label="Recent connection events"></ol>
+<dialog id="activity-info" class="help-dialog" aria-labelledby="activity-info-title"><div class="card-heading"><h2 id="activity-info-title" data-i18n="Activity">Activity</h2><button class="dialog-close" type="button" data-close-help aria-label="Close" data-i18n-aria-label="Close">✕</button></div><p data-i18n="Events are ordered by sequence. Device time has not been verified.">Events are ordered by sequence. Device time has not been verified.</p><p data-i18n="The bridge keeps up to 256 recent connection events.">The bridge keeps up to 256 recent connection events.</p></dialog>
+</section>
+<section id="view-telescopes" aria-label="Telescope connections" data-i18n-aria-label="Telescope connections" role="tabpanel" aria-labelledby="nav-telescopes"><div class="simple-heading">
+<h1 class="sr-only" data-i18n="Telescope connections">Telescope connections</h1>
 <p data-i18n="One telescope per connection. Choose where to connect each of your instruments.">One telescope per connection. Choose where to connect each of your instruments.</p>
 <span id="simple-summary" class="badge" role="status"></span>
 <a href="#networks" id="initial-network-link" hidden data-i18n="Configure private network →">Configure private network →</a>
@@ -125,8 +140,8 @@
 <div id="other-connections" class="simple-grid"></div>
 </details>
 </section>
-<section id="view-networks" role="tabpanel" aria-labelledby="nav-networks" hidden><div class="simple-heading"><div class="eyebrow" data-i18n="YOUR LOCAL ACCESS">YOUR LOCAL ACCESS</div>
-<h1 data-i18n="Private networks &amp; hotspot">Private networks &amp; hotspot</h1>
+<section id="view-networks" role="tabpanel" aria-labelledby="nav-networks" hidden><div class="simple-heading">
+<h1 class="sr-only" data-i18n="Private networks &amp; hotspot">Private networks &amp; hotspot</h1>
 <p data-i18n="Manage home Wi-Fi and keep a direct way to reach your bridge.">Manage home Wi-Fi and keep a direct way to reach your bridge.</p>
 </div>
 <section class="card" id="connection-mode-card"><div class="card-heading"><h2 data-i18n="How you connect">How you connect</h2><button type="button" class="info-button" data-help="connection-mode-info" aria-haspopup="dialog" aria-controls="connection-mode-info" aria-labelledby="help-info-label connection-mode-info-title">i</button></div><form id="connection-mode-form"><label for="connection-mode" data-i18n="Connection mode">Connection mode</label><select id="connection-mode"><option value="private" data-i18n="Private Wi-Fi bridge">Private Wi-Fi bridge</option><option value="hotspot_isolated" data-i18n="Hotspot without Internet">Hotspot without Internet</option><option value="hotspot_shared" data-i18n="Hotspot with Internet">Hotspot with Internet</option></select><p id="connection-mode-purpose" class="small"></p><p id="connection-mode-status" class="small" role="status"></p><details><summary data-i18n="Advanced network access">Advanced network access</summary><label class="checkbox"><input id="hotspot-private-lan" type="checkbox"><span data-i18n="Allow hotspot devices to reach the private network">Allow hotspot devices to reach the private network</span></label></details><div class="actions"><button id="connection-mode-save" type="submit" data-i18n="Save connection mode">Save connection mode</button></div></form><dialog id="connection-mode-info" class="help-dialog" aria-labelledby="connection-mode-info-title"><div class="card-heading"><h2 id="connection-mode-info-title" data-i18n="How you connect">How you connect</h2><button type="button" class="dialog-close" data-close-help aria-label="Close" data-i18n-aria-label="Close">✕</button></div><p class="small" data-i18n="Private Wi-Fi: stay on your usual network with Internet. Vespera may need a route on your router.">Private Wi-Fi: stay on your usual network with Internet. Vespera may need a route on your router.</p><p class="small" data-i18n="Hotspot without Internet: join Astro Bridge for telescope access without configuring your router.">Hotspot without Internet: join Astro Bridge for telescope access without configuring your router.</p><p class="small" data-i18n="Hotspot with Internet: join Astro Bridge; it shares Internet from your saved private Wi-Fi. No router route is needed for telescope access.">Hotspot with Internet: join Astro Bridge; it shares Internet from your saved private Wi-Fi. No router route is needed for telescope access.</p><p class="small" data-i18n="Sharing needs separate available adapters for private Wi-Fi, hotspot and each telescope. Protected connections are preserved.">Sharing needs separate available adapters for private Wi-Fi, hotspot and each telescope. Protected connections are preserved.</p><p class="small" data-i18n="Private-network access is optional. It allows outgoing connections from hotspot devices; it does not enable access in the reverse direction or relay device discovery.">Private-network access is optional. It allows outgoing connections from hotspot devices; it does not enable access in the reverse direction or relay device discovery.</p><p class="small" data-i18n="After changing modes, reconnect your phone to the hotspot to renew its network settings. If Internet is lost, telescope access remains available.">After changing modes, reconnect your phone to the hotspot to renew its network settings. If Internet is lost, telescope access remains available.</p></dialog></section><div class="simple-context-grid"><section class="network-section"><div class="section-title"><h2 data-i18n="Private network">Private network</h2>
@@ -176,10 +191,7 @@
 <p class="small" data-i18n="Your home router may need a route to each instrument subnet. The telescope settings table shows the addresses. Instruments sharing a subnet must be used one at a time. Each model still needs validation with its own app.">Your home router may need a route to each instrument subnet. The telescope settings table shows the addresses. Instruments sharing a subnet must be used one at a time. Each model still needs validation with its own app.</p>
 </section></dialog></section>
 </section>
-<section class="configuration" aria-labelledby="nav-configuration" id="view-configuration" role="tabpanel" hidden><div class="section-title"><div><div class="eyebrow" data-i18n="YOUR DEVICE">YOUR DEVICE</div>
-<h1 id="configuration-title" data-i18n="Configuration">Configuration</h1>
-</div>
-</div>
+<section class="configuration" aria-labelledby="nav-configuration" id="view-configuration" role="tabpanel" hidden><h1 id="configuration-title" class="sr-only" data-i18n="Configuration">Configuration</h1>
 <div class="view-tabs" role="tablist" aria-label="Configuration" data-i18n-aria-label="Configuration"><button id="tab-general" type="button" role="tab" aria-controls="panel-general" aria-selected="true" tabindex="0" data-i18n="General">General</button>
 <button id="tab-pwa" type="button" role="tab" aria-selected="false" aria-controls="panel-pwa" tabindex="-1" data-i18n="PWA &amp; notifications">PWA &amp; notifications</button>
 <button id="tab-plugins" type="button" role="tab" aria-selected="false" aria-controls="panel-plugins" tabindex="-1" data-i18n="Plugins">Plugins</button>

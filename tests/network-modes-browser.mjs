@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** User-facing controls, OS onboarding and modal privacy against a disposable demo. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -85,14 +86,14 @@ try{
  await check('ten locales fit at 320px and do not erase the mode draft',async()=>{
   await page.setViewportSize({width:320,height:900});
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await page.locator('#locale-menu summary').click();await page.locator(`button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.equal(await page.locator('#connection-mode').inputValue(),'hotspot_shared');
   }
   await page.locator('#connection-mode-card').screenshot({path:resolve(output,'network-modes-320.png')});
  });
  await check('hotspot adapter options repopulate after logout and login',async()=>{
   const mac=await page.locator('#hotspot-interface').inputValue();
-  await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});
+  await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});
   await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();
   await page.locator('#dashboard').waitFor({state:'visible'});await page.locator('#nav-networks').click();
   assert.equal(await page.locator('#hotspot-interface').inputValue(),mac);

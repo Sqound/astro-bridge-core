@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Production UI acceptance against a fresh, explicitly simulated Python server.
  * Requires Playwright and its browser; optionally set PLAYWRIGHT_MODULE and CHROME_PATH.
  * Run: node tests/ui-browser.mjs. Synthetic screenshots go to artifacts/p1-ui/.
@@ -46,8 +47,8 @@ try {
   await check("English default and authenticated actual demo state", async () => {
     assert.equal(await page.locator("html").getAttribute("lang"), "en");
     await page.locator("#login-password").fill("synthetic-wrong-password");await page.locator("#login-form button").click();await page.waitForFunction(()=>document.getElementById("error").textContent==="Incorrect password.");
-    await page.locator("#locale-menu summary").click();await page.locator('[data-locale="fr"]').click();assert.equal(await page.locator("#error").textContent(),"Mot de passe incorrect.");
-    await page.locator("#locale-menu summary").click();await page.locator('[data-locale="en"]').click();
+    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();assert.equal(await page.locator("#error").textContent(),"Mot de passe incorrect.");
+    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="en"]').click();
     await login(); assert.equal((await data()).demo, true);
     // Fresh AP-only configuration is independent of an optional home network.
     await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -104,11 +105,11 @@ try {
       await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.relay_ready);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");assert.equal(await page.locator(`[id="profile-${profiles[0].id}-info"]`).count(),1);
       for(const locale of ["en","fr","ja","de","es","it","pt-BR","zh-Hans","zh-Hant","ru"]){
-        await page.locator("#locale-menu summary").click();await page.locator(`button[data-locale="${locale}"]`).click();
+        await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();
         assert.equal(await page.locator("html").getAttribute("lang"),locale);assert.equal(await page.locator("#locale-select").inputValue(),locale);assert.equal(await page.locator("#locale-fallback").isVisible(),false);
         for(const width of [320,375,768,1280]){
           await page.setViewportSize({width,height:960});await page.waitForTimeout(100);
-          const theme=width===320||width===1280?"dark":"light";for(let i=0;i<3&&await page.locator("html").getAttribute("data-theme")!==theme;i++)await page.locator("#theme-toggle").click();assert.equal(await page.locator("html").getAttribute("data-theme"),theme);
+          const theme=width===320||width===1280?"dark":"light";for(let i=0;i<3&&await page.locator("html").getAttribute("data-theme")!==theme;i++)await clickUserControl(page, '#theme-toggle');assert.equal(await page.locator("html").getAttribute("data-theme"),theme);
           for(const [main,sub] of [["telescopes"],["networks"],["configuration","general"],["configuration","radios"],["configuration","telescopes"]]){await clickTab("nav-"+main);if(sub)await clickTab("tab-"+sub);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${locale} ${width} ${main}/${sub}`);}
           const bounds=await page.locator("#telescopes button").evaluateAll(buttons=>buttons.map(button=>{const b=button.getBoundingClientRect();return {left:b.left,right:b.right,width:b.width};}));
           assert.ok(bounds.every(b=>b.left>=0&&b.right<=width&&b.width>20));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -152,7 +153,7 @@ try {
       await page.screenshot({path:resolve(output,"field-ap-only-en.png"),fullPage:true,timeout:10000});
     });
     await check("field: notice remains visible in all tabs and French mobile without overflow",async()=>{
-      await page.locator("#locale-menu summary").click();await page.locator('[data-locale="fr"]').click();await page.setViewportSize({width:375,height:960});
+      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await page.setViewportSize({width:375,height:960});
       for(const tab of ["nav-telescopes","nav-networks","nav-configuration"]){await clickTab(tab);assert.equal(await page.locator("#management-notice").isVisible(),true);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
       assert.match(await page.locator("#management-notice").innerText(),/point d’accès uniquement/);await page.waitForTimeout(350);
       await page.screenshot({path:resolve(output,"field-ap-only-fr-375.png"),fullPage:true,timeout:10000});
@@ -166,7 +167,7 @@ try {
       await page.screenshot({path:resolve(output,"field-dual-fr-375.png"),fullPage:true,timeout:10000});
     });
     await check("field: logout clears private paths and prevents stale activity resurrection",async()=>{
-      await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});assert.equal(await page.locator("#management-notice").textContent(),"");
+      await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});assert.equal(await page.locator("#management-notice").textContent(),"");
       assert.doesNotMatch(await page.locator("body").innerText(),/Home-DEMO|192\.168\.1\.42|Seestar DEMO edited/);assert.equal(await page.locator("#activity-list li").count(),0);
     });
   }
@@ -206,11 +207,11 @@ try {
       await page.setViewportSize({width:375,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:resolve(output,"dwarf-proxy-endpoint-375.png"),fullPage:true,timeout:10000});
     });
     await check("replacement: French mobile guidance and logout clears policy/private profile state",async()=>{
-      await page.locator("#locale-menu summary").click();await page.locator('[data-locale="fr"]').click();await clickTab("tab-general");
+      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await clickTab("tab-general");
       await page.setViewportSize({width:375,height:960});await page.waitForTimeout(350);
       assert.match(await page.locator("#auto-policy-form").innerText(),/interrompre une pose/);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       await page.screenshot({path:resolve(output,"replacement-policy-fr-375.png"),fullPage:true,timeout:10000});
-      await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+      await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
       assert.equal(await page.locator("#pause-notice").isVisible(),false);assert.equal(await page.locator("#auto-force").isChecked(),false);assert.equal(await page.locator("#auto-ack").isChecked(),false);
       assert.equal(await page.locator("#maker-demand-status").textContent(),"");assert.equal(await page.locator("#vespera-demand-status").textContent(),"");assert.equal(await page.locator("#auto-vespera-demand").isChecked(),false);assert.equal(await page.locator("#auto-dwarf-demand").isChecked(),false);assert.equal(await page.locator("#dwarf-demand-status").textContent(),"");
     });
@@ -249,7 +250,7 @@ try {
     await check("protection: persistent lock blocks manual disconnect; logout clears DOM but keeps exposure protection",async()=>{
       await page.locator(`[id="profile-${profiles[0].id}-lock"]`).click();await page.locator("#protection-password").fill("demo-telescope-2026");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>s.config.telescopes[0].owner_locked);
       await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await page.locator("#error").waitFor({state:"visible"});assert.equal((await data()).config.telescopes[0].enabled,true);
-      await clickTab("nav-configuration");await clickTab("tab-general");await page.locator("#protection-list").scrollIntoViewIfNeeded();await page.locator('[data-help="protection-info"]').click();await page.screenshot({path:resolve(output,"protection-desktop.png"),fullPage:false});await page.locator("#protection-info [data-close-help]").click();await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+      await clickTab("nav-configuration");await clickTab("tab-general");await page.locator("#protection-list").scrollIntoViewIfNeeded();await page.locator('[data-help="protection-info"]').click();await page.screenshot({path:resolve(output,"protection-desktop.png"),fullPage:false});await page.locator("#protection-info [data-close-help]").click();await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
       const html=await page.content();assert.ok(!html.includes(profiles[0].id)&&!html.includes(ownLease.id)&&!html.includes("Seestar DEMO edited"));assert.equal(await page.locator("#protection-list").textContent(),"");
       const stored=await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}));assert.ok(!stored.includes(ownLease.id)&&!stored.includes(profiles[0].id));
       nativeToken=(await native("POST","/auth/token",{password:"demo-telescope-2026"})).data.access_token;const protection=(await native("GET","/protection")).data;assert.ok(protection.leases.some(l=>l.id===ownLease.id));assert.ok(protection.owner_locks.includes(profiles[0].id));
@@ -285,7 +286,7 @@ try {
     await check("ensure: ready fast path needs no automatic consent; logout removes operation/private endpoints",async()=>{
       await clickTab("nav-telescopes");await page.locator("#auto-connect").uncheck();await waitData(s=>s.config.auto_connect===false);await clickTab("nav-configuration");await clickTab("tab-telescopes");
       const response=page.waitForResponse(r=>r.url().endsWith("/api/telescopes/ensure")&&r.request().method()==="POST");await page.locator(`[id="profile-${profiles[0].id}-ensure"]`).click();const ready=await response;assert.equal(ready.status(),200);assert.equal((await ready.json()).state,"ready");
-      await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});assert.equal(await page.locator("#ensure-notice").isVisible(),false);assert.equal(await page.locator("#ensure-message").textContent(),"");assert.equal(await page.locator("#ensure-endpoint").textContent(),"");
+      await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});assert.equal(await page.locator("#ensure-notice").isVisible(),false);assert.equal(await page.locator("#ensure-message").textContent(),"");assert.equal(await page.locator("#ensure-endpoint").textContent(),"");
       const html=await page.content();assert.ok(!html.includes("10.1.0.1")&&!html.includes("Seestar DEMO edited")&&!html.includes(profiles[0].id));
       const stored=await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}));assert.ok(!stored.includes("10.1.0.1")&&!stored.includes(profiles[0].id));
     });
@@ -339,7 +340,7 @@ try {
       await page.locator(`#simple-connect-3-${profiles[1].id}`).click();await waitData(s=>s.telescopes.filter(p=>p.connected).length===2);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.waitForTimeout(15000);await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#scan").click();await page.waitForFunction(()=>document.getElementById("scan-results").children.length>0);
       assert.ok((await data()).home_ip);assert.equal((await data()).telescopes.filter(p=>p.connected).length,2);
-      await page.locator("#binding-bssid").fill("02:00:00:77:88:99");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+      await page.locator("#binding-bssid").fill("02:00:00:77:88:99");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
       const html=await page.content();assert.ok(!html.includes("02:00:00:77:88:99")&&!html.includes("Telescope-DEMO"));assert.equal(await page.locator("#scan-results button").count(),0);assert.equal(await page.locator("#binding-bssid").inputValue(),"");
     });
   }
@@ -358,7 +359,7 @@ try {
     assert.ok((await data()).home_ip); assert.equal(await page.locator(".connection-table tbody tr").count(), 6);
   });
   await check("confirmed activity, grouped switch notification and independent tab reads", async () => {
-    await page.locator("#activity-panel summary").click();
+    await page.locator("#activity-toggle").click();
     const actionResponse=page.waitForResponse(response=>response.url().endsWith("/api/telescopes/action")&&response.request().method()==="POST");
     await page.locator(`#simple-connect-2-${profiles[2].id}`).click();
     const accepted=await (await actionResponse).json();
@@ -373,7 +374,7 @@ try {
     const before=await readEvents();
     const other=await context.newPage();await other.goto(url);await other.locator("#dashboard").waitFor({state:"visible"});
     await page.waitForTimeout(3300);assert.equal((await readEvents()).latest_sequence,before.latest_sequence);await other.close();
-    for(const main of ["networks","configuration","telescopes"]){await clickTab("nav-"+main);assert.equal(await page.locator("#activity-panel").isVisible(),true);}
+    for(const main of ["networks","configuration","telescopes"]){await clickTab("nav-"+main);assert.equal(await page.locator("#activity-toggle").isVisible(),true);}
     const ids=await page.locator("#activity-list li").evaluateAll(elements=>elements.map(element=>element.dataset.eventId));assert.equal(ids.length,new Set(ids).size);
     await page.screenshot({path:resolve(output,"events-desktop.png"),fullPage:true,timeout:10000});
     await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});await page.waitForFunction(()=>document.querySelectorAll("#activity-list li").length>0);
@@ -394,7 +395,7 @@ try {
     assert.equal(await page.locator("#hostname").inputValue(), "unsaved-device-draft"); assert.equal(await page.locator("#country").inputValue(), "FR"); assert.equal(await page.evaluate(() => document.activeElement.id), "country");
   });
   await check("header and General locale controls synchronize and persist with complete Japanese", async () => {
-    await page.locator("#locale-menu summary").click(); await page.locator('[data-locale="fr"]').click();
+    await clickUserControl(page, '#locale-menu summary'); await page.locator('[data-locale="fr"]').click();
     assert.equal(await page.locator("#locale-select").inputValue(), "fr"); assert.equal(await page.locator("html").getAttribute("lang"), "fr");
     assert.equal(await page.locator("#hostname").inputValue(), "unsaved-device-draft");
     await page.locator("#locale-select").selectOption("ja"); assert.equal(await page.locator("#locale-current").textContent(), "JA");
@@ -418,8 +419,8 @@ try {
   });
   await check("themes follow system and remember explicit choice", async () => {
     assert.equal(await page.locator("html").getAttribute("data-theme-mode"), "auto"); await page.emulateMedia({ colorScheme: "dark" }); await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
-    await page.locator("#theme-toggle").click(); assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
-    await page.locator("#theme-toggle").click(); await page.reload(); await page.locator("#dashboard").waitFor({ state: "visible" }); assert.equal(await page.locator("html").getAttribute("data-theme-mode"), "dark");
+    await clickUserControl(page, '#theme-toggle'); assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
+    await clickUserControl(page, '#theme-toggle'); await page.reload(); await page.locator("#dashboard").waitFor({ state: "visible" }); assert.equal(await page.locator("html").getAttribute("data-theme-mode"), "dark");
   });
   await check("all destinations at 320/375/768/1280 have no global horizontal overflow", async () => {
     for (const width of [320, 375, 768, 1280]) {
@@ -434,10 +435,10 @@ try {
   await check("synthetic desktop/mobile dark and light screenshots", async () => {
     for(const [width, theme, route, name] of [[1280,"dark","telescopes","desktop-dark"],[375,"dark","telescopes","mobile-375-dark"],[320,"light","telescopes","mobile-320-light"],[768,"light","networks","networks-768-light"],[1280,"dark","configuration","configuration-dark"]]) {
       await page.setViewportSize({width,height:960}); await clickTab("nav-"+route); if(route==="configuration")await clickTab("tab-general");
-      for(let n=0;n<3 && await page.locator("html").getAttribute("data-theme")!==theme;n++)await page.locator("#theme-toggle").click();
+      for(let n=0;n<3 && await page.locator("html").getAttribute("data-theme")!==theme;n++)await clickUserControl(page, '#theme-toggle');
       await page.screenshot({path:resolve(output,name+".png"),fullPage:true,timeout:10000});
     }
-    await page.setViewportSize({width:375,height:960}); await page.locator("#locale-menu summary").click(); await page.screenshot({path:resolve(output,"locale-375.png"),fullPage:true,timeout:10000}); await page.keyboard.press("Escape");
+    await page.setViewportSize({width:375,height:960}); await clickUserControl(page, '#locale-menu summary'); await page.screenshot({path:resolve(output,"locale-375.png"),fullPage:true,timeout:10000}); await page.keyboard.press("Escape");
   });
   await check("credentials and update controls remain backed by existing APIs", async () => {
     await page.setViewportSize({width:1280,height:960}); await clickTab("nav-configuration"); await clickTab("tab-general");
@@ -448,7 +449,7 @@ try {
     assert.equal(await page.locator("#current-password").inputValue(), ""); assert.equal(await page.locator("#new-password").inputValue(), "");
   });
   await check("logout clears authenticated event names and notifications",async()=>{
-    await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+    await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
     assert.equal(await page.locator("#activity-list li").count(),0);assert.equal(await page.locator(".connection-notice").count(),0);
   });
   assert.deepEqual(failures, [], "Page errors");

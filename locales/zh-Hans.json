@@ -959,5 +959,12 @@
   "Check Wi-Fi password": "检查 Wi-Fi 密码",
   "Edit password": "修改密码",
   "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密码",
-  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。"
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。",
+  "Activity": "活动",
+  "See more": "查看更多",
+  "Back": "返回",
+  "User menu": "用户菜单",
+  "Appearance": "外观",
+  "{count} unread events": "{count} 条未读事件",
+  "The bridge keeps up to 256 recent connection events.": "桥接器最多保留 256 条近期连接事件。"
 }

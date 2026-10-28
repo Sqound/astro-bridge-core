@@ -35,7 +35,7 @@ const publicLeaves=[...document.querySelectorAll("#dashboard [id], #protection-d
   .filter(element=>!element.children.length&&!element.matches("input,select,textarea,button")&&!element.closest("#pwa-settings"))
   .map(element=>({element,text:element.textContent,href:element.getAttribute("href"),className:element.className}));
 function privateReset(preserveEvents=false,preserveLogin=false){
-  loggedOut=false;
+  loggedOut=false;$("user-menu").open=false;
   for(const id of dynamicMessages)delete $(id).dataset.i18n;dynamicMessages.clear();
   autoPolicyDirty=false;autoPolicyRevision=null;$("pause-notice").hidden=true;clearProtectionDialog();$("protection-list").replaceChildren();$("protection-summary").hidden=true;
   wifiSnapshot=null;wifiSnapshotAt=0;wifiRequest=null;
@@ -91,16 +91,19 @@ function applyNavigation(event) {
     else if(parts[0]==="configuration"&&parts[1]==="general"&&section==="updates")target="?section=updates";
     else if(parts[0]==="configuration"&&parts[1]==="telescopes"&&/^[a-f0-9]{32}$/.test(query.get("add")||""))target="?add="+query.get("add");
   }
-  const destination = mainTabs.includes(parts[0]) ? parts[0] : "telescopes";
+  const destination = [...mainTabs,"activity"].includes(parts[0]) ? parts[0] : "telescopes";
   const section = configurationTabs.includes(parts[1]) ? parts[1] : "general";
   const next = destination + (destination === "configuration" ? "/" + section : "");
   if(destination === "configuration")lastConfiguration=section;
   if(currentRoute && currentRoute !== next) routeScroll.set(currentRoute, window.scrollY);
   for(const name of mainTabs) {
     const selected = name === destination, button = $("nav-" + name);
-    button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
+    button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected || (destination === "activity" && name === mainTabs[0]) ? 0 : -1;
     $("view-" + name).hidden = !selected;
   }
+  $("view-activity").hidden = destination !== "activity";
+  if(destination === "activity" && currentRoute && currentRoute !== "activity")$("activity-back").href="#"+currentRoute;
+  BridgeEvents.closePopover();BridgeEvents.setPage(destination === "activity");
   for(const name of configurationTabs) {
     const selected = name === section, button = $("tab-" + name);
     button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
@@ -140,6 +143,15 @@ function tabKeyboard(event, names, name, select, prefix) {
     (names.indexOf(name) + (event.key === "ArrowRight" ? 1 : -1) + names.length) % names.length;
   select(names[index]); $(prefix + names[index]).focus();
 }
+// Header preferences remain available before sign-in and do not replace page content.
+document.addEventListener("click",event=>{
+  if(!$("user-menu").contains(event.target))$("user-menu").open=false;
+});
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&$("user-menu").open){$("locale-menu").open=false;$("user-menu").open=false;$("user-menu").querySelector("summary").focus();}
+});
+$("user-menu").addEventListener("toggle",()=>{if($("user-menu").open)BridgeEvents.closePopover();});
+$("user-menu").addEventListener("focusout",event=>{if(event.relatedTarget&&!$("user-menu").contains(event.relatedTarget))$("user-menu").open=false;});
 window.addEventListener("hashchange", applyNavigation);
 if("scrollRestoration" in history) history.scrollRestoration = "manual";
 applyNavigation();

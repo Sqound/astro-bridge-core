@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Two-step Wi-Fi addition and notification destinations against the actual demo API. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -82,7 +83,7 @@ try{
  });
  await check('expired notification destination offers a fresh scan; logout clears detected network DOM',async()=>{
   await page.goto(origin+'/#configuration/telescopes?add='+'0'.repeat(32));await page.locator('#discovery-dialog').waitFor({state:'visible'});assert.ok(await page.locator('#discovery-status').innerText());
-  await page.locator('#discovery-close').click();await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});
+  await page.locator('#discovery-close').click();await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});
   assert.equal(await page.locator('#discovery-results').innerText(),'');assert.equal(await page.locator('#network-ssid').inputValue(),'');assert.equal(await page.locator('#network-password').inputValue(),'');
  });
  assert.deepEqual(errors,[]);await writeFile(resolve(output,'browser.json'),JSON.stringify({results,errors,simulation:true},null,2)+'\n');

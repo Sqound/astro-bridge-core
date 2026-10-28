@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Real service-worker lifecycle against a disposable production Python demo app.
  * Loopback is a browser development secure context, not phone TLS/trust proof.
  */
@@ -89,7 +90,7 @@ try{
     await page.unroute('**/api/login');
   });
   await check("notification destinations survive login and focus only after fresh authenticated status",async()=>{
-    await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});
+    await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});
     await page.evaluate(()=>{location.hash='#networks?section=connection-mode';});
     assert.equal(await page.locator('#dashboard').isVisible(),false);
     await login();await page.waitForFunction(()=>document.activeElement?.id==='connection-mode-form');
@@ -243,7 +244,7 @@ try{
     await page.reload();await page.waitForFunction(()=>document.getElementById("connection-message").textContent.includes("Bridge unavailable"));
     const retained=await page.evaluate(()=>JSON.parse(sessionStorage.getItem("astro-bridge.event-cursor")));
     assert.equal(retained.sequence,before.sequence);assert.equal(retained.boot_id,before.boot_id);
-    assert.deepEqual(Object.keys(retained).sort(),["boot_id","context","notified","sequence"]);
+    assert.deepEqual(Object.keys(retained).sort(),["boot_id","context","notified","read_sequence","sequence"]);
     assert.ok(retained.notified.length<=512&&retained.notified.every(id=>/^[0-9a-f]{32}:[1-9][0-9]*$/.test(id)));
     assert.equal(await page.evaluate(names=>names.some(name=>document.documentElement.outerHTML.includes(name)),[first,second]),false);
     let release,held=false;await context.route("**/api/status",async route=>{if(!held){held=true;await new Promise(resolve=>release=resolve);}await route.continue();});
@@ -328,7 +329,7 @@ try{
   });
   await check("logout and caches retain no private response/session data",async()=>{
     await page.evaluate(()=>document.getElementById('login-password').value='hidden-logout-canary');
-    await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+    await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
     assert.equal(await page.locator('#login-password').inputValue(),'');
     assert.equal(await page.evaluate(()=>sessionStorage.getItem("astro-bridge.event-cursor")),null);
     const bodies=await page.evaluate(async()=>{const all=[];for(const name of await caches.keys()){const c=await caches.open(name);for(const r of await c.keys()){const response=await c.match(r);if(!response.headers.get("content-type")?.startsWith("image/"))all.push(await response.text());}}return all.join("\n");});
@@ -340,7 +341,7 @@ try{
     const response=page.waitForResponse(r=>r.url().endsWith("/api/login")&&r.status()===200);await page.locator("#login-form button").click();await response;
     await wait(()=>!!release);assert.equal(await page.locator("#dashboard").isVisible(),false);
     release();await page.locator("#dashboard").waitFor({state:"visible"});await context.unroute("**/api/status");
-    await page.locator("#logout").click();await page.locator("#login").waitFor({state:"visible"});
+    await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
   });
   await check("pre-PWA rollback blocks stale UI writes and retires public caches",async()=>{
     await writeFile(resolve(app,"legacy.flag"),"pre-PWA HTTP contract fixture");

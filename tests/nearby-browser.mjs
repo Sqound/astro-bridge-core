@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Idle background Wi-Fi suggestions: no browser scan request or connection side effects. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -47,7 +48,7 @@ try{
   await page.waitForFunction(()=>state.telescopes.some(t=>t.relay_ready));await page.locator(`[id^="simple-connect-"][id$="-${profile.id}"]:enabled`).first().click();await page.waitForFunction(()=>!state.config.telescopes[0].enabled&&!state.telescopes.some(t=>t.connected));await page.locator('#nearby-telescopes').waitFor({state:'visible'});
  });
  await check('logout clears nearby private names; login restores only current authenticated suggestions',async()=>{
-  await page.locator('#logout').click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.locator('#nearby-list').innerText(),'');assert.equal(await page.locator('#nearby-telescopes').isVisible(),false);
+  await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.locator('#nearby-list').innerText(),'');assert.equal(await page.locator('#nearby-telescopes').isVisible(),false);
   await login();await page.locator('#nearby-telescopes').waitFor({state:'visible'});assert.equal(await page.locator('.nearby-telescope').count(),1);
  });
  await check('next real scheduled scan withdraws missing Wi-Fi without creating profiles or browser scan requests',async()=>{

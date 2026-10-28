@@ -1,7 +1,7 @@
 {
   "format": 1,
   "version": "1.0.1",
-  "source_sha256": "649aecf8a8a5d9ad633bab12a22b53ea5c402fe8d13f6f83778f96a6950541ca",
+  "source_sha256": "71616a827feb04abd04677096ef79663dba1af21cb6eb66587b3ade3550b5fb4",
   "files": [
     ".gitattributes",
     ".github/ISSUE_TEMPLATE/hardware-support.yml",
@@ -70,6 +70,8 @@
     "pyproject.toml",
     "scripts/generate_openapi.py",
     "scripts/install.py",
+    "tests/browser-helpers.mjs",
+    "tests/header-browser.mjs",
     "tests/https-browser.mjs",
     "tests/linux_consultation.py",
     "tests/linux_forwarding.py",

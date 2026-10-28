@@ -959,5 +959,12 @@
   "Check Wi-Fi password": "Vérifier le mot de passe Wi-Fi",
   "Edit password": "Modifier le mot de passe",
   "Edit Wi-Fi password for {name}": "Modifier le mot de passe Wi-Fi de {name}",
-  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifiez le mot de passe Wi-Fi enregistré ou redémarrez le bridge avant de réessayer."
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifiez le mot de passe Wi-Fi enregistré ou redémarrez le bridge avant de réessayer.",
+  "Activity": "Activité",
+  "See more": "Voir plus",
+  "Back": "Retour",
+  "User menu": "Menu utilisateur",
+  "Appearance": "Apparence",
+  "{count} unread events": "{count} événements non lus",
+  "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents."
 }

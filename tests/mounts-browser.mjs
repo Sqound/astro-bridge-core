@@ -1,3 +1,4 @@
+import {clickUserControl} from "./browser-helpers.mjs";
 /** Mount profiles and switching settings against an isolated simulated server. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -54,10 +55,10 @@ try{
  });
  await check('mount profiles fit narrow screens in every language',async()=>{
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await page.locator('#locale-menu summary').click();await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
    await page.setViewportSize({width:320,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,locale);
   }
-  await page.locator('#locale-menu summary').click();await page.locator('#locale-menu button[data-locale="en"]').click();await page.screenshot({path:resolve(output,'mounts-320.png'),fullPage:true});
+  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="en"]').click();await page.screenshot({path:resolve(output,'mounts-320.png'),fullPage:true});
  });
  assert.deepEqual(errors,[]);await writeFile(resolve(output,'browser.json'),JSON.stringify({results,errors,simulation:true},null,2));
 }finally{

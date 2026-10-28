@@ -959,5 +959,12 @@
   "Check Wi-Fi password": "Wi-Fiパスワードを確認",
   "Edit password": "パスワードを変更",
   "Edit Wi-Fi password for {name}": "{name}のWi-Fiパスワードを変更",
-  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。"
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。",
+  "Activity": "アクティビティ",
+  "See more": "もっと見る",
+  "Back": "戻る",
+  "User menu": "ユーザーメニュー",
+  "Appearance": "表示",
+  "{count} unread events": "未読のイベント：{count}件",
+  "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。"
 }
