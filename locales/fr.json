@@ -235,7 +235,6 @@
   "Previous application files restored.": "Les fichiers de l’application précédente ont été restaurés.",
   "The application is up to date.": "L’application est à jour.",
   "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "Adresse du télescope sur son propre réseau, indiquée par son fabricant. Ne pas saisir l’adresse du Raspberry.",
-  "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Le thème automatique suit l’appareil. Utilisez le bouton dans l’en-tête pour choisir le mode clair ou sombre.",
   "Theme: {current}. Switch to {next}.": "Thème : {current}. Passer à {next}.",
   "This adapter will be assigned to the instrument when connected.": "Cette radio sera dédiée à l’instrument lorsqu’il sera connecté.",
   "This language is not translated yet. Showing English.": "Cette langue n’est pas encore traduite. Affichage en anglais.",
@@ -966,5 +965,6 @@
   "User menu": "Menu utilisateur",
   "Appearance": "Apparence",
   "{count} unread events": "{count} événements non lus",
-  "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents."
+  "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents.",
+  "Choose light, dark or automatic appearance from the user menu.": "Choisissez un thème clair, sombre ou automatique dans le menu utilisateur."
 }

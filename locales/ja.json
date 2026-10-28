@@ -235,7 +235,6 @@
   "Previous application files restored.": "以前のアプリファイルを復元しました。",
   "The application is up to date.": "アプリは最新です。",
   "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "メーカー指定の機器側ネットワーク上の望遠鏡アドレスです。Raspberry のアドレスを入力しないでください。",
-  "Automatic theme follows the device. Use the header theme button to choose light or dark.": "自動テーマは端末の設定に従います。ヘッダーのテーマボタンでライト・ダークを選べます。",
   "Theme: {current}. Switch to {next}.": "テーマ: {current}。{next} に切り替え。",
   "This adapter will be assigned to the instrument when connected.": "接続時にこのアダプターを機器へ割り当てます。",
   "This language is not translated yet. Showing English.": "この言語は未翻訳です。英語で表示しています。",
@@ -966,5 +965,6 @@
   "User menu": "ユーザーメニュー",
   "Appearance": "表示",
   "{count} unread events": "未読のイベント：{count}件",
-  "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。"
+  "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。",
+  "Choose light, dark or automatic appearance from the user menu.": "ユーザーメニューからライト、ダーク、または自動の表示を選べます。"
 }

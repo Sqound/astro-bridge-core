@@ -301,7 +301,6 @@
     "Previous application files restored.": "Previous application files restored.",
     "The application is up to date.": "The application is up to date.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Automatic theme follows the device. Use the header theme button to choose light or dark.",
     "Theme: {current}. Switch to {next}.": "Theme: {current}. Switch to {next}.",
     "This adapter will be assigned to the instrument when connected.": "This adapter will be assigned to the instrument when connected.",
     "This language is not translated yet. Showing English.": "This language is not translated yet. Showing English.",
@@ -1032,7 +1031,8 @@
     "User menu": "User menu",
     "Appearance": "Appearance",
     "{count} unread events": "{count} unread events",
-    "The bridge keeps up to 256 recent connection events.": "The bridge keeps up to 256 recent connection events."
+    "The bridge keeps up to 256 recent connection events.": "The bridge keeps up to 256 recent connection events.",
+    "Choose light, dark or automatic appearance from the user menu.": "Choose light, dark or automatic appearance from the user menu."
   },
   "fr": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Pour utiliser l’adaptateur du point d’accès avec le réseau privé, choisissez un autre adaptateur libre ou quittez le point d’accès afin que le pont puisse confirmer qu’il est vide et effectuer une tentative bornée. Libérez d’abord les protections actives.",
@@ -1271,7 +1271,6 @@
     "Previous application files restored.": "Les fichiers de l’application précédente ont été restaurés.",
     "The application is up to date.": "L’application est à jour.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "Adresse du télescope sur son propre réseau, indiquée par son fabricant. Ne pas saisir l’adresse du Raspberry.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Le thème automatique suit l’appareil. Utilisez le bouton dans l’en-tête pour choisir le mode clair ou sombre.",
     "Theme: {current}. Switch to {next}.": "Thème : {current}. Passer à {next}.",
     "This adapter will be assigned to the instrument when connected.": "Cette radio sera dédiée à l’instrument lorsqu’il sera connecté.",
     "This language is not translated yet. Showing English.": "Cette langue n’est pas encore traduite. Affichage en anglais.",
@@ -2002,7 +2001,8 @@
     "User menu": "Menu utilisateur",
     "Appearance": "Apparence",
     "{count} unread events": "{count} événements non lus",
-    "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents."
+    "The bridge keeps up to 256 recent connection events.": "Le bridge conserve jusqu’à 256 événements de connexion récents.",
+    "Choose light, dark or automatic appearance from the user menu.": "Choisissez un thème clair, sombre ou automatique dans le menu utilisateur."
   },
   "ja": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "ホットスポットのアダプターをプライベートネットワークに使うには、別の空きアダプターを選ぶか、ホットスポットから切断してください。空であることを確認してから時間制限付きで試行します。既存の保護は先に解除してください。",
@@ -2241,7 +2241,6 @@
     "Previous application files restored.": "以前のアプリファイルを復元しました。",
     "The application is up to date.": "アプリは最新です。",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "メーカー指定の機器側ネットワーク上の望遠鏡アドレスです。Raspberry のアドレスを入力しないでください。",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "自動テーマは端末の設定に従います。ヘッダーのテーマボタンでライト・ダークを選べます。",
     "Theme: {current}. Switch to {next}.": "テーマ: {current}。{next} に切り替え。",
     "This adapter will be assigned to the instrument when connected.": "接続時にこのアダプターを機器へ割り当てます。",
     "This language is not translated yet. Showing English.": "この言語は未翻訳です。英語で表示しています。",
@@ -2972,7 +2971,8 @@
     "User menu": "ユーザーメニュー",
     "Appearance": "表示",
     "{count} unread events": "未読のイベント：{count}件",
-    "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。"
+    "The bridge keeps up to 256 recent connection events.": "ブリッジには最近の接続イベントが最大256件保存されます。",
+    "Choose light, dark or automatic appearance from the user menu.": "ユーザーメニューからライト、ダーク、または自動の表示を選べます。"
   },
   "de": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Um den Hotspot-Adapter für Ihr privates Netzwerk zu nutzen, wählen Sie einen anderen freien Adapter oder verlassen Sie den Hotspot, damit die Bridge einen leeren Hotspot bestätigen und einen begrenzten Versuch starten kann. Bestehende Schutzmaßnahmen müssen zuerst aufgehoben werden.",
@@ -3211,7 +3211,6 @@
     "Previous application files restored.": "Vorherige Anwendungsdateien wiederhergestellt.",
     "The application is up to date.": "Die Anwendung ist aktuell.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "Die vom Hersteller angegebene Teleskopadresse im eigenen Netzwerk. Geben Sie nicht die Raspberry-Adresse ein.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Das automatische Design folgt dem Gerät. Wählen Sie über die Schaltfläche im Kopfbereich hell oder dunkel.",
     "Theme: {current}. Switch to {next}.": "Design: {current}. Zu {next} wechseln.",
     "This adapter will be assigned to the instrument when connected.": "Dieser Adapter wird dem Instrument beim Verbinden zugewiesen.",
     "This language is not translated yet. Showing English.": "Diese Sprache ist noch nicht übersetzt. Englisch wird angezeigt.",
@@ -3942,7 +3941,8 @@
     "User menu": "Benutzermenü",
     "Appearance": "Darstellung",
     "{count} unread events": "{count} ungelesene Ereignisse",
-    "The bridge keeps up to 256 recent connection events.": "Die Bridge speichert bis zu 256 aktuelle Verbindungsereignisse."
+    "The bridge keeps up to 256 recent connection events.": "Die Bridge speichert bis zu 256 aktuelle Verbindungsereignisse.",
+    "Choose light, dark or automatic appearance from the user menu.": "Wählen Sie im Benutzermenü ein helles, dunkles oder automatisches Erscheinungsbild."
   },
   "es": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar el adaptador del punto de acceso con su red privada, elija otro adaptador libre o abandone el punto de acceso para que el puente confirme que está vacío y realice un intento limitado. Primero debe liberar las protecciones existentes.",
@@ -4181,7 +4181,6 @@
     "Previous application files restored.": "Se restauraron los archivos anteriores de la aplicación.",
     "The application is up to date.": "La aplicación está actualizada.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "La dirección del telescopio en su propia red, especificada por el fabricante. No introduzca la dirección de la Raspberry.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "El tema automático sigue la preferencia del dispositivo. Use el botón de la cabecera para elegir claro u oscuro.",
     "Theme: {current}. Switch to {next}.": "Tema: {current}. Cambiar a {next}.",
     "This adapter will be assigned to the instrument when connected.": "Este adaptador se asignará al instrumento al conectarlo.",
     "This language is not translated yet. Showing English.": "Este idioma aún no está traducido. Se muestra inglés.",
@@ -4912,7 +4911,8 @@
     "User menu": "Menú de usuario",
     "Appearance": "Apariencia",
     "{count} unread events": "{count} eventos sin leer",
-    "The bridge keeps up to 256 recent connection events.": "El bridge conserva hasta 256 eventos de conexión recientes."
+    "The bridge keeps up to 256 recent connection events.": "El bridge conserva hasta 256 eventos de conexión recientes.",
+    "Choose light, dark or automatic appearance from the user menu.": "Elige la apariencia clara, oscura o automática en el menú de usuario."
   },
   "it": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Per usare l’adattatore dell’hotspot con la rete privata, scegli un altro adattatore libero oppure lascia l’hotspot, così il bridge potrà confermare che è vuoto ed eseguire un tentativo limitato. Prima devi rimuovere le protezioni esistenti.",
@@ -5151,7 +5151,6 @@
     "Previous application files restored.": "File precedenti dell’applicazione ripristinati.",
     "The application is up to date.": "L’applicazione è aggiornata.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "L’indirizzo del telescopio sulla propria rete, indicato dal produttore. Non inserire l’indirizzo della Raspberry.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Il tema automatico segue il dispositivo. Usa il pulsante nell’intestazione per scegliere chiaro o scuro.",
     "Theme: {current}. Switch to {next}.": "Tema: {current}. Passa a {next}.",
     "This adapter will be assigned to the instrument when connected.": "Questo adattatore sarà assegnato allo strumento al momento della connessione.",
     "This language is not translated yet. Showing English.": "Questa lingua non è ancora tradotta. È mostrato l’inglese.",
@@ -5882,7 +5881,8 @@
     "User menu": "Menu utente",
     "Appearance": "Aspetto",
     "{count} unread events": "{count} eventi non letti",
-    "The bridge keeps up to 256 recent connection events.": "Il bridge conserva fino a 256 eventi di connessione recenti."
+    "The bridge keeps up to 256 recent connection events.": "Il bridge conserva fino a 256 eventi di connessione recenti.",
+    "Choose light, dark or automatic appearance from the user menu.": "Scegli l’aspetto chiaro, scuro o automatico dal menu utente."
   },
   "pt-BR": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar o adaptador do hotspot na rede privada, escolha outro adaptador livre ou saia do hotspot para o bridge confirmar que está vazio e fazer uma tentativa limitada. Libere primeiro as proteções existentes.",
@@ -6121,7 +6121,6 @@
     "Previous application files restored.": "Arquivos anteriores do aplicativo restaurados.",
     "The application is up to date.": "O aplicativo está atualizado.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "O endereço do telescópio na própria rede, conforme o fabricante. Não insira o endereço da Raspberry.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "O tema automático segue o dispositivo. Use o botão no cabeçalho para escolher claro ou escuro.",
     "Theme: {current}. Switch to {next}.": "Tema: {current}. Trocar para {next}.",
     "This adapter will be assigned to the instrument when connected.": "Este adaptador será atribuído ao instrumento quando ele for conectado.",
     "This language is not translated yet. Showing English.": "Este idioma ainda não foi traduzido. Exibindo inglês.",
@@ -6852,7 +6851,8 @@
     "User menu": "Menu do usuário",
     "Appearance": "Aparência",
     "{count} unread events": "{count} eventos não lidos",
-    "The bridge keeps up to 256 recent connection events.": "O bridge mantém até 256 eventos de conexão recentes."
+    "The bridge keeps up to 256 recent connection events.": "O bridge mantém até 256 eventos de conexão recentes.",
+    "Choose light, dark or automatic appearance from the user menu.": "Escolha a aparência clara, escura ou automática no menu do usuário."
   },
   "zh-Hans": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "如需将热点适配器用于私有网络，请选择另一个空闲适配器，或离开热点，让网桥确认热点无人连接后进行限时尝试。请先解除现有保护。",
@@ -7091,7 +7091,6 @@
     "Previous application files restored.": "旧版应用文件已恢复。",
     "The application is up to date.": "应用已是最新版本。",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "制造商指定的望远镜自身网络地址。不要输入 Raspberry 的地址。",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "自动主题跟随设备设置。使用页眉主题按钮选择浅色或深色。",
     "Theme: {current}. Switch to {next}.": "主题：{current}。切换到 {next}。",
     "This adapter will be assigned to the instrument when connected.": "连接时会将此适配器分配给设备。",
     "This language is not translated yet. Showing English.": "此语言尚未翻译，正在显示英语。",
@@ -7822,7 +7821,8 @@
     "User menu": "用户菜单",
     "Appearance": "外观",
     "{count} unread events": "{count} 条未读事件",
-    "The bridge keeps up to 256 recent connection events.": "桥接器最多保留 256 条近期连接事件。"
+    "The bridge keeps up to 256 recent connection events.": "桥接器最多保留 256 条近期连接事件。",
+    "Choose light, dark or automatic appearance from the user menu.": "在用户菜单中选择浅色、深色或自动外观。"
   },
   "zh-Hant": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "若要將熱點網卡用於私人網路，請選擇另一張閒置網卡，或離開熱點，讓網橋確認無人連線後進行限時嘗試。請先解除現有保護。",
@@ -8061,7 +8061,6 @@
     "Previous application files restored.": "舊版應用程式檔案已還原。",
     "The application is up to date.": "應用程式已是最新版本。",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "製造商指定的望遠鏡自身網路位址。不要輸入 Raspberry 的位址。",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "自動主題跟隨裝置設定。使用頁首主題按鈕選擇淺色或深色。",
     "Theme: {current}. Switch to {next}.": "主題：{current}。切換至 {next}。",
     "This adapter will be assigned to the instrument when connected.": "連線時會將此網卡指派給設備。",
     "This language is not translated yet. Showing English.": "此語言尚未翻譯，目前顯示英文。",
@@ -8792,7 +8791,8 @@
     "User menu": "使用者選單",
     "Appearance": "外觀",
     "{count} unread events": "{count} 則未讀事件",
-    "The bridge keeps up to 256 recent connection events.": "橋接器最多保留 256 則近期連線事件。"
+    "The bridge keeps up to 256 recent connection events.": "橋接器最多保留 256 則近期連線事件。",
+    "Choose light, dark or automatic appearance from the user menu.": "在使用者選單中選擇淺色、深色或自動外觀。"
   },
   "ru": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Чтобы использовать адаптер точки доступа для частной сети, выберите другой свободный адаптер или отключитесь от точки доступа: мост должен подтвердить отсутствие клиентов и выполнить ограниченную попытку. Сначала снимите действующие защиты.",
@@ -9031,7 +9031,6 @@
     "Previous application files restored.": "Файлы предыдущей версии приложения восстановлены.",
     "The application is up to date.": "Установлена актуальная версия приложения.",
     "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "Адрес телескопа в его собственной сети, указанный производителем. Не вводите адрес Raspberry.",
-    "Automatic theme follows the device. Use the header theme button to choose light or dark.": "Автоматическая тема следует настройке устройства. Кнопка в заголовке переключает светлую и тёмную темы.",
     "Theme: {current}. Switch to {next}.": "Тема: {current}. Переключить на {next}.",
     "This adapter will be assigned to the instrument when connected.": "Адаптер будет назначен инструменту при подключении.",
     "This language is not translated yet. Showing English.": "Этот язык ещё не переведён. Показан английский текст.",
@@ -9762,7 +9761,8 @@
     "User menu": "Меню пользователя",
     "Appearance": "Оформление",
     "{count} unread events": "Непрочитанных событий: {count}",
-    "The bridge keeps up to 256 recent connection events.": "Мост хранит до 256 последних событий подключения."
+    "The bridge keeps up to 256 recent connection events.": "Мост хранит до 256 последних событий подключения.",
+    "Choose light, dark or automatic appearance from the user menu.": "Выберите светлое, тёмное или автоматическое оформление в меню пользователя."
   }
 };
   const storageKey = "astro-bridge.locale";

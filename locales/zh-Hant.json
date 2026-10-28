@@ -235,7 +235,6 @@
   "Previous application files restored.": "舊版應用程式檔案已還原。",
   "The application is up to date.": "應用程式已是最新版本。",
   "The telescope address on its own network, as specified by its manufacturer. Do not enter the Raspberry address.": "製造商指定的望遠鏡自身網路位址。不要輸入 Raspberry 的位址。",
-  "Automatic theme follows the device. Use the header theme button to choose light or dark.": "自動主題跟隨裝置設定。使用頁首主題按鈕選擇淺色或深色。",
   "Theme: {current}. Switch to {next}.": "主題：{current}。切換至 {next}。",
   "This adapter will be assigned to the instrument when connected.": "連線時會將此網卡指派給設備。",
   "This language is not translated yet. Showing English.": "此語言尚未翻譯，目前顯示英文。",
@@ -966,5 +965,6 @@
   "User menu": "使用者選單",
   "Appearance": "外觀",
   "{count} unread events": "{count} 則未讀事件",
-  "The bridge keeps up to 256 recent connection events.": "橋接器最多保留 256 則近期連線事件。"
+  "The bridge keeps up to 256 recent connection events.": "橋接器最多保留 256 則近期連線事件。",
+  "Choose light, dark or automatic appearance from the user menu.": "在使用者選單中選擇淺色、深色或自動外觀。"
 }
