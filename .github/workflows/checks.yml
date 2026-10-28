@@ -17,4 +17,4 @@ jobs:
       - run: python tools/build-plugins.py --check && python tools/build-i18n.py --check
       - run: python scripts/generate_openapi.py && git diff --exit-code -- wifi_bridge/static/openapi.json
       - run: python tools/build-release.py
-      - run: python tools/verify-installed.py --wheel dist/astro_bridge_core-1.0.0-py3-none-any.whl
+      - run: python tools/verify-installed.py --wheel dist/astro_bridge_core-1.0.1-py3-none-any.whl

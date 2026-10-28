@@ -34,6 +34,7 @@ public_network = {k: v for k, v in network.items() if k not in ('password', 'ope
 public_network['has_password'] = dict(boolean, readOnly=True)
 meta = {'api_version': {'type': 'string', 'const': '1'}, 'config_revision': string, 'operation_id': {'type': ['string', 'null']}}
 connection = obj({'id': ident, 'state': string, 'message': string, 'connected': boolean,
+                  'reason': string, 'retry_blocked': boolean,
                   'relay_ready': boolean, 'target_ip': string, 'client_ip': string,
                   'interface': string, 'subnet': string, 'legacy_ports': boolean, 'seestar_proxy': boolean, 'dwarf_proxy':boolean, 'zwo_mount_proxy':boolean, 'synscan_proxy':boolean, 'native_proxy_reason':{'type':['string','null']},
                   'management_paths':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'host':string,'subnet':string,'forwarding_ready':boolean})}})

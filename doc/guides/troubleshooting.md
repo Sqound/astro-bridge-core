@@ -6,6 +6,7 @@
 | --- | --- |
 | Hotspot is not visible | Wait for startup; check its enabled mode and assigned AP-capable adapter in Networks |
 | Phone abandons an isolated hotspot | Confirm staying connected to Wi-Fi without Internet; verify the phone received a 192.168.77.x address |
+| Wi-Fi authentication failed | Use **Edit password**. Further manual and automatic attempts are blocked until the saved credentials change or the bridge reboots |
 | Wi-Fi scan is unavailable | Read the assistant's top status; keep a compatible adapter idle or use manual entry |
 | Vespera works on hotspot, not home Wi-Fi | Add the displayed telescope-subnet route on the home router |
 | DWARF is not listed initially | Use the bridge IP once in Connect by IP Address; passive search demand does not synthesize first-time discovery |
@@ -19,3 +20,5 @@
 For an issue report, include the release/build ID, deployment, adapter chipset, equipment/app versions and a short reproduction. Remove passwords, tokens, private certificates, personal network names and packet payloads.
 
 Connection protection should not be disabled merely to hide a diagnostic. An unknown or stale observation is not evidence that a connection is free.
+
+A rejected Wi-Fi credential is different from an absent instrument. Authentication rejection pauses retries for that profile; an ordinary unavailable network or a connection timeout retains normal recovery. The hold survives an application-service restart during the same OS boot. Renaming the instrument, changing its adapter or saving the same password does not release it.

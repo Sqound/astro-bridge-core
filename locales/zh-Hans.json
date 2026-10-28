@@ -954,5 +954,10 @@
   "This network observation is no longer available. Scan again.": "此网络的检测记录已不可用。请重新搜索。",
   "Physical identity": "物理标识",
   "Nearby telescopes": "附近的望远镜",
-  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未连接望远镜时，使用空闲的 Wi-Fi 适配器自动查找。添加望远镜以准备连接。"
+  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未连接望远镜时，使用空闲的 Wi-Fi 适配器自动查找。添加望远镜以准备连接。",
+  "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi 验证失败。请检查密码。修改密码或重启桥接器后将恢复尝试。",
+  "Check Wi-Fi password": "检查 Wi-Fi 密码",
+  "Edit password": "修改密码",
+  "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密码",
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。"
 }

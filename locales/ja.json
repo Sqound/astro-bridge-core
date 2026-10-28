@@ -954,5 +954,10 @@
   "This network observation is no longer available. Scan again.": "このネットワークの検出情報は残っていません。再検索してください。",
   "Physical identity": "物理的な識別情報",
   "Nearby telescopes": "近くの望遠鏡",
-  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "望遠鏡が未接続のとき、空いているWi-Fiアダプターで自動検索します。追加して接続を準備できます。"
+  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "望遠鏡が未接続のとき、空いているWi-Fiアダプターで自動検索します。追加して接続を準備できます。",
+  "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi認証に失敗しました。パスワードを確認してください。変更またはブリッジの再起動後に再試行します。",
+  "Check Wi-Fi password": "Wi-Fiパスワードを確認",
+  "Edit password": "パスワードを変更",
+  "Edit Wi-Fi password for {name}": "{name}のWi-Fiパスワードを変更",
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。"
 }

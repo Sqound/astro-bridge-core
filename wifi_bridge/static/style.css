@@ -136,3 +136,5 @@
 .discovery-results{display:grid;gap:1rem;margin-block:1rem}.discovery-candidate{border:1px solid var(--line);border-radius:16px;padding:1rem;min-width:0}.discovery-candidate h3{overflow-wrap:anywhere;margin:0}.discovery-candidate p{margin-block:.5rem}.discovery-candidate button{margin-top:.5rem}#discovery-dialog{max-width:640px}#profile-advanced{margin-block:1.25rem}#profile-advanced[open]>summary{margin-bottom:1rem}#choose-telescope{margin-bottom:1rem}
 
 .nearby-telescope{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1rem 0;border-top:1px solid var(--line)}.nearby-telescope>div{flex:1 1 10rem;min-width:0}.nearby-telescope h3{margin:0;overflow-wrap:anywhere}.nearby-telescope p{margin:.4rem 0 0}
+
+.connection-table .auth-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.connection-table .auth-actions .text-button{font-size:11px;min-height:32px;padding:4px 8px}

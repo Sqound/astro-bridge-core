@@ -7,7 +7,7 @@ from unittest.mock import patch
 from test_bridge import Fixture
 from wifi_bridge.api import MobileAPI, ApiError
 from wifi_bridge.config import Invalid
-from wifi_bridge.network import NetworkError
+from wifi_bridge.network import NetworkError, NetworkAuthenticationError
 
 
 class OperationTests(Fixture):
@@ -25,6 +25,22 @@ class OperationTests(Fixture):
 
     def request(self, ident='auto-one', revision=None):
         return self.ops.ensure(ident, revision if revision is not None else '"'+self.api.revision()+'"',self.api.revision,'opaque-client',time.monotonic()+3600)
+
+    def test_auth_rejection_survives_automatic_selector_rollback_and_cannot_be_retried(self):
+        connect = self.net.connect
+        def reject(role, *args):
+            if role == 'telescope-auto-one': raise NetworkAuthenticationError()
+            return connect(role, *args)
+        with patch.object(self.net, 'connect', side_effect=reject):
+            self.request(); result = self.finish()
+        self.assertEqual(result['reason'], 'WIFI_AUTHENTICATION_FAILED')
+        self.controller.cycle()
+        self.assertTrue(self.controller.auth_failures.held(self.store.config['telescopes'][1]))
+        self.ops.negative.clear()
+        with self.assertRaises(ApiError) as caught: self.request()
+        self.assertEqual(caught.exception.code, 'WIFI_AUTHENTICATION_FAILED')
+        self.api.update('telescopes', {'password':'changed-auto-password'}, ident='auto-one')
+        self.request(); self.assertEqual(self.finish()['state'], 'succeeded')
 
     def finish(self):
         self.ops.thread.join(10);self.assertFalse(self.ops.thread.is_alive());return self.ops.read(self.ops.last)

@@ -155,6 +155,7 @@ function connectionLabel(group) {
 }
 
 function simpleStatus(profile,live,s,available){
+  if(live.retry_blocked)return t("Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.");
   if(!available)return t("Connection unavailable");
   if(live.state==="conflict")return t("Routing conflict · forwarding suspended");
   if(live.connected&&!live.relay_ready)return t("Wi-Fi connected · forwarding unavailable");
@@ -229,7 +230,7 @@ function renderSimple(s){
     const active=profiles.find(p=>live.get(p.id)?.connected&&live.get(p.id)?.interface===group.device?.name);
     const enabled=profiles.find(p=>p.enabled&&p.mac===mac);
     const head=node("div",undefined,"simple-card-heading");
-    const title=node("h3",connectionLabel(group));head.replaceChildren(title,node("span",!group.available?t("Unavailable"):active?t("Connected to {name}",{name:active.name}):enabled?t("Connecting to {name}",{name:enabled.name}):t("Available"),"badge"+(active?" online":"")));
+    const title=node("h3",connectionLabel(group));head.replaceChildren(title,node("span",enabled&&live.get(enabled.id)?.retry_blocked?t("Check Wi-Fi password"):!group.available?t("Unavailable"):active?t("Connected to {name}",{name:active.name}):enabled?t("Connecting to {name}",{name:enabled.name}):t("Available"),"badge"+(active?" online":"")));
     card.append(head);
     if(!group.available)card.append(node("p",t("Reconnect this adapter to use this connection."),"small"));
     const table=node("table",undefined,"connection-table"),caption=node("caption",t("Telescopes · {connection}",{connection:connectionLabel(group)}),"sr-only");
@@ -242,7 +243,7 @@ function renderSimple(s){
       const row=node("tr",undefined,"simple-instrument"+(connectedHere?" is-connected":""));row.dataset.profileId=p.id;
       const text=node("td",undefined,"simple-instrument-text");
       const name=node("span",p.name,"simple-instrument-name");name.id="simple-name-"+group.number+"-"+p.id;
-      const message=pendingRadios.has(mac)?t("Switch in progress…"):connectedHere&&!status.relay_ready?simpleStatus(p,status,s,group.available):connectedHere?(status.state==="waiting_service"?t("Connected · telescope service starting…"):t("Connected here")):here?simpleStatus(p,{...status,connected:false},s,group.available):p.enabled||status.connected?t("Assigned to {connection}",{connection:other?connectionLabel(other):t("Unavailable connection")}):t("Available");
+      const message=status.retry_blocked?simpleStatus(p,status,s,group.available):pendingRadios.has(mac)?t("Switch in progress…"):connectedHere&&!status.relay_ready?simpleStatus(p,status,s,group.available):connectedHere?(status.state==="waiting_service"?t("Connected · telescope service starting…"):t("Connected here")):here?simpleStatus(p,{...status,connected:false},s,group.available):p.enabled||status.connected?t("Assigned to {connection}",{connection:other?connectionLabel(other):t("Unavailable connection")}):t("Available");
       const detail=node("span",message,"simple-instrument-status");detail.id="simple-status-"+group.number+"-"+p.id;
       text.append(name,detail);
       if(connectedHere){
@@ -251,13 +252,20 @@ function renderSimple(s){
         summary.append(node("span",guard.activity,"guard-activity"),node("span",guard.label,"guard-status"));text.append(summary);
       }
       const selected=here&&p.enabled;
-      const button=node("button",selected?t("Disconnect"):p.enabled&&!here?t("Switch here"):t("Connect"),selected?"secondary connection-action":"connection-action");
+      const button=node("button",status.retry_blocked?t("Edit password"):selected?t("Disconnect"):p.enabled&&!here?t("Switch here"):t("Connect"),selected?"secondary connection-action":"connection-action");
       button.type="button";button.id="simple-connect-"+group.number+"-"+p.id;
-      button.setAttribute("aria-label",t(selected?"Disconnect {name} · {connection}":"Connect {name} · {connection}",{name:p.name,connection:connectionLabel(group)}));
+      button.setAttribute("aria-label",status.retry_blocked?t("Edit Wi-Fi password for {name}",{name:p.name}):t(selected?"Disconnect {name} · {connection}":"Connect {name} · {connection}",{name:p.name,connection:connectionLabel(group)}));
       button.setAttribute("aria-describedby",detail.id);
-      button.disabled=pendingRadios.has(mac)||pendingRadios.has(p.mac)||(!selected&&(!group.available||group.reserved||!s.management?.paths?.length));
-      button.addEventListener("click",()=>requestConnection(p,mac,button));
-      const action=node("td",undefined,"connection-table-action");action.append(button);row.append(text,action);list.append(row);
+      button.disabled=pendingRadios.has(mac)||pendingRadios.has(p.mac)||(!status.retry_blocked&&!selected&&(!group.available||group.reserved||!s.management?.paths?.length));
+      button.addEventListener("click",()=>{if(status.retry_blocked){openEditor(p);$("network-password").focus();}else requestConnection(p,mac,button);});
+      const action=node("td",undefined,"connection-table-action");action.append(button);
+      if(status.retry_blocked&&selected){
+        const disconnect=node("button",t("Disconnect"),"text-button");disconnect.type="button";disconnect.id="simple-disconnect-"+group.number+"-"+p.id;
+        disconnect.setAttribute("aria-label",t("Disconnect {name} · {connection}",{name:p.name,connection:connectionLabel(group)}));
+        disconnect.disabled=pendingRadios.has(mac);disconnect.addEventListener("click",()=>scopeAction(p.id,"disconnect",disconnect));
+        const actions=node("div",undefined,"auth-actions");actions.append(button,disconnect);action.replaceChildren(actions);
+      }
+      row.append(text,action);list.append(row);
     }
     card.append(table);
     cards.push(card);
@@ -708,7 +716,7 @@ $("protection-form").addEventListener("submit",async event=>{event.preventDefaul
   const success=await changeProtection(draft.action,draft.id,body,draft.revision,draft);if(success&&protectionDraft===draft){protectionDraft=null;$("protection-dialog").close();}
 });
 function ensureReason(code){
-  const messages={NO_REPLACEABLE_CONNECTION:"No consenting, unprotected and freshly quiet connection is available.",REPLACEMENT_COOLDOWN:"A replacement cooldown is active. No retry is queued.",TARGET_BACKOFF:"A recent failed request is cooling down. Check the instrument before retrying.",CONNECTION_PAUSED:"This instrument is paused after an unconfirmed restoration. Use an explicit manual Connect or Disconnect.",PHYSICAL_NETWORK_IN_USE:"This physical access point is already in use by another enabled instrument.",PHYSICAL_NETWORK_UNCERTAIN:"Another enabled instrument has an unverified selector for this network. Select exact access points first.",AUTO_CONNECT_DISABLED:"Enable global Auto-connect and this instrument eligibility first.",NO_FREE_RADIO:"No confidently free radio is available; existing connections were preserved.",AMBIGUOUS_NETWORK:"Several access points match. Select and save the exact BSSID first.",NETWORK_UNOBSERVED:"The selected network was not observed. Check that the instrument is switched on.",INCOMPATIBLE_BAND:"No free radio supports the observed network band.",OVERLAPPING_TARGET_NETWORK:"The target overlaps an active network; use these instruments separately.",BINDING_SELECTOR_CONFLICT:"The saved Wi-Fi selector differs from the physical binding. Correct it explicitly.",PHYSICAL_SELECTION_MISMATCH:"The associated access point differs from the selected observation. Forwarding was withheld.",MANUAL_CONNECTION_PENDING:"This enabled instrument already has manual reconnect intent. Wait or disconnect it explicitly.",ROLE_CLEANUP_PENDING:"An old association still needs cleanup before allocation.",TIMED_OUT:"The connection did not become ready before its deadline.",ASSOCIATION_FAILED:"The Wi-Fi association failed; no automatic retry was left enabled.",CONNECTION_OPERATION_PENDING:"A connection operation is already pending.",PRECONDITION_REQUIRED:"Reload the current configuration before requesting a connection.",PRECONDITION_FAILED:"Configuration changed. Reload it before requesting a connection.",MANAGEMENT_UNAVAILABLE:"No confirmed private-network or hotspot management path is available.",ENSURE_LIMITED:"Too many connection operations. Try again later.",OPERATION_EXPIRED:"Operation record expired. Check current connection status.",OPERATION_RUN_CHANGED:"The service restarted. Check current connection status.",SUPERSEDED:"Configuration changed during the operation; the automatic attempt stopped."};
+  const messages={WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",NO_REPLACEABLE_CONNECTION:"No consenting, unprotected and freshly quiet connection is available.",REPLACEMENT_COOLDOWN:"A replacement cooldown is active. No retry is queued.",TARGET_BACKOFF:"A recent failed request is cooling down. Check the instrument before retrying.",CONNECTION_PAUSED:"This instrument is paused after an unconfirmed restoration. Use an explicit manual Connect or Disconnect.",PHYSICAL_NETWORK_IN_USE:"This physical access point is already in use by another enabled instrument.",PHYSICAL_NETWORK_UNCERTAIN:"Another enabled instrument has an unverified selector for this network. Select exact access points first.",AUTO_CONNECT_DISABLED:"Enable global Auto-connect and this instrument eligibility first.",NO_FREE_RADIO:"No confidently free radio is available; existing connections were preserved.",AMBIGUOUS_NETWORK:"Several access points match. Select and save the exact BSSID first.",NETWORK_UNOBSERVED:"The selected network was not observed. Check that the instrument is switched on.",INCOMPATIBLE_BAND:"No free radio supports the observed network band.",OVERLAPPING_TARGET_NETWORK:"The target overlaps an active network; use these instruments separately.",BINDING_SELECTOR_CONFLICT:"The saved Wi-Fi selector differs from the physical binding. Correct it explicitly.",PHYSICAL_SELECTION_MISMATCH:"The associated access point differs from the selected observation. Forwarding was withheld.",MANUAL_CONNECTION_PENDING:"This enabled instrument already has manual reconnect intent. Wait or disconnect it explicitly.",ROLE_CLEANUP_PENDING:"An old association still needs cleanup before allocation.",TIMED_OUT:"The connection did not become ready before its deadline.",ASSOCIATION_FAILED:"The Wi-Fi association failed; no automatic retry was left enabled.",CONNECTION_OPERATION_PENDING:"A connection operation is already pending.",PRECONDITION_REQUIRED:"Reload the current configuration before requesting a connection.",PRECONDITION_FAILED:"Configuration changed. Reload it before requesting a connection.",MANAGEMENT_UNAVAILABLE:"No confirmed private-network or hotspot management path is available.",ENSURE_LIMITED:"Too many connection operations. Try again later.",OPERATION_EXPIRED:"Operation record expired. Check current connection status.",OPERATION_RUN_CHANGED:"The service restarted. Check current connection status.",SUPERSEDED:"Configuration changed during the operation; the automatic attempt stopped."};
   return t(messages[code]||"Connection readiness could not be confirmed. Check current status.");
 }
 function renderEnsure(){

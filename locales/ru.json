@@ -954,5 +954,10 @@
   "This network observation is no longer available. Scan again.": "Эта запись о сети больше недоступна. Повторите поиск.",
   "Physical identity": "Физическая идентификация",
   "Nearby telescopes": "Телескопы поблизости",
-  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Автоматический поиск через свободный адаптер Wi-Fi, когда телескопы не подключены. Добавьте телескоп для настройки подключения."
+  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Автоматический поиск через свободный адаптер Wi-Fi, когда телескопы не подключены. Добавьте телескоп для настройки подключения.",
+  "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Ошибка аутентификации Wi-Fi. Проверьте пароль. Попытки возобновятся после его изменения или перезагрузки моста.",
+  "Check Wi-Fi password": "Проверить пароль Wi-Fi",
+  "Edit password": "Изменить пароль",
+  "Edit Wi-Fi password for {name}": "Изменить пароль Wi-Fi для {name}",
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой."
 }

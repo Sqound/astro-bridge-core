@@ -61,7 +61,11 @@ def package(root=ROOT, destination=None):
             if not path.is_file(): continue
             data=path.read_bytes(); item=tarfile.TarInfo(f'astro_bridge_core-{version}/'+relative.as_posix());item.size=len(data);item.mode=0o755 if path.stat().st_mode & 0o111 else 0o644
             archive.addfile(item,io.BytesIO(data))
-    artifacts={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (wheel,archive_path)}
+    installer=destination/'install.py'
+    installer.write_text((root/'scripts/install.py').read_text().replace(
+        'RELEASE_SHA256 = None', 'RELEASE_SHA256 = '+repr(hashlib.sha256(wheel.read_bytes()).hexdigest()))
+        +'\n'+''.join('# '+line+'\n' for line in (root/'LICENSE').read_text().splitlines()))
+    artifacts={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (wheel,archive_path,installer)}
     (destination/'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name,digest in sorted(artifacts.items())))
     (destination/'release.json').write_text(json.dumps({'version':version,'build_id':identity,'artifacts':artifacts},indent=2)+'\n')
     return artifacts

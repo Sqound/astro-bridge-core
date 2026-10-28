@@ -47,7 +47,7 @@
   }
   function reasonText(reason) {
     const descriptions={RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",CONFIGURATION_CONFLICT:"Network subnet conflict.",
-      INVALID_TARGET:"Check the telescope IP address.",ASSOCIATION_FAILED:"Wi-Fi association failed; enabled profiles retry automatically.",
+      WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",INVALID_TARGET:"Check the telescope IP address.",ASSOCIATION_FAILED:"Wi-Fi association failed; enabled profiles retry automatically.",
       RECONCILE_FAILED:"Network reconciliation failed. Check device status."};
     return descriptions[reason]?t(descriptions[reason]):"";
   }

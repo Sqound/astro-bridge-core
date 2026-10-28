@@ -20,6 +20,11 @@ class NetworkError(RuntimeError):
     pass
 
 
+class NetworkAuthenticationError(NetworkError):
+    def __init__(self):
+        super().__init__('Wi-Fi authentication failed. Check the saved password.')
+
+
 def run(args, timeout=20, check=True, input=None):
     try:
         def execute(command):
@@ -30,6 +35,10 @@ def run(args, timeout=20, check=True, input=None):
         raise NetworkError("System command unavailable or timed out: " + args[0]) from None
     if check and result.returncode:
         # stderr may contain SSIDs or credentials; do not propagate it.
+        if (args[0] == 'nmcli' and 'connection' in args and 'up' in args
+                and re.search(r'^Error: Connection activation failed: \(7\)(?:\s|$)',
+                              getattr(result, 'stderr', '') or '', re.M)):
+            raise NetworkAuthenticationError()
         raise NetworkError("System command failed: " + args[0])
     # Preserve SSID whitespace; trim only the command's final line terminator.
     return result.stdout.rstrip("\n")
@@ -306,9 +315,26 @@ class LinuxNetwork:
         sections["wifi"]["hidden"] = str(config.get("hidden", False)).lower()
         if config.get("password"):
             sections["wifi-security"] = {"key-mgmt": "wpa-psk", "psk": config["password"]}
+        if role.startswith('telescope'):
+            sections['connection']['auth-retries'] = 1
         name = self._profile(role, sections)
-        run(["nmcli", "--wait", "35", "connection", "up", "id", name,
-             "ifname", device["name"]], timeout=40)
+        try:
+            run(["nmcli", "--wait", "35", "connection", "up", "id", name,
+                 "ifname", device["name"]], timeout=40)
+        except NetworkError as error:
+            rejected = isinstance(error, NetworkAuthenticationError)
+            if not rejected:
+                try:
+                    reason = run(['nmcli', '-g', 'GENERAL.REASON', 'device', 'show', device['name']], timeout=2, check=False)
+                    rejected = bool(re.match(r'^7(?:\s|$)', reason))
+                except NetworkError:
+                    pass
+            # nmcli's wait timeout does not cancel NetworkManager's activation.
+            # Cancel only our own role, after retaining its failure reason.
+            try: self.disconnect(role)
+            except NetworkError: pass
+            if rejected: raise NetworkAuthenticationError() from None
+            raise
 
     def known_telescope_roles(self):
         active = run(["nmcli", "-g", "NAME", "connection", "show"])

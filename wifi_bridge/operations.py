@@ -167,6 +167,7 @@ class ConnectionOperations:
                     return 200, {'state': 'ready', 'profile_id': ident, 'endpoint': self.endpoint(profile, row, c.state['home_ip'])}
                 c.protection.reject(ident)
                 if c.pauses.held(ident): refused('CONNECTION_PAUSED', 'Resolve this paused connection explicitly before automatic allocation.')
+                if c.auth_failures.held(profile): refused('WIFI_AUTHENTICATION_FAILED', 'Change the saved Wi-Fi password or reboot the bridge before trying again.')
                 if expected is None or expected in ('*', '"*"'):
                     raise ApiError(428, 'PRECONDITION_REQUIRED', 'Provide the actual current configuration revision.')
                 if expected != '"'+revision()+'"': raise ApiError(412, 'PRECONDITION_FAILED', 'Configuration changed. Reload it before ensuring.')
@@ -283,9 +284,9 @@ class ConnectionOperations:
         self.records[self.active]['public'].update(phase='associating', reason='AWAITING_ASSOCIATION')
         return True
 
-    def fail_association(self, profile):
+    def fail_association(self, profile, reason='ASSOCIATION_FAILED'):
         if self.restoring and profile['id'] == self.victim_id: self.restore_failed = True
-        if self.overlay and self.overlay['id'] == profile['id']: self.failure = 'ASSOCIATION_FAILED'
+        if self.overlay and self.overlay['id'] == profile['id']: self.failure = reason
 
     def verify_association(self, profile, device):
         if self.restoring and profile['id'] == self.victim_id:

@@ -22,19 +22,26 @@ Open **http://127.0.0.1:8787**. Password: **`demo-telescope-2026`**. Configurati
 
 ## Install a verified release
 
-Download the wheel and `SHA256SUMS` from [the matching release](https://github.com/Sqound/astro-bridge-core/releases). Verify the checksum before installation:
+The release includes a small standalone installer. On Linux, install Python 3.11+ and its venv support first (Debian/Ubuntu: `sudo apt install python3 python3-venv curl`). Then:
 
 ```sh
-# Linux; on macOS use: shasum -a 256 -c SHA256SUMS
-sha256sum --ignore-missing -c SHA256SUMS
-python3 scripts/install.py \
-  --wheel astro_bridge_core-1.0.0-py3-none-any.whl \
-  --sha256 THE_VERIFIED_WHEEL_SHA256 \
-  --prefix "$HOME/.local/share/astro-bridge-1.0.0"
-"$HOME/.local/share/astro-bridge-1.0.0/bin/astro-bridge" --demo
+curl -fLO https://github.com/Sqound/astro-bridge-core/releases/download/v1.0.1/install.py
+python3 install.py
+"$HOME/.local/share/astro-bridge-1.0.1/bin/astro-bridge" --demo \
+  --state-dir "$HOME/.local/state/astro-bridge-demo"
 ```
 
-Use a new installation prefix. The core installer does not install drivers, host services or privileged networking; select a platform implementation for physical equipment.
+The versioned installer downloads the exact wheel, verifies its embedded SHA-256, and creates a separate environment in your home directory. It needs no sudo, does not change system Python, and refuses to overwrite an existing installation. Download and inspect it before running if desired. The complete MIT notice is included.
+
+For an offline install, download the wheel and `SHA256SUMS` from [the same release](https://github.com/Sqound/astro-bridge-core/releases/tag/v1.0.1):
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS
+python3 install.py --wheel astro_bridge_core-1.0.1-py3-none-any.whl \
+  --sha256 THE_VERIFIED_WHEEL_SHA256 --prefix "$HOME/.local/share/astro-bridge-1.0.1"
+```
+
+Core installation alone provides the application/demo. Physical radio management is Linux-only and needs the [Linux/Docker deployment](https://github.com/Sqound/astro-bridge-implementations/tree/main/doc), which owns NetworkManager, host services, privileges and drivers. Demo mode can also run on macOS or Docker Desktop; native Windows Wi-Fi control is unsupported.
 
 ## Connect physical equipment
 

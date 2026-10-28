@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Astro Bridge Local API",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Native mobile API. HTTP recovery remains available; optional device-local HTTPS requires supported diskless OS helpers and explicit client CA trust. Tokens bind to actual transport. Passwords and private keys are never returned. Accepted operations are asynchronous."
   },
   "servers": [
@@ -5095,6 +5095,12 @@
           "connected": {
             "type": "boolean"
           },
+          "reason": {
+            "type": "string"
+          },
+          "retry_blocked": {
+            "type": "boolean"
+          },
           "relay_ready": {
             "type": "boolean"
           },
@@ -6289,7 +6295,8 @@
               "READY",
               "RECONCILE_FAILED",
               "REQUESTED",
-              "SERVICE_UNAVAILABLE"
+              "SERVICE_UNAVAILABLE",
+              "WIFI_AUTHENTICATION_FAILED"
             ]
           },
           "outcome": {

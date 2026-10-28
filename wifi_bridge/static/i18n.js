@@ -1020,7 +1020,12 @@
     "This network observation is no longer available. Scan again.": "This network observation is no longer available. Scan again.",
     "Physical identity": "Physical identity",
     "Nearby telescopes": "Nearby telescopes",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",
+    "Check Wi-Fi password": "Check Wi-Fi password",
+    "Edit password": "Edit password",
+    "Edit Wi-Fi password for {name}": "Edit Wi-Fi password for {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Change the saved Wi-Fi password or reboot the bridge before trying again."
   },
   "fr": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Pour utiliser l’adaptateur du point d’accès avec le réseau privé, choisissez un autre adaptateur libre ou quittez le point d’accès afin que le pont puisse confirmer qu’il est vide et effectuer une tentative bornée. Libérez d’abord les protections actives.",
@@ -1978,7 +1983,12 @@
     "This network observation is no longer available. Scan again.": "Ce réseau n’est plus dans les observations conservées. Relancez la recherche.",
     "Physical identity": "Identité physique",
     "Nearby telescopes": "Télescopes à proximité",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Repérés automatiquement avec une interface Wi-Fi libre lorsqu’aucun télescope n’est connecté. Ajoutez-en un pour préparer sa connexion."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Repérés automatiquement avec une interface Wi-Fi libre lorsqu’aucun télescope n’est connecté. Ajoutez-en un pour préparer sa connexion.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Échec de l’authentification Wi-Fi. Vérifiez le mot de passe. Les essais reprendront après sa modification ou le redémarrage du bridge.",
+    "Check Wi-Fi password": "Vérifier le mot de passe Wi-Fi",
+    "Edit password": "Modifier le mot de passe",
+    "Edit Wi-Fi password for {name}": "Modifier le mot de passe Wi-Fi de {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifiez le mot de passe Wi-Fi enregistré ou redémarrez le bridge avant de réessayer."
   },
   "ja": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "ホットスポットのアダプターをプライベートネットワークに使うには、別の空きアダプターを選ぶか、ホットスポットから切断してください。空であることを確認してから時間制限付きで試行します。既存の保護は先に解除してください。",
@@ -2936,7 +2946,12 @@
     "This network observation is no longer available. Scan again.": "このネットワークの検出情報は残っていません。再検索してください。",
     "Physical identity": "物理的な識別情報",
     "Nearby telescopes": "近くの望遠鏡",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "望遠鏡が未接続のとき、空いているWi-Fiアダプターで自動検索します。追加して接続を準備できます。"
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "望遠鏡が未接続のとき、空いているWi-Fiアダプターで自動検索します。追加して接続を準備できます。",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi認証に失敗しました。パスワードを確認してください。変更またはブリッジの再起動後に再試行します。",
+    "Check Wi-Fi password": "Wi-Fiパスワードを確認",
+    "Edit password": "パスワードを変更",
+    "Edit Wi-Fi password for {name}": "{name}のWi-Fiパスワードを変更",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "再試行する前に、保存済みのWi-Fiパスワードを変更するかブリッジを再起動してください。"
   },
   "de": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Um den Hotspot-Adapter für Ihr privates Netzwerk zu nutzen, wählen Sie einen anderen freien Adapter oder verlassen Sie den Hotspot, damit die Bridge einen leeren Hotspot bestätigen und einen begrenzten Versuch starten kann. Bestehende Schutzmaßnahmen müssen zuerst aufgehoben werden.",
@@ -3894,7 +3909,12 @@
     "This network observation is no longer available. Scan again.": "Diese Netzwerkbeobachtung ist nicht mehr gespeichert. Suchen Sie erneut.",
     "Physical identity": "Physische Identität",
     "Nearby telescopes": "Teleskope in der Nähe",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Wird mit einem freien WLAN-Adapter automatisch gefunden, solange kein Teleskop verbunden ist. Fügen Sie eines hinzu, um seine Verbindung vorzubereiten."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Wird mit einem freien WLAN-Adapter automatisch gefunden, solange kein Teleskop verbunden ist. Fügen Sie eines hinzu, um seine Verbindung vorzubereiten.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "WLAN-Authentifizierung fehlgeschlagen. Prüfen Sie das Passwort. Neue Versuche erfolgen nach einer Änderung oder einem Neustart der Bridge.",
+    "Check Wi-Fi password": "WLAN-Passwort prüfen",
+    "Edit password": "Passwort ändern",
+    "Edit Wi-Fi password for {name}": "WLAN-Passwort für {name} ändern",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Ändern Sie das gespeicherte WLAN-Passwort oder starten Sie die Bridge vor einem neuen Versuch neu."
   },
   "es": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar el adaptador del punto de acceso con su red privada, elija otro adaptador libre o abandone el punto de acceso para que el puente confirme que está vacío y realice un intento limitado. Primero debe liberar las protecciones existentes.",
@@ -4852,7 +4872,12 @@
     "This network observation is no longer available. Scan again.": "Esta observación de red ya no está disponible. Busca de nuevo.",
     "Physical identity": "Identidad física",
     "Nearby telescopes": "Telescopios cercanos",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Detectados automáticamente con un adaptador Wi-Fi libre cuando no hay un telescopio conectado. Añade uno para preparar su conexión."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Detectados automáticamente con un adaptador Wi-Fi libre cuando no hay un telescopio conectado. Añade uno para preparar su conexión.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Falló la autenticación Wi-Fi. Compruebe la contraseña. Los intentos se reanudarán al cambiarla o reiniciar el bridge.",
+    "Check Wi-Fi password": "Comprobar contraseña Wi-Fi",
+    "Edit password": "Editar contraseña",
+    "Edit Wi-Fi password for {name}": "Editar contraseña Wi-Fi de {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Cambie la contraseña Wi-Fi guardada o reinicie el bridge antes de volver a intentarlo."
   },
   "it": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Per usare l’adattatore dell’hotspot con la rete privata, scegli un altro adattatore libero oppure lascia l’hotspot, così il bridge potrà confermare che è vuoto ed eseguire un tentativo limitato. Prima devi rimuovere le protezioni esistenti.",
@@ -5810,7 +5835,12 @@
     "This network observation is no longer available. Scan again.": "Questa osservazione di rete non è più disponibile. Cerca di nuovo.",
     "Physical identity": "Identità fisica",
     "Nearby telescopes": "Telescopi nelle vicinanze",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Rilevati automaticamente con un adattatore Wi-Fi libero quando nessun telescopio è connesso. Aggiungine uno per preparare la connessione."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Rilevati automaticamente con un adattatore Wi-Fi libero quando nessun telescopio è connesso. Aggiungine uno per preparare la connessione.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Autenticazione Wi-Fi non riuscita. Verifica la password. I tentativi riprenderanno dopo averla modificata o riavviato il bridge.",
+    "Check Wi-Fi password": "Verifica password Wi-Fi",
+    "Edit password": "Modifica password",
+    "Edit Wi-Fi password for {name}": "Modifica password Wi-Fi di {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Modifica la password Wi-Fi salvata o riavvia il bridge prima di riprovare."
   },
   "pt-BR": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Para usar o adaptador do hotspot na rede privada, escolha outro adaptador livre ou saia do hotspot para o bridge confirmar que está vazio e fazer uma tentativa limitada. Libere primeiro as proteções existentes.",
@@ -6768,7 +6798,12 @@
     "This network observation is no longer available. Scan again.": "Esta observação de rede não está mais disponível. Busque novamente.",
     "Physical identity": "Identidade física",
     "Nearby telescopes": "Telescópios próximos",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Detectados automaticamente com um adaptador Wi-Fi livre quando nenhum telescópio está conectado. Adicione um para preparar a conexão."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Detectados automaticamente com um adaptador Wi-Fi livre quando nenhum telescópio está conectado. Adicione um para preparar a conexão.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Falha na autenticação Wi-Fi. Verifique a senha. As tentativas serão retomadas após alterá-la ou reiniciar o bridge.",
+    "Check Wi-Fi password": "Verificar senha do Wi-Fi",
+    "Edit password": "Editar senha",
+    "Edit Wi-Fi password for {name}": "Editar senha do Wi-Fi de {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Altere a senha do Wi-Fi salva ou reinicie o bridge antes de tentar novamente."
   },
   "zh-Hans": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "如需将热点适配器用于私有网络，请选择另一个空闲适配器，或离开热点，让网桥确认热点无人连接后进行限时尝试。请先解除现有保护。",
@@ -7726,7 +7761,12 @@
     "This network observation is no longer available. Scan again.": "此网络的检测记录已不可用。请重新搜索。",
     "Physical identity": "物理标识",
     "Nearby telescopes": "附近的望远镜",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未连接望远镜时，使用空闲的 Wi-Fi 适配器自动查找。添加望远镜以准备连接。"
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未连接望远镜时，使用空闲的 Wi-Fi 适配器自动查找。添加望远镜以准备连接。",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi 验证失败。请检查密码。修改密码或重启桥接器后将恢复尝试。",
+    "Check Wi-Fi password": "检查 Wi-Fi 密码",
+    "Edit password": "修改密码",
+    "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密码",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "请先修改已保存的 Wi-Fi 密码或重启桥接器，然后重试。"
   },
   "zh-Hant": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "若要將熱點網卡用於私人網路，請選擇另一張閒置網卡，或離開熱點，讓網橋確認無人連線後進行限時嘗試。請先解除現有保護。",
@@ -8684,7 +8724,12 @@
     "This network observation is no longer available. Scan again.": "此網路的偵測記錄已無法使用。請重新搜尋。",
     "Physical identity": "實體識別",
     "Nearby telescopes": "附近的望遠鏡",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未連接望遠鏡時，使用閒置的 Wi-Fi 轉接器自動尋找。加入望遠鏡以準備連線。"
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "未連接望遠鏡時，使用閒置的 Wi-Fi 轉接器自動尋找。加入望遠鏡以準備連線。",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Wi-Fi 驗證失敗。請檢查密碼。修改密碼或重新啟動橋接器後將恢復嘗試。",
+    "Check Wi-Fi password": "檢查 Wi-Fi 密碼",
+    "Edit password": "修改密碼",
+    "Edit Wi-Fi password for {name}": "修改 {name} 的 Wi-Fi 密碼",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "請先修改已儲存的 Wi-Fi 密碼或重新啟動橋接器，然後重試。"
   },
   "ru": {
     "To use the hotspot adapter for your private network, choose another free adapter or leave the hotspot so the bridge can confirm it is empty and make a bounded attempt. Existing protections must be released first.": "Чтобы использовать адаптер точки доступа для частной сети, выберите другой свободный адаптер или отключитесь от точки доступа: мост должен подтвердить отсутствие клиентов и выполнить ограниченную попытку. Сначала снимите действующие защиты.",
@@ -9642,7 +9687,12 @@
     "This network observation is no longer available. Scan again.": "Эта запись о сети больше недоступна. Повторите поиск.",
     "Physical identity": "Физическая идентификация",
     "Nearby telescopes": "Телескопы поблизости",
-    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Автоматический поиск через свободный адаптер Wi-Fi, когда телескопы не подключены. Добавьте телескоп для настройки подключения."
+    "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Автоматический поиск через свободный адаптер Wi-Fi, когда телескопы не подключены. Добавьте телескоп для настройки подключения.",
+    "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "Ошибка аутентификации Wi-Fi. Проверьте пароль. Попытки возобновятся после его изменения или перезагрузки моста.",
+    "Check Wi-Fi password": "Проверить пароль Wi-Fi",
+    "Edit password": "Изменить пароль",
+    "Edit Wi-Fi password for {name}": "Изменить пароль Wi-Fi для {name}",
+    "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Измените сохранённый пароль Wi-Fi или перезагрузите мост перед повторной попыткой."
   }
 };
   const storageKey = "astro-bridge.locale";

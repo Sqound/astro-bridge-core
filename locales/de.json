@@ -954,5 +954,10 @@
   "This network observation is no longer available. Scan again.": "Diese Netzwerkbeobachtung ist nicht mehr gespeichert. Suchen Sie erneut.",
   "Physical identity": "Physische Identität",
   "Nearby telescopes": "Teleskope in der Nähe",
-  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Wird mit einem freien WLAN-Adapter automatisch gefunden, solange kein Teleskop verbunden ist. Fügen Sie eines hinzu, um seine Verbindung vorzubereiten."
+  "Found automatically using a free Wi-Fi adapter while no telescope is connected. Add one to prepare its connection.": "Wird mit einem freien WLAN-Adapter automatisch gefunden, solange kein Teleskop verbunden ist. Fügen Sie eines hinzu, um seine Verbindung vorzubereiten.",
+  "Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.": "WLAN-Authentifizierung fehlgeschlagen. Prüfen Sie das Passwort. Neue Versuche erfolgen nach einer Änderung oder einem Neustart der Bridge.",
+  "Check Wi-Fi password": "WLAN-Passwort prüfen",
+  "Edit password": "Passwort ändern",
+  "Edit Wi-Fi password for {name}": "WLAN-Passwort für {name} ändern",
+  "Change the saved Wi-Fi password or reboot the bridge before trying again.": "Ändern Sie das gespeicherte WLAN-Passwort oder starten Sie die Bridge vor einem neuen Versuch neu."
 }

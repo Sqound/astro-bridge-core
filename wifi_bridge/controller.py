@@ -7,7 +7,7 @@ import time
 from collections import deque
 
 from .config import Invalid, profiles, public_config, role_for, validate_config, password_hash, password_matches, text, network_intent, auto_policy, hotspot_ssid, reserved_hotspot_mac
-from .network import NetworkError, hotspot_route_targets
+from .network import NetworkError, NetworkAuthenticationError, hotspot_route_targets
 from .plugins import relay_plugins, proxy_flag, plugin, require_config_plugins
 from .events import EventStore, ConnectionEvents
 from .tls import CertificateState
@@ -31,6 +31,8 @@ class Controller:
         self.last_home_attempt = -1000
         self.next_home_attempt = 0
         self.attempts = {}
+        from .auth_failures import AuthenticationFailures
+        self.auth_failures = AuthenticationFailures(store.path.parent)
         self.applied = {}
         self.managed_roles = {"telescope"}
         self.country = None
@@ -163,6 +165,7 @@ class Controller:
                 if self.pauses.error: raise ApiError(409, 'PAUSE_REGISTRY_RECOVERY_REQUIRED', 'Recover the pause registry before editing held network intent.')
                 self.protection.precondition(expected, revision or (lambda: ''))
             self.store.save(value)
+            self.refresh_auth_failures(profiles(value))
             if value['home']!=previous['home']:self.next_home_attempt=0
             self.pauses.clear(changed)
             operation_id = self.connection_events.request(previous, value, cause)
@@ -234,6 +237,8 @@ class Controller:
                 self.protection.reject(ident)
                 self.protection.precondition(expected, revision or (lambda: ''))
             if action == "connect":
+                if self.auth_failures.held(chosen):
+                    raise ApiError(409, 'WIFI_AUTHENTICATION_FAILED', 'Change the saved Wi-Fi password or reboot the bridge before trying again.')
                 target = payload.get("mac", chosen["mac"])
                 if not isinstance(target, str) or target not in {d["mac"] for d in self.state["devices"]}:
                     raise Invalid("The selected adapter is unavailable.")
@@ -260,6 +265,7 @@ class Controller:
             changed = {p['id'] for p in profiles(previous) if self.pauses.changed(p, next((n for n in profiles(normalized) if n['id'] == p['id']), None))} | {ident}
             if any(self.pauses.held(key) for key in changed): self.protection.precondition(expected, revision or (lambda: ''))
             self.store.save(normalized)
+            self.refresh_auth_failures(entries)
             self.pauses.clear(changed)
             operation_id = self.connection_events.request(previous, self.store.config, cause, selected=ident)
             self.blocked.clear()
@@ -278,6 +284,11 @@ class Controller:
                 raise ApiError(409, 'HTTPS_BUSY', 'Certificate maintenance is in progress.')
             self.action_at = time.monotonic() + 4
         self.update(mode="rebooting", message="Rebooting and retrying the connection…")
+
+    def refresh_auth_failures(self, entries):
+        for ident in self.auth_failures.prune(entries):
+            self.attempts.pop(role_for({'id': ident}), None)
+            self.operations.negative.pop(ident, None)
 
     def scan(self, name):
         if name not in {d["name"] for d in self.status()["devices"]}:
@@ -599,6 +610,8 @@ class Controller:
                 reason = "CONFIGURATION_CONFLICT"
             elif phase == "invalid_ip":
                 reason = "INVALID_TARGET"
+            elif phase == 'authentication_failed':
+                reason = 'WIFI_AUTHENTICATION_FAILED'
             elif not self.state.get("management",{}).get("paths"):
                 reason = "HOME_UNAVAILABLE"
             elif not profile.get("enabled"):
@@ -689,6 +702,7 @@ class Controller:
         by_mac={d['mac']:d for d in devices}
         home,ap=self._management(devices,config,now)
         entries = profiles(config)
+        self.refresh_auth_failures(entries)
         desired = {role_for(p): p for p in entries if p["enabled"]}
         stale = self.managed_roles - desired.keys()
         changed = {r for r, p in desired.items() if r in self.applied and network_intent(self.applied[r]) != network_intent(p)}
@@ -737,6 +751,10 @@ class Controller:
             row = {"id": p["id"], "target_ip": p["target_ip"], "client_ip": "", "connected": False,
                    "relay_ready": False, "interface": device["name"] if device else "", "state": "saved", "message": "Saved"}
             rows.append(row)
+            if self.auth_failures.held(p):
+                row.update(state='authentication_failed', reason='WIFI_AUTHENTICATION_FAILED', retry_blocked=True,
+                           message='Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.')
+                continue
             if self.pauses.held(p['id']):
                 row.update(state='paused', message='Connection paused: explicit owner action required.')
             if not p["enabled"]:
@@ -768,11 +786,18 @@ class Controller:
                     self.net.connect(role, device, p)
                     self.applied[role] = copy.deepcopy(p)
                     up = self.net.connected(role, device, p)
-                except NetworkError:
+                except NetworkError as error:
                     up = False
-                    self.operations.fail_association(p)
+                    rejected = isinstance(error, NetworkAuthenticationError)
+                    if rejected: self.auth_failures.hold(p)
+                    reason = 'WIFI_AUTHENTICATION_FAILED' if rejected else 'ASSOCIATION_FAILED'
+                    self.operations.fail_association(p, reason)
                     with self.lock:
-                        self.connection_events.phase(p, "failed", "ASSOCIATION_FAILED", self._event_contexts.get(p["id"]))
+                        self.connection_events.phase(p, "failed", reason, self._event_contexts.get(p["id"]))
+                    if rejected:
+                        row.update(state='authentication_failed', reason=reason, retry_blocked=True,
+                                   message='Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.')
+                        continue
             if not up:
                 row.update(state="waiting", message="Waiting for the telescope · automatic reconnection")
                 continue

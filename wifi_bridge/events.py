@@ -17,7 +17,7 @@ REASONS = {'REQUESTED', 'DISCONNECTING', 'CONNECTING', 'ASSOCIATED', 'READY',
            'CONNECTION_LOST', 'RADIO_UNAVAILABLE', 'HOME_UNAVAILABLE',
            'AWAITING_ASSOCIATION', 'SERVICE_UNAVAILABLE', 'CONFIGURATION_CONFLICT',
            'INVALID_TARGET', 'ASSOCIATION_FAILED', 'RECONCILE_FAILED',
-           'PROFILE_DISABLED', 'PROFILE_REMOVED', 'AUTOMATIC_DEFERRED'}
+           'PROFILE_DISABLED', 'PROFILE_REMOVED', 'AUTOMATIC_DEFERRED', 'WIFI_AUTHENTICATION_FAILED'}
 FIELDS = {'sequence', 'boot_id', 'timestamp', 'clock_status', 'operation_id', 'profile_id',
           'profile_name', 'radio_id', 'type', 'cause', 'reason', 'outcome', 'associated', 'ready'}
 
@@ -206,7 +206,7 @@ class ConnectionEvents:
             state['intentional'] = False
             state['signal'] = (context['operation_id'], kind, 'READY')
         elif not ready and (profile.get('enabled') or associated):
-            kind = 'failed' if phase in ('missing', 'conflict', 'invalid_ip', 'error') else 'waiting'
+            kind = 'failed' if phase in ('missing', 'conflict', 'invalid_ip', 'error', 'authentication_failed') else 'waiting'
             signature = (context['operation_id'], kind, reason)
             if state.get('signal') != signature:
                 self.emit(profile, kind, reason, 'failed' if kind == 'failed' else 'waiting',

@@ -33,7 +33,7 @@ python3 -m wifi_bridge --demo
 
 Open **http://127.0.0.1:8787** and sign in with **`demo-telescope-2026`**. Python 3.11+ on a Unix system is sufficient. Demo mode uses simulated adapters and never changes your host's network.
 
-For a release install, download the wheel and `SHA256SUMS` from [Releases](https://github.com/Sqound/astro-bridge-core/releases). The [installation guide](doc/getting-started.md) explains checksum verification and isolated installation.
+For a release install, download `install.py` from [Releases](https://github.com/Sqound/astro-bridge-core/releases). It downloads the pinned wheel, verifies its checksum and installs it in an isolated environment without sudo. See the [installation guide](doc/getting-started.md).
 
 ## Deploy on hardware
 
