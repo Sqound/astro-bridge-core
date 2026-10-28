@@ -23,6 +23,16 @@ Astro Bridge connects a phone or tablet to smart telescopes and Wi-Fi mounts thr
 
 Astro Bridge relays connections. It does not replace the telescope app or run an acquisition scheduler.
 
+## Choose how to run Astro Bridge
+
+| Option | What it includes |
+| --- | --- |
+| **Complete Raspberry Pi image** | Alpine Linux and Astro Bridge, preconfigured to start as a system service at boot; flash an SD card for the original Pi Zero W |
+| **Core only — this repository** | The application, web interface, API and equipment plugins; install on an existing system and add Linux host integration for real Wi-Fi control |
+| **Docker** | Core and its container dependencies; demonstration mode on macOS/Windows, or real networking on a compatible Linux host |
+
+The Core download is the application, not a complete operating-system image. See [installation options](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/deployment-options.md) to choose the right package.
+
 ## Try the demo
 
 ```sh
@@ -44,7 +54,7 @@ For a release install, download `install.py` from [Releases](https://github.com/
 | Docker on Linux | [Docker networking](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/docker.md) |
 | Docker Desktop on Windows/macOS | [Docker demo](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/docker.md#try-the-demo) |
 
-Real networking needs suitable Linux Wi-Fi adapters and host integration. Plan one adapter per simultaneous Wi-Fi role; a private uplink, hotspot and telescope uplink normally need three adapters. Docker Desktop does not expose physical Wi-Fi management to this application.
+Real networking needs suitable Linux Wi-Fi adapters and host integration. Plan one adapter per simultaneous Wi-Fi role; a private uplink, hotspot and telescope uplink normally need three adapters. Standard Docker Desktop setups do not expose physical Wi-Fi radios to the application. USB forwarding and Linux host integration would require additional setup and hardware validation.
 
 ## Equipment catalog
 

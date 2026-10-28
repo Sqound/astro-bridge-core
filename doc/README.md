@@ -6,6 +6,8 @@ Use the manufacturer's telescope app while Astro Bridge manages the network conn
 
 *Demonstration interface with synthetic equipment and networks.*
 
+Compare the [complete Raspberry Pi image, Core application and Docker](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/deployment-options.md) before installing.
+
 ## Start here
 
 1. [Install or try the application](getting-started.md).

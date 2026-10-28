@@ -4,11 +4,13 @@
 
 ## Choose an installation
 
-| Goal | Install |
-| --- | --- |
-| Explore without hardware | Run the demo below |
-| Use a Raspberry Pi Zero W | [Raspberry implementation](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/raspberry.md) |
-| Use a Linux PC | [Native Linux or Docker](https://github.com/Sqound/astro-bridge-implementations/tree/main/doc) |
+| Option | What you install | Guide |
+| --- | --- | --- |
+| **Complete Raspberry Pi image** | Alpine Linux + Astro Bridge, starting automatically as a system service at boot | [Flash the Pi Zero W system](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/raspberry.md) |
+| **Core only** | The application in an isolated Python environment on an existing system | [Core installer](#install-a-verified-release) |
+| **Docker** | The application and its container dependencies; demo or Linux networking mode | [Docker guide](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/docker.md) |
+
+Use the complete Raspberry image for a dedicated appliance. Core and Docker require an existing operating system; physical Wi-Fi management also requires compatible Linux adapters and host integration. [Compare the options](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/deployment-options.md).
 
 ## Run the demo
 
