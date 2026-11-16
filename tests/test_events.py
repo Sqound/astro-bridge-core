@@ -7,12 +7,16 @@ import unittest
 from unittest.mock import patch
 
 from test_bridge import Fixture
+from helpers.clock_fixture import event_clock
 from wifi_bridge.config import profiles, validate_config
-from wifi_bridge.events import EventStore
+from wifi_bridge.events import EventStore, TYPES
 from wifi_bridge.network import NetworkError
 
 
 class EventStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(event_clock(synchronized=False))
+
     def append(self, store, name='Synthetic instrument'):
         return store.append('connected', operation_id='op-test', profile_id='primary',
                             profile_name=name, radio_id='radio-opaque', cause='RECONCILE',
@@ -21,7 +25,8 @@ class EventStoreTests(unittest.TestCase):
     def test_retention_replay_gap_restart_and_private_file(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'events.json'
-            store = EventStore(path, capacity=4)
+            now = [0.0]
+            store = EventStore(path, capacity=4, monotonic=lambda: now[0])
             for _ in range(6):
                 self.append(store)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -31,6 +36,7 @@ class EventStoreTests(unittest.TestCase):
             self.assertTrue(page['has_more']); self.assertEqual(page['next_cursor'], 5)
             self.assertEqual(store.read(0, store.boot_id)['reset_reason'], 'RETENTION_GAP')
             self.assertEqual(store.read(99, store.boot_id)['reset_reason'], 'CURSOR_AHEAD')
+            now[0] = 10; store.flush()
             restarted = EventStore(path, capacity=4)
             self.assertNotEqual(restarted.boot_id, store.boot_id)
             self.assertEqual(restarted.read(6, store.boot_id)['reset_reason'], 'BOOT_CHANGED')
@@ -55,13 +61,14 @@ class EventStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError): store.read(**arguments)
             with patch('wifi_bridge.events.atomic_json', side_effect=OSError('disk full')):
                 self.append(store)
+                store.last_write = None; store.flush()
             self.assertFalse(store.read()['persistent'])
             self.assertEqual(store.read()['events'][0]['clock_status'], 'unverified')
 
 
 class ConnectionEventTests(Fixture):
     def events(self, after=0):
-        return [e for e in self.controller.event_store.read(after, self.controller.event_store.boot_id, 100)['events']]
+        return [e for e in self.controller.event_store.read(after, self.controller.event_store.boot_id, 100)['events'] if e['type'] in TYPES]
 
     def test_acceptance_and_polling_never_claim_success_before_reconcile(self):
         self.configured(); self.controller.cycle(0)

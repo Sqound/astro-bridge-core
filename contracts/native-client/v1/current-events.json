@@ -1,0 +1,68 @@
+{
+  "name": "current-events",
+  "description": "Short event polling with a dynamically issued token and boot ID. The Vespera status producer additively permits telemetry.adapter_yielded with instrument_id, adapter_id vespera_status_v1 and retry_after 600; tests/test_telemetry_vespera.py executes the producer and validates its real HTTP event against the contract. The Seestar events producer additively permits adapter_id seestar_events_v1 for telemetry.adapter_yielded and telemetry.adapter_refused with that adapter_id; tests/test_telemetry_seestar.py validates actual producer events over native HTTP.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/token",
+        "headers": {},
+        "body": {
+          "password": "test-password-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "access_token": "test-token-1",
+          "token_type": "Bearer",
+          "expires_in": 43200,
+          "api_version": "1"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/events?after=0&limit=100",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "api_version": "1",
+          "boot_id": "00000000000000000000000000000000",
+          "oldest_sequence": 1,
+          "latest_sequence": 0,
+          "next_cursor": 0,
+          "has_more": false,
+          "gap": false,
+          "reset_reason": null,
+          "persistent": true,
+          "history_available": true,
+          "clock_status": "unverified",
+          "events": []
+        }
+      },
+      "note": "An empty snapshot emits no synthetic service checks. The service probe also permits service_changed for a changed bounded service result; associated/ready retain their legacy meanings. Hotspot supervision additionally permits hotspot_unavailable (HOTSPOT_RADIO_UNAVAILABLE or HOTSPOT_START_FAILED) and hotspot_restored (HOTSPOT_RESTORED), with profile_id hotspot, empty profile_name and no raw network identifiers. Their associated/ready booleans describe the confirmed AP, not an instrument. Clock correction permits clock_status synchronized and optional utc_corrected when a correction exists; timestamps never determine order."
+    }
+  ],
+  "real_patterns": {
+    "/access_token": "^[A-Za-z0-9_-]{20,128}$",
+    "/boot_id": "^[0-9a-f]{32}$"
+  }
+}

@@ -1,0 +1,246 @@
+{
+  "name": "station-instrument",
+  "description": "Contract 1.2: a station instrument joined the bridge network (hotspot or private LAN). It uses no radio (access station, simultaneous true), is listed even when it does not answer (link unreachable), and connect returns its own address directly (mode direct) without any switch. A night reservation is allowed; telemetry continues while it answers.",
+  "contract_version": 1,
+  "requires": [
+    "instruments",
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-station-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-station-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test station telescope",
+          "link": "connected",
+          "service": "ready",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "station",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 5,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "station_link_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "note": "The station answers on the bridge network: connected and ready."
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-station-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "reserve_seconds": 36000
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-station-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 3600,
+            "reservation_expires_in": 36000
+          },
+          "endpoint": {
+            "instrument_id": "tel-station-1",
+            "request_path": "home",
+            "mode": "direct",
+            "primary": {
+              "host": "198.51.100.20",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.20"
+          }
+        }
+      },
+      "note": "Connect reserves it for the night and returns its own address (mode direct); nothing is switched.",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-station-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-station-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test station telescope",
+          "link": "unreachable",
+          "service": "not_answering",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "station",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 5,
+          "reason": "NOT_ANSWERING",
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": true,
+            "mine": true,
+            "expires_in": 3600,
+            "reservation_expires_in": 36000
+          },
+          "capabilities": {
+            "telemetry": [
+              "station_link_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "note": "It stopped answering (switched off or out of range): still listed, link unreachable, reservation kept."
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-station-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-station-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test station telescope",
+          "link": "connected",
+          "service": "ready",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "station",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 6,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": true,
+            "mine": true,
+            "expires_in": 3600,
+            "reservation_expires_in": 36000
+          },
+          "capabilities": {
+            "telemetry": [
+              "station_link_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "note": "It answers again: connected, same reservation."
+    }
+  ]
+}

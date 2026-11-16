@@ -29,14 +29,17 @@ network = {'ssid': {'type': 'string', 'minLength': 1, 'maxLength': 32, 'descript
 telescope = dict(network, mac={'type': 'string', 'pattern': '^(?:|(?:[a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2})$', 'description': 'Empty or omitted for an inactive unassigned profile.'}, name={'type': 'string', 'minLength': 1, 'maxLength': 64},
                  kind={'type': 'string', 'enum': list(profile_kinds()), 'default': 'generic'},
                  target_ip={'type': 'string', 'format': 'ipv4', 'description': 'Private instrument IPv4, not the Pi address.'},
-                 enabled=dict(boolean, default=False), auto_replaceable=dict(boolean,default=False,description='Victim participation, also requires auto_eligible; never overrides a lease or owner lock.'), auto_eligible=dict(boolean,default=False,description='Explicit automatic allocation consent, separate from desired association.'))
+                 enabled=dict(boolean, default=False), isolated=dict(boolean,default=False,description='Opt-in isolated transport (ZWO and SynScan mounts, Vespera telescopes); one radio per instrument, so several instruments may share one target address.'),
+                 client_ports={'type':'array','readOnly':True,'items':{'type':'integer','minimum':10000,'maximum':49151},'maxItems':2,'description':'Isolated Vespera: client ports for 8082 (HTTP) and 8083 (Socket.IO), assigned and persisted by the bridge.'},
+                 client_port={'type':'integer','minimum':10000,'maximum':49151,'description':'Stable dedicated TCP/UDP port. Allocated on save when isolated is true; excludes reserved management ports.'}, client_connect=dict(boolean,default=True), auto_replaceable=dict(boolean,default=False,description='Victim participation, also requires auto_eligible; never overrides a lease or owner lock.'), auto_eligible=dict(boolean,default=False,description='Explicit automatic allocation consent, separate from desired association.'))
 public_network = {k: v for k, v in network.items() if k not in ('password', 'open')}
 public_network['has_password'] = dict(boolean, readOnly=True)
 meta = {'api_version': {'type': 'string', 'const': '1'}, 'config_revision': string, 'operation_id': {'type': ['string', 'null']}}
 connection = obj({'id': ident, 'state': string, 'message': string, 'connected': boolean,
                   'reason': string, 'retry_blocked': boolean,
-                  'relay_ready': boolean, 'target_ip': string, 'client_ip': string,
+                  'service': ref('ServiceReadiness'), 'relay_ready': boolean, 'target_ip': string, 'client_ip': string,
                   'interface': string, 'subnet': string, 'legacy_ports': boolean, 'seestar_proxy': boolean, 'dwarf_proxy':boolean, 'zwo_mount_proxy':boolean, 'synscan_proxy':boolean, 'native_proxy_reason':{'type':['string','null']},
+                  'client_endpoint':ref('IsolatedClientEndpoint'), 'transport_metrics':ref('IsolatedTransportMetrics'),
                   'management_paths':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'host':string,'subnet':string,'forwarding_ready':boolean})}})
 schemas = {
     'Error': obj({'error': obj({'code': string, 'message': string}, ['code', 'message'])}, ['error']),
@@ -57,9 +60,14 @@ schemas = {
     'HomePatch': obj(network, additionalProperties=False),
     'TelescopeCreate': obj(dict(telescope, id=ident), ['name', 'ssid', 'target_ip'], additionalProperties=False),
     'TelescopePatch': obj(telescope, additionalProperties=False),
+    'ServiceReadiness': obj({'state': {'type': 'string', 'enum': ['ready', 'not_answering', 'not_probed', 'unknown']},
+        'checked_at_seq': {'type': ['integer', 'null'], 'minimum': 1},
+        'method': {'type': ['string', 'null'], 'enum': ['tcp_connect', 'udp_identity', 'vespera_tcp', None]},
+        'failures': {'type': 'integer', 'minimum': 0, 'maximum': 2**31-1}},
+        ['state', 'checked_at_seq', 'method', 'failures'], additionalProperties=False),
     'Connection': connection,
     'Telescope': obj(dict({k:v for k,v in telescope.items() if k not in ('password','open')},
-                          id=ident, has_password=boolean, connection=ref('Connection'))),
+                          id=ident, has_password=boolean, client_endpoint={'oneOf':[ref('IsolatedClientEndpoint'),{'type':'null'}]}, connection=ref('Connection'))),
     'TelescopeList': obj(dict(meta, telescopes={'type': 'array', 'items': ref('Telescope')})),
     'TelescopeEnvelope': obj(dict(meta, telescope=ref('Telescope'))),
     'HomeEnvelope': obj(dict(meta, home=obj(dict(public_network, connection=obj({'connected': boolean, 'client_ip': string}))))),
@@ -98,21 +106,31 @@ schemas = {
                  'authentication':string, 'token_expires_in':{'type':'integer'}, 'capabilities':{'type':'array','items':string}, 'openapi_url':string})
 }
 schemas['Management'] = obj({'mode':{'enum':['none','home_only','ap_only','dual']},'reason':string,
-    'paths':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'interface':string,'ip':string,'subnet':string})},
+    'paths':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'kind':{'type':'string','enum':['wifi','ethernet'],'description':'Optional link medium. Absence on older bridges does not imply Ethernet.'},'interface':string,'ip':string,'subnet':string})},
     'home_retry':obj({'reason':string,'remaining_seconds':{'type':'integer','minimum':0}})})
 event_fields = {
     'sequence': {'type': 'integer', 'minimum': 1},
     'boot_id': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'},
     'timestamp': {'type': 'string', 'format': 'date-time', 'description': 'Best-effort device time; use sequence for ordering.'},
-    'clock_status': {'type': 'string', 'const': 'unverified'},
+    'clock_status': {'type': 'string', 'enum': ['unverified', 'synchronized']},
     'operation_id': string, 'profile_id': ident, 'profile_name': dict(string, maxLength=64),
     'radio_id': {'type': ['string', 'null'], 'description': 'Opaque identifier for this service run, never a MAC address.'},
     'type': {'type': 'string', 'enum': sorted(TYPES)}, 'cause': {'type': 'string', 'enum': sorted(CAUSES)},
     'reason': {'type': 'string', 'enum': sorted(REASONS)},
-    'outcome': {'type': 'string', 'enum': ['accepted', 'in_progress', 'associated', 'waiting', 'ready', 'disconnected', 'failed', 'deferred']},
+    'outcome': {'type': 'string', 'enum': ['accepted', 'in_progress', 'associated', 'waiting', 'ready', 'disconnected', 'failed', 'deferred', 'not_answering', 'unknown']},
     'associated': boolean, 'ready': boolean,
 }
 schemas['ConnectionEvent'] = obj(event_fields, event_fields.keys(), additionalProperties=False)
+schemas['ConnectionEvent']['properties']['interfaces'] = {'type': 'array', 'maxItems': 2, 'uniqueItems': True, 'items': {'enum': ['home', 'hotspot']}, 'description': 'Management roles only; present on announcement_updated.'}
+schemas['ConnectionEvent']['properties']['utc_corrected'] = dict(string, format='date-time', description='Optional estimate; sequence remains the ordering authority.')
+schemas['SystemTime'] = obj({'clock_status': event_fields['clock_status'],
+    'system_utc': dict(string, format='date-time'), 'corrected_utc': dict(string, format='date-time'),
+    'offset_ms': {'type': 'integer'}, 'source': {'enum': ['client_hint', 'ntp', 'lower_bound']},
+    'hint_age_seconds': {'type': ['integer', 'null'], 'minimum': 0}},
+    ['clock_status', 'system_utc', 'corrected_utc', 'offset_ms', 'source', 'hint_age_seconds'], additionalProperties=False)
+schemas['TimeHint'] = obj({'utc_iso': dict(string, format='date-time', maxLength=40),
+    'uncertainty_ms': {'type': 'integer', 'minimum': 0, 'maximum': 86400000}},
+    ['utc_iso', 'uncertainty_ms'], additionalProperties=False)
 schemas['EventPage'] = obj({
     'api_version': string, 'boot_id': event_fields['boot_id'],
     'oldest_sequence': {'type': 'integer'}, 'latest_sequence': {'type': 'integer'},
@@ -170,8 +188,47 @@ schemas['BindingRequest'] = {'oneOf':[obj({'remove_bssid':mac},['remove_bssid'],
     obj(dict(correction,candidate_id=string),['candidate_id'],additionalProperties=False),
     obj(dict(correction,owner_confirmed={'const':True},aliases={'type':'array','minItems':1,'maxItems':8,
         'items':obj({'ssid':network['ssid'],'bssid':mac},['ssid','bssid'],additionalProperties=False)}),['owner_confirmed','aliases'],additionalProperties=False)]}
+schemas['UdpEndpointOwner'] = obj({'address':dict(string, maxLength=21, description='Controller IPv4:port.'),
+    'since_seq':{'type':'integer','minimum':1,'maximum':2**53-1}}, ['address','since_seq'], additionalProperties=False)
+ownership = {'owner':{'oneOf':[ref('UdpEndpointOwner'),{'type':'null'}]},
+    'refused_clients':{'type':'integer','minimum':0,'maximum':2**53-1},
+    'owner_idle_seconds':{'type':'number','exclusiveMinimum':0,'maximum':3600,'default':20}}
+schemas['EndpointOwnerRelease'] = obj(dict(meta, **ownership, ok=boolean, id=ident),
+    ['api_version','config_revision','ok','id','owner','refused_clients','owner_idle_seconds'])
+endpoint_path = {'path': {'enum': ['home', 'hotspot']}, 'host': dict(string, format='ipv4'),
+    'port': {'type': 'integer', 'minimum': 1, 'maximum': 65535}, 'transport': {'enum': ['tcp', 'udp']},
+    'service': {'enum': ['lx200', 'synscan', 'seestar_native', 'vespera_http', 'vespera_socketio', 'dwarf_ws', 'direct_route', 'dwarf_http', 'dwarf_rtsp']},
+    'ready': boolean, 'service_state': schemas['ServiceReadiness']['properties']['state'],
+    'requires_client_route': boolean}
+schemas['EndpointPath'] = obj(dict(endpoint_path, owner=ownership['owner'],
+    refused_clients=dict(ownership['refused_clients'], description='Isolated UDP only: shared per-profile refused datagram count, repeated on home/hotspot paths.')), endpoint_path.keys(), additionalProperties=False)
+from wifi_bridge.plugins import PORT_ROLES, PORT_PROTOCOLS
+port_purpose = {'role': {'enum': list(PORT_ROLES), 'description': 'Declared purpose of this port (contract 1.1). Unknown future values must be treated as other.'},
+                'protocol': {'enum': list(PORT_PROTOCOLS), 'description': 'Declared application protocol of this port (contract 1.1).'}}
+schemas['EndpointPath']['properties'].update(port_purpose)
+schemas['ProfileEndpoints'] = obj({'profile_id': ident, 'kind': telescope['kind'],
+    'target': obj({'ip': dict(string, format='ipv4'), 'ports': {'type': 'array', 'maxItems': 16,
+        'items': {'type': 'integer', 'minimum': 1, 'maximum': 65535}}}, ['ip', 'ports'], additionalProperties=False),
+    'paths': {'type': 'array', 'maxItems': 64, 'items': ref('EndpointPath')}},
+    ['profile_id', 'kind', 'target', 'paths'], additionalProperties=False)
+schemas['EndpointInventory'] = obj({'api_version': meta['api_version'], 'config_revision': string,
+    'boot_id': event_fields['boot_id'], 'endpoints': {'type': 'array', 'maxItems': 24, 'items': ref('ProfileEndpoints')}},
+    ['api_version', 'config_revision', 'boot_id', 'endpoints'], additionalProperties=False)
+schemas['IsolatedClientEndpoint'] = obj({'host':{'type':['string','null']},'port':{'type':'integer'},
+    'transport':{'enum':['tcp','udp']},'protocol':{'enum':['lx200','synscan','vespera_http','vespera_socketio']},'ready':boolean,'reason':string,
+    'service':string,'target_port':{'type':'integer','description':'Instrument port this client port relays to.'},
+    **ownership,'simulated':boolean,'alternatives':{'type':'array','maxItems':2,'description':'One entry per management path for the first relayed port.','items':obj({'role':{'enum':['home','ap']},
+        'host':string,'port':{'type':'integer'},'transport':string,'protocol':string,'service':string,'target_port':{'type':'integer'},'ready':boolean,'reason':string,**ownership})}})
+schemas['IsolatedClientEndpoint']['properties']['services'] = {'type':'array','maxItems':4,
+    'description':'Multi-port isolated instruments (Vespera 8082 HTTP and 8083 Socket.IO): every relayed port on every management path.',
+    'items':schemas['IsolatedClientEndpoint']['properties']['alternatives']['items']}
+schemas['IsolatedTransportMetrics'] = obj({'bytes_to_instrument':{'type':'integer'},'bytes_from_instrument':{'type':'integer'},
+    'bytes':{'type':'integer'},'tcp_established':{'type':'integer'},'relay_errors':{'type':'integer'},
+    'last_exchange':{'type':['string','null']},'ping':obj({'method':{'const':'icmp_echo'},'samples':{'type':'integer'},
+        'replies':{'type':'integer'},'median_ms':{'type':['number','null']},'loss_percent':{'type':['number','null']},
+        'window_seconds':{'const':600},'available':boolean,'reason':{'type':['string','null']}})})
 schemas['ConnectionEndpoint'] = obj({'profile_id':ident,'target_ip':{'type':'string','format':'ipv4'},'subnet':string,
-    'bridge_instrument_ip':string,'native_proxy_reason':{'type':['string','null']},'management_endpoints':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'host':string,'subnet':string,'proxy':{'oneOf':[{'type':'null'},obj({'host':string,'ports':{'type':'array','items':{'type':'integer'}},'protocol':{'enum':[p['id'] for p in relay_plugins()]},'transport':{'enum':['tcp','udp']}})]}})},'proxy':{'oneOf':[{'type':'null'},obj({'host':string,'ports':{'type':'array','items':{'type':'integer'}},'protocol':{'enum':[p['id'] for p in relay_plugins()]},'transport':{'enum':['tcp','udp']}})]},
+    'client_endpoint':ref('IsolatedClientEndpoint'),'bridge_instrument_ip':string,'native_proxy_reason':{'type':['string','null']},'management_endpoints':{'type':'array','maxItems':2,'items':obj({'role':{'enum':['home','ap']},'host':string,'subnet':string,'proxy':{'oneOf':[{'type':'null'},obj({'host':string,'ports':{'type':'array','items':{'type':'integer'}},'protocol':{'enum':[p['id'] for p in relay_plugins()]},'transport':{'enum':['tcp','udp']}})]}})},'proxy':{'oneOf':[{'type':'null'},obj({'host':string,'ports':{'type':'array','items':{'type':'integer'}},'protocol':{'enum':[p['id'] for p in relay_plugins()]},'transport':{'enum':['tcp','udp']}})]},
     'direct_route':obj({'routability':{'const':'unknown'},'route_may_be_required':{'const':True}}),
     'manufacturer_identity':{'const':'unknown'},'maker_app_acceptance':{'const':'unverified'},'service_readiness':{'enum':['checked','not_probed']}})
 schemas['ConnectionOperation'] = obj({'api_version':string,'id':string,'boot_id':string,'profile_id':ident,
@@ -180,6 +237,12 @@ schemas['ConnectionOperation'] = obj({'api_version':string,'id':string,'boot_id'
     'physical_selection':{'oneOf':[{'type':'null'},obj({'bssid':mac,'frequency':{'type':'integer'},'verification':{'const':'wifi-observed-not-manufacturer-verified'}})]},
     'restoration':obj({'state':{'enum':['not_needed','in_progress','restored','failed','superseded']},'reason':{'type':['string','null']}}),'status_url':string,'displaced':obj({'profile_id':ident,'reason':{'enum':['QUIET_REPLACEMENT','FORCED_INTERRUPTION']}})})
 schemas['EnsureResult'] = {'oneOf':[ref('ConnectionOperation'),obj({'state':{'const':'ready'},'profile_id':ident,'endpoint':ref('ConnectionEndpoint'),'api_version':string})]}
+schemas['InterfaceRoles'] = {'type':'object','maxProperties':64,'propertyNames':mac,
+    'additionalProperties':{'enum':['auto','home','hotspot','telescope']},
+    'description':'Persistent purposes by permanent MAC. One home and one hotspot reservation at most. Actual revision required to change roles; stopped services retain their reservation.'}
+for name in ('SettingsPatch','PublicConfig'):
+    schemas[name]['properties']['interface_roles']=ref('InterfaceRoles')
+schemas['Interface']['properties']['configured_role']={'enum':['auto','home','hotspot','telescope']}
 schemas['PublicConfig']['properties']['auto_connect']=dict(boolean,default=False)
 schemas['Telescope']['properties']['owner_locked']=dict(boolean,readOnly=True,default=False)
 schemas['Lease'] = obj({'id':dict(string,pattern='^[0-9a-f]{32}$'),'profile_id':ident,'version':{'type':'integer','minimum':1},
@@ -199,9 +262,58 @@ schemas['Activity'] = obj({'api_version':string,'supported':boolean,'reason':{'t
     'profiles':{'type':'object','maxProperties':24,'additionalProperties':ref('ActivityProfile')},'idle_selection_implemented':{'const':True}})
 schemas['AutoPolicy'] = obj({'quiet_seconds':{'type':'integer','minimum':30,'maximum':3600,'default':120},
     'cooldown_seconds':{'type':'integer','minimum':30,'maximum':3600,'default':60},
-    'force_first_profile':dict(boolean,default=False),'seestar_demand':dict(boolean,default=True),'vespera_demand':dict(boolean,default=True),'dwarf_demand':dict(boolean,default=True),'zwo_mount_demand':dict(boolean,default=True),'synscan_demand':dict(boolean,default=True)},additionalProperties=False)
-schemas['SettingsPatch']['properties'].update(auto_policy=ref('AutoPolicy'),acknowledge_interruption=dict(boolean,writeOnly=True,description='Required true when enabling force or manufacturer demand; actual revision required for every policy change.'))
+    'protect_running_operations':dict(boolean,default=False),'force_first_profile':dict(boolean,default=False),'seestar_demand':dict(boolean,default=True),'vespera_demand':dict(boolean,default=True),'dwarf_demand':dict(boolean,default=True),'zwo_mount_demand':dict(boolean,default=True),'synscan_demand':dict(boolean,default=True)},additionalProperties=False)
+schemas['SettingsPatch']['properties'].update(auto_policy=ref('AutoPolicy'),acknowledge_interruption=dict(boolean,writeOnly=True,description='Required true when enabling running-operation protection, force or manufacturer demand; actual revision required for every policy change.'))
 schemas['PublicConfig']['properties']['auto_policy']=ref('AutoPolicy')
+schemas['AutoPolicy']['properties']['night_reservations']=dict(boolean,default=True,description='Owner switch: paired apps may hold night reservations (reserve_seconds). False answers 403 RESERVATIONS_DISABLED.')
+station_fields={'name':{'type':'string','minLength':1,'maxLength':64},'kind':{'enum':['seestar','dwarf']},
+    'target_ip':dict(string,format='ipv4',description='Instrument address on the bridge network (hotspot DHCP lease or private LAN).'),
+    'client_connect':dict(boolean,default=True)}
+schemas['Station']=obj(dict(station_fields,id=ident,access={'const':'station'},
+    reachable={'type':['boolean','null'],'description':'Last TCP handshake result; null before the first check.'},
+    rtt_ms={'type':['number','null']}),['id','name','kind','access','target_ip','client_connect'])
+schemas['StationCreate']=obj(dict(station_fields,id=ident),['name','kind','target_ip'],additionalProperties=False)
+schemas['StationPatch']=obj(dict(station_fields),additionalProperties=False)
+schemas['StationEnvelope']=obj(dict(meta,station=ref('Station')))
+schemas['StationList']=obj(dict(meta,stations={'type':'array','items':ref('Station'),'maxItems':16}))
+schemas['StationDeleted']=obj({'api_version':string,'deleted':boolean,'id':ident})
+schemas['PublicConfig']['properties']['stations']={'type':'array','items':ref('Station'),'maxItems':16}
+# Serial mounts (not Wi-Fi): a serial adapter relayed as one TCP access point per mount. Management additions, not contract changes.
+serial_fields={'name':{'type':'string','minLength':1,'maxLength':64},'profile':{'enum':['nexstar']},
+    'device':dict(string,description='Stable udev link of the adapter: /dev/serial/by-id/... (adapter with a serial number) or /dev/serial/by-path/... (USB socket). Never a bare /dev/ttyUSBn.'),
+    'tcp_port':{'type':'integer','minimum':2000,'maximum':2099,'description':'Assigned from 2000 upward when omitted; kept afterwards.'},
+    'baud':{'enum':[1200,2400,4800,9600,19200,38400,57600,115200]},'format':{'type':'string','pattern':'^[78][NEO][12]$'},
+    'idle_timeout_seconds':{'type':'integer','description':'0 disables; otherwise 5 to 3600. The idle client is dropped and the stop sequence is sent.'}}
+serial_identity=obj({'responding':boolean,'hand_control_version':{'type':['string','null']},'model_code':{'type':['integer','null']},'model_name':{'type':['string','null']},
+    'board_versions':{'type':'object'},'read_at':string,'source':{'const':'bridge_read'}})
+schemas['SerialMount']=obj(dict(serial_fields,id=ident,kind={'const':'mount'},link_type={'const':'serial_usb'},
+    declared_identity={'type':'object'},state={'enum':['starting','idle','client','identifying','stopping','adapter_missing','error','stopped','demo']},
+    reason={'type':['string','null']},adapter_present={'type':['boolean','null']},
+    client={'type':['object','null'],'description':'The single client holding the link.'},
+    refused_clients={'type':'integer'},last_refused={'type':['object','null']},stops_sent={'type':'integer'},last_stop={'type':['object','null']},stop_pending={'type':'boolean'},
+    identification={'enum':['identified','not_identified','unknown']},identity=dict(serial_identity,type=['object','null']),identity_mismatch=boolean,
+    client_setup=obj({'port':{'type':'integer'},'transport':{'const':'tcp'},'host':{'type':'null'},'preset':string}),journal={'type':'array','items':{'type':'object'}}),
+    ['id','name','profile','device','tcp_port','link_type','state'])
+schemas['SerialMountCreate']=obj(dict(serial_fields,id=ident,declared_identity={'type':'object'}),['device'],additionalProperties=False)
+schemas['SerialMountPatch']=obj({k:v for k,v in serial_fields.items() if k in ('name','tcp_port','baud','format','idle_timeout_seconds')},additionalProperties=False)
+schemas['SerialMountEnvelope']=obj(dict(meta,serial_mount=ref('SerialMount')))
+schemas['SerialMountList']=obj(dict(meta,serial_mounts={'type':'array','items':ref('SerialMount'),'maxItems':8}))
+schemas['SerialMountDeleted']=obj({'api_version':string,'deleted':boolean,'id':ident})
+schemas['SerialDevice']=obj({'node':string,'stable_path':{'type':['string','null']},'stable_kind':{'enum':['by-id','by-path',None]},'by_path':{'type':['string','null']},
+    'vendor_id':{'type':['string','null']},'product_id':{'type':['string','null']},'manufacturer':{'type':['string','null']},'product':{'type':['string','null']},
+    'serial_number':{'type':['string','null']},'unique_by_id':boolean,'link_type':{'const':'serial_usb'},'can_add':boolean,
+    'identification':{'enum':['identified','not_identified','unknown']},'identity':dict(serial_identity,type=['object','null']),
+    'proposal':obj(dict(serial_fields,declared_identity={'type':'object'}))})
+schemas['SerialDeviceList']=obj(dict(meta,serial_devices={'type':'array','items':ref('SerialDevice')}))
+schemas['SerialIdentifyRequest']=obj({'device':string},['device'],additionalProperties=False)
+schemas['SerialIdentity']=obj(dict(meta,identity=dict(serial_identity,type=['object','null'])))
+schemas['SerialProfileList']=obj(dict(meta,serial_profiles={'type':'array','items':{'type':'object'}}))
+schemas['DeclaredDevice']=obj({'id':ident,'name':string,'family':string,'kind':{'enum':['mount','smart_telescope','camera','other']},'link_type':{'enum':['wifi','serial_usb','usb']},
+    'access':string,'state':{'enum':['online','offline','unknown']},'client_connected':{'type':['boolean','null']},
+    'endpoint':{'type':['object','null'],'description':'host is null: use the bridge address of the network the app reached.'},'detail':{'type':'object'}},
+    ['id','name','kind','link_type','state'])
+schemas['DeviceList']=obj(dict(meta,devices={'type':'array','items':ref('DeclaredDevice')},detected={'type':'array','items':ref('SerialDevice')}))
+schemas['PublicConfig']['properties']['serial_mounts']={'type':'array','items':ref('SerialMount'),'maxItems':8}
 schemas['ConnectionPauses'] = obj({'recovery_required':boolean,'reason':{'type':['string','null']},
     'profiles':{'type':'object','maxProperties':24,'additionalProperties':string}})
 schemas['PauseRecovery'] = obj({'confirm_recovery':{'const':True},'current_password':dict(string,writeOnly=True,maxLength=128)},['confirm_recovery','current_password'],additionalProperties=False)
@@ -229,6 +341,27 @@ schemas['PluginManifest']=manifest_schema()
 schemas['PluginCatalog']=obj(dict(meta,schema_version={'const':1},plugins={'type':'array','items':ref('PluginManifest'),'maxItems':32}))
 for p in relay_plugins():schemas['Connection']['properties'][proxy_flag(p['id'])]=boolean
 for p in demand_plugins():schemas['AutoPolicy']['properties'][p['id']+'_demand']=dict(boolean,default=True)
+nullable_number = {'type': ['number', 'null'], 'minimum': 0}
+nullable_integer = {'type': ['integer', 'null'], 'minimum': 0}
+latency = obj({'samples': {'type': 'integer', 'minimum': 0}, 'p50_ms': nullable_number,
+               'p95_ms': nullable_number}, ('samples', 'p50_ms', 'p95_ms'), additionalProperties=False)
+relay_metrics = obj({'profile_id': {'anyOf': [ident, {'type': 'null'}]}, 'host': string, 'port': {'type': 'integer'},
+    'service': {'enum': ['instrument', 'seestar_discovery']}, 'transport': {'enum': ['tcp', 'udp']},
+    **{name: {'type': 'integer', 'minimum': 0, 'maximum': 2**53-1} for name in
+       ('bytes_to_instrument', 'bytes_from_instrument', 'datagrams', 'drops')},
+    'forwarding_latency': latency}, ('profile_id', 'host', 'port', 'transport', 'service',
+    'bytes_to_instrument', 'bytes_from_instrument', 'datagrams', 'drops', 'forwarding_latency'), additionalProperties=False)
+schemas['SystemMetrics'] = obj({'api_version': {'const': '1'}, 'sample_sequence': {'type': 'integer'},
+    'sample_interval_seconds': {'const': 5}, 'sample_age_seconds': {'type': 'number', 'minimum': 0},
+    'process': obj({'rss_bytes': nullable_integer, 'threads': nullable_integer,
+        'cpu_percent': obj({'5s': nullable_number, '60s': nullable_number}, ('5s', '60s'), additionalProperties=False)},
+        ('rss_bytes', 'threads', 'cpu_percent'), additionalProperties=False),
+    'system': obj({'load_average': {'anyOf': [{'type': 'null'}, {'type': 'array', 'items': {'type': 'number', 'minimum': 0}, 'minItems': 3, 'maxItems': 3}]},
+        'memory_free_bytes': nullable_integer, 'memory_available_bytes': nullable_integer},
+        ('load_average', 'memory_free_bytes', 'memory_available_bytes'), additionalProperties=False),
+    'http_loop_lag': latency, 'relays': {'type': 'array', 'items': relay_metrics, 'maxItems': 50},
+    'relay_coverage': {'const': 'userspace_only'}}, ('api_version', 'sample_sequence',
+    'sample_interval_seconds', 'sample_age_seconds', 'process', 'system', 'http_loop_lag', 'relays', 'relay_coverage'), additionalProperties=False)
 paths = {}
 revision = {'name':'If-Match','in':'header','required':False,'schema':string,
             'description':'Optional quoted config_revision from a previous read. A stale revision returns 412 without saving.'}
@@ -251,6 +384,14 @@ def add(path, method, operation, summary, response, request=None, status=200, pu
     paths.setdefault('/api/v1' + path, {})[method] = value
 
 
+add('/endpoints','get','getEndpoints','Read current instrument paths (read or administrator scope)','EndpointInventory')
+add('/endpoints/{id}','get','getProfileEndpoints','Read current paths for one saved profile (read or administrator scope)','EndpointInventory')
+add('/endpoints/{id}/release-owner','post','releaseEndpointOwner','Release the instrument UDP controller (administrator scope)',
+    'EndpointOwnerRelease','Empty',conditional=True)
+release_owner = paths['/api/v1/endpoints/{id}/release-owner']['post']
+release_owner['x-required-scopes'] = ['admin']
+release_owner['parameters'][-1] = dict(revision, required=True, description='Actual current quoted config_revision; wildcard refused.')
+release_owner['responses']['428'] = {'description':'Actual current configuration revision required','content':{'application/json':{'schema':ref('Error')}}}
 add('/info','get','getInfo','Identify the bridge and its capabilities','Info',public=True)
 add('/openapi.json','get','getOpenAPI','Download the API contract','OK',public=True)
 paths['/api/v1/openapi.json']['get']['responses']['200']['content']['application/json']['schema']={'type':'object'}
@@ -277,6 +418,11 @@ add('/telescopes','post','createTelescope','Save an instrument profile; inactive
 add('/telescopes/{id}','get','getTelescope','Read saved preferences and live connection state','TelescopeEnvelope')
 add('/telescopes/{id}','patch','updateTelescope','Edit one profile without replacing other profiles','TelescopeEnvelope','TelescopePatch',conditional=True)
 add('/telescopes/{id}','delete','deleteTelescope','Delete profile and queue connection cleanup','Action',conditional=True)
+add('/stations','get','getStations','Station instruments joined to the bridge network, with last reachability','StationList')
+add('/stations','post','createStation','Declare a station instrument (no radio, no Wi-Fi credentials)','StationEnvelope','StationCreate',status=201,conditional=True)
+add('/stations/{id}','get','getStation','Read one station instrument','StationEnvelope')
+add('/stations/{id}','patch','updateStation','Edit a station instrument','StationEnvelope','StationPatch',conditional=True)
+add('/stations/{id}','delete','deleteStation','Remove a station instrument without reservations','StationDeleted',conditional=True)
 for action in ('connect','disconnect'):
     add('/telescopes/{id}/'+action,'post',action+'Telescope',action.title()+' this instrument; poll its connection state','Action','ConnectRequest' if action == 'connect' else 'Empty',status=202,conditional=True)
 add('/discovery/{observation}','get','getDiscoveredWifi','Read a retained Wi-Fi observation and current plugin defaults for the add form','DiscoveryCandidate')
@@ -320,6 +466,31 @@ paths['/api/v1/system/https/certificate']['get']['responses']['200']['content'] 
 add('/system/updates','get','getUpdates','Read application release/update status','UpdateStatus')
 add('/system/updates','post','updateSystem','Check releases, set automatic policy or install the checked release','Action','UpdateAction',status=202)
 add('/system/reboot','post','reboot','Schedule a reboot; association may delay shutdown','Reboot','Empty',status=202)
+add('/system/metrics','get','getSystemMetrics','Read cached local load measurements (administrator scope)','SystemMetrics')
+add('/system/time','get','getSystemTime','Read system UTC and best-effort correction without changing the clock','SystemTime')
+add('/system/time-hint','post','hintSystemTime','Supply an unverified UTC estimate (read scope); synchronized clocks ignore it','SystemTime','TimeHint')
+for path, method in [('/system/time','get'), ('/system/time-hint','post')]:
+    paths['/api/v1' + path][method].update(tags=['native-client'], **{'x-contract-status': 'implemented'})
+add('/devices','get','getDevices','Every declared device with the nature of its link (wifi, serial_usb, usb) and its state, plus detected undeclared serial adapters','DeviceList')
+add('/serial-profiles','get','getSerialProfiles','Serial device profiles the bridge can relay','SerialProfileList')
+add('/serial-devices','get','getSerialDevices','Serial adapters seen but not declared, with what the bridge knows and a ready proposal','SerialDeviceList')
+add('/serial-devices/identify','post','identifySerialDevice','Read-only identification of a detected adapter (never moves or sets anything)','SerialIdentity','SerialIdentifyRequest')
+add('/serial-mounts','get','getSerialMounts','Declared serial mounts with state, relay port and the single client','SerialMountList')
+add('/serial-mounts','post','createSerialMount','Declare a serial mount: nothing is relayed before this call','SerialMountEnvelope','SerialMountCreate',status=201,conditional=True)
+add('/serial-mounts/{id}','get','getSerialMount','Read one serial mount','SerialMountEnvelope')
+add('/serial-mounts/{id}','patch','updateSerialMount','Rename a serial mount or change its settings (settings are refused while a client holds the link)','SerialMountEnvelope','SerialMountPatch',conditional=True)
+add('/serial-mounts/{id}','delete','deleteSerialMount','Remove a serial mount (409 LINK_HELD while a client holds the link)','SerialMountDeleted',conditional=True)
+add('/serial-mounts/{id}/identify','post','identifySerialMount','Read-only identification, only while no client holds the link (409 LINK_HELD otherwise)','SerialIdentity','Empty')
+from native_client_openapi import extend
+extend(schemas, paths)
+from wifi_bridge.api import MobileAPI
+for path, methods in paths.items():
+    for method, entry in methods.items():
+        scope = MobileAPI.required_scope(method.upper(), path.removeprefix('/api/v1'))
+        entry['x-required-scopes'] = [] if scope is None else [scope]
+        if scope is not None:
+            entry['responses'].setdefault('403', {'description': 'Insufficient scope', 'content': {'application/json': {'schema': ref('Error')}}})
+
 spec={'openapi':'3.1.0','info':{'title':'Astro Bridge Local API','version':__version__,
       'description':'Native mobile API. HTTP recovery remains available; optional device-local HTTPS requires supported diskless OS helpers and explicit client CA trust. Tokens bind to actual transport. Passwords and private keys are never returned. Accepted operations are asynchronous.'},
       'servers':[{'url':scheme+'://{bridgeHost}','variables':{'bridgeHost':{'default':'astro-bridge-12abcd.local'}}} for scheme in ('http','https')],

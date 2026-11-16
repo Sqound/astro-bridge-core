@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "driver": {
+      "enum": [
+        "simulator",
+        "uvc",
+        "zwo_asi"
+      ]
+    },
+    "usb": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "vendor_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "product_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            },
+            "required": [
+              "vendor_id",
+              "product_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "class": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+              }
+            },
+            "required": [
+              "class"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "validation": {
+      "enum": [
+        "unverified",
+        "simulation"
+      ]
+    },
+    "indi_driver": {
+      "const": "indi_asi_ccd"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "driver",
+    "usb",
+    "validation"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "driver": {
+            "const": "simulator"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "indi_driver"
+        ]
+      },
+      "then": {
+        "properties": {
+          "driver": {
+            "const": "zwo_asi"
+          },
+          "usb": {
+            "minItems": 1,
+            "items": {
+              "required": [
+                "vendor_id"
+              ],
+              "properties": {
+                "vendor_id": {
+                  "const": 963
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

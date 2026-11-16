@@ -47,6 +47,23 @@ class PushTests(unittest.TestCase):
         self.service.tick()
         with patch('wifi_bridge.push.time.monotonic', return_value=time.monotonic()+4): self.service.tick()
 
+    def test_mixed_native_history_and_feed_preserve_legacy_notifications(self):
+        self.event(kind='failed', reason='ASSOCIATION_FAILED')
+        self.controller.event_store.native('instrument.state','scope',link='connected',service='unknown')
+        self.controller.event_store.last_write=None; self.controller.event_store.flush()
+        self.controller.event_store=EventStore(self.controller.event_store.path)
+        other=PushService(self.controller,lambda:self.tls,invoke=self.service.invoke,start=False)
+        self.addCleanup(other.close)
+        self.assertTrue(other.connection_notices.failures)
+        other.tick()  # Mixed persisted records are consumed without replay.
+        self.action()
+        self.controller.event_store.native('instrument.lost','scope',reason='LINK_LOST')
+        self.event('Still connected')
+        self.flush()
+        self.assertEqual(len(self.sent),1)
+        self.assertIn('Still connected',self.sent[0]['payload']['body'])
+        self.assertNotIn('LINK_LOST',json.dumps(self.sent))
+
     def test_provider_allowlist_rejects_private_and_redirect_destinations_and_bad_keys(self):
         for url in ('http://web.push.apple.com/test', 'https://127.0.0.1/test', 'https://evil.test/test',
                     'https://web.push.apple.com.evil.test/test', 'https://web.push.apple.com:444/test',

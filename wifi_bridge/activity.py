@@ -422,6 +422,8 @@ class ForwardActivity:
                 state='unknown' if reason or not continuous else 'active' if busy else 'quiet' if quiet_since is not None and now-quiet_since>=self.quiet_seconds else 'unknown'
                 if not reason:reason='CONTENT_TRANSFER_PROBABLE' if state=='active' and consultation=='probable_content' else 'UNCLASSIFIED_TRANSFER' if state=='active' else 'QUIET_WINDOW_OBSERVED' if state=='quiet' else 'WARMING_UP'
                 self.values[ident]={'state':state,'reason':reason,'observed':now,'generation':self.generation,'mark':mark,'marks':marks,'group':record.get('group'),
+                    'bytes_to_instrument':sum(pair[0][1] for pair in pairs),
+                    'bytes_from_instrument':sum(pair[1][1] for pair in pairs),
                     'packets':packets,'bytes':bytes_,'tcp_established':sessions.get(ident,0),'quiet_since':quiet_since,
                     'last_active':now if busy else old.get('last_active',now), 'control':control, 'control_pairs':control_pairs, 'consultation':consultation,
                     'raw_active':bool(changed or sessions.get(ident,0)), 'interval_seconds':now-old.get('observed',now) if continuous else None,

@@ -23,6 +23,15 @@ class DeploymentTests(Fixture):
                     password.assert_not_called();reboot.assert_not_called()
                 self.assertIsNone(self.controller.action_at)
 
+    def test_live_os_declaration_is_required_and_never_falls_back_to_pi(self):
+        with patch.dict(os.environ, {'ASTRO_BRIDGE_PLATFORM':''}), patch('wifi_bridge.runtime.Path.is_file',return_value=True):
+            with patch('wifi_bridge.ota.live_platform',return_value='linux-alpine-x86_64'):
+                self.assertEqual(platform(),'live-usb');self.assertTrue(capabilities()['host_reboot'])
+            with patch('wifi_bridge.ota.live_platform',return_value=None):
+                self.assertEqual(platform(),'native');self.assertFalse(capabilities()['host_reboot'])
+            with patch('wifi_bridge.ota.live_platform',side_effect=ValueError('invalid')):
+                self.assertEqual(platform(),'native');self.assertFalse(Updates(self.tmp.name).supported())
+
     def test_unknown_platform_fails_closed_and_demo_actions_are_simulated(self):
         with patch.dict(os.environ,{'ASTRO_BRIDGE_PLATFORM':'arbitrary'}):
             with self.assertRaises(ValueError):platform()

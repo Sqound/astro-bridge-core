@@ -1,0 +1,179 @@
+{
+  "name": "instrument-operation",
+  "description": "Contract 1.2: current_operation reports read-only operation evidence per instrument (here a Vespera stacking and a DWARF capture, each on its own radio); kind is set only while running, since is when the bridge first observed that state. null means the instrument reports nothing. protect_running_operations uses the same evidence.",
+  "contract_version": 1,
+  "requires": [
+    "instruments"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-vespera-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-vespera-1",
+          "kind": "smart_telescope",
+          "family": "vespera",
+          "name": "Test telescope two",
+          "link": "connected",
+          "service": "ready",
+          "protocol": "vespera",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": {
+            "state": "running",
+            "kind": "stacking",
+            "since": "2026-01-01T00:00:00.000+00:00"
+          },
+          "since_seq": 10,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1",
+              "vespera_status_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "real_patterns": {
+        "/current_operation/since": "^\\d{4}-\\d{2}-\\d{2}T"
+      },
+      "note": "Vespera status reports a running stacking operation."
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-dwarf-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-dwarf-1",
+          "kind": "smart_telescope",
+          "family": "dwarf",
+          "name": "Test telescope three",
+          "link": "connected",
+          "service": "not_probed",
+          "protocol": "dwarf",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": {
+            "state": "running",
+            "kind": "capture",
+            "since": "2026-01-01T00:00:00.000+00:00"
+          },
+          "since_seq": 9,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "real_patterns": {
+        "/current_operation/since": "^\\d{4}-\\d{2}-\\d{2}T"
+      },
+      "note": "A DWARF capture-state notification (15208) observed by the bridge (read-only) reports a running capture. Numbers partially verified on a bench (02-03/11/2026)."
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-dwarf-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-dwarf-1",
+          "kind": "smart_telescope",
+          "family": "dwarf",
+          "name": "Test telescope three",
+          "link": "connected",
+          "service": "not_probed",
+          "protocol": "dwarf",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": {
+            "state": "idle",
+            "kind": null,
+            "since": "2026-01-01T00:00:00.000+00:00"
+          },
+          "since_seq": 9,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "real_patterns": {
+        "/current_operation/since": "^\\d{4}-\\d{2}-\\d{2}T"
+      },
+      "note": "The capture stopped: the state is idle and kind is null."
+    }
+  ]
+}

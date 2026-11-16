@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "simulator",
+  "driver": "simulator",
+  "usb": [],
+  "validation": "simulation"
+}

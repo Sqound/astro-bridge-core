@@ -9,7 +9,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-clarity-')),output=resolve(root,'artifacts/ui-clarity');await mkdir(output,{recursive:true});
+const folder=await mkdtemp(resolve(tmpdir(),'astro-clarity-')),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/ui-clarity');await mkdir(output,{recursive:true});
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
 const server=spawn('python3',['-u','-m','wifi_bridge','--demo','--demo-radios','3','--state-dir',folder,'--port',String(port)],{cwd:root,stdio:['ignore','pipe','pipe']});let logs='',browser;
 server.stdout.on('data',v=>logs+=v);server.stderr.on('data',v=>logs+=v);
@@ -19,7 +19,7 @@ try{
  await wait(()=>logs.includes('SIMULATION'));
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
  const page=await browser.newPage({viewport:{width:375,height:900}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
+ await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
  await check('home switch updates only the master preference, with supported-app summary',async()=>{
   assert.equal(await page.locator('#auto-connect').getAttribute('role'),'switch');await page.locator('#auto-connect').check();
@@ -62,7 +62,7 @@ try{
   await page.locator('#auto-advanced>summary').click();
  });
  await check('dedicated PWA tab follows General and has an introduction; protection has one help button',async()=>{
-  const order=await page.locator('.configuration [role=tab]').evaluateAll(items=>items.map(e=>e.id));assert.deepEqual(order,['tab-general','tab-pwa','tab-telescopes','tab-radios']);
+  const order=await page.locator('.configuration [role=tab]').evaluateAll(items=>items.map(e=>e.id));assert.deepEqual(order,['tab-general','tab-pwa','tab-plugins','tab-telescopes','tab-radios','tab-sessions','tab-cameras']);
   await page.locator('#tab-general').focus();await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>!document.getElementById('panel-pwa').hidden);
   assert.match(await page.locator('#pwa-introduction').innerText(),/progressive web app.*Home Screen.*notifications/s);
   assert.equal(await page.locator('#panel-general #pwa-settings').count(),0);
@@ -91,7 +91,7 @@ try{
   const show=async(fixture)=>page.evaluate(fixture=>{
    const s=structuredClone(state),d=s.devices[0],p={id:'guard-fixture',name:'Guard fixture',kind:'vespera',mac:d.mac,enabled:true,auto_eligible:true,auto_replaceable:true,...fixture.profile};
    s.config.telescopes=[p];s.config.home={};s.config.auto_connect=true;s.config.auto_policy={quiet_seconds:120,cooldown_seconds:60,force_first_profile:false,...fixture.policy};s.hotspot={active:false};
-   s.telescopes=[{id:p.id,connected:true,interface:d.name,relay_ready:true}];s.connection_protection={owner_locks:[],leases:[],...fixture.protection};s.connection_activity={supported:true,profiles:{[p.id]:{sample_age_seconds:0,state:'active',quiet_seconds:0,cooldown_remaining:0,...fixture.activity}}};renderSimple(s);
+   s.telescopes=[{id:p.id,connected:true,interface:d.name,relay_ready:true}];s.connection_protection={owner_locks:[],leases:[],...fixture.protection};s.connection_activity={supported:true,profiles:{[p.id]:{sample_age_seconds:0,state:'active',quiet_seconds:0,cooldown_remaining:0,...fixture.activity}}};state=s;renderSimple(s);
   },fixture);
   const badge=page.locator('[data-guard-state]').first();
   await show({});assert.match(await badge.innerText(),/Traffic active.*blocked while active/s);
@@ -99,11 +99,11 @@ try{
   await show({protection:{leases:[{profile_id:'guard-fixture',remaining_seconds:85}]}});assert.match(await badge.innerText(),/Protected for 85 s/);
   await show({activity:{state:'unknown',reason:'WARMING_UP',quiet_seconds:30}});assert.match(await badge.innerText(),/90 s remaining/);
   await show({activity:{state:'quiet',quiet_seconds:130,cooldown_remaining:20}});assert.match(await badge.innerText(),/between switches: 20 s/);
-  await show({activity:{state:'quiet',quiet_seconds:130}});assert.match(await badge.innerText(),/No recent traffic.*May be reused/s);
-  await show({activity:{state:'quiet',quiet_seconds:130,sample_age_seconds:16}});assert.match(await badge.innerText(),/Activity not verified.*activity unverified/s);
+  await show({activity:{state:'quiet',quiet_seconds:130}});assert.equal(await badge.count(),0);await page.locator('#instrument-guard-fixture-info').click();assert.match(await page.locator('#profile-info-body').innerText(),/No recent traffic.*May be reused/s);await page.keyboard.press('Escape');
+  await show({activity:{state:'quiet',quiet_seconds:130,sample_age_seconds:16}});assert.equal(await badge.count(),0);assert.doesNotMatch(await page.locator('#simple-connections').innerText(),/Activity not verified|activity unverified/);const info=page.locator('#instrument-guard-fixture-info');await info.click();assert.match(await page.locator('#profile-info-body').innerText(),/Activity not verified.*activity unverified/s);await page.waitForTimeout(500);await page.keyboard.press('Escape');assert.equal(await info.evaluate(e=>e===document.activeElement),true);
   await show({policy:{force_first_profile:true}});assert.equal(await badge.getAttribute('data-guard-state'),'warning');assert.match(await badge.innerText(),/may be replaced/);
   await show({profile:{owner_locked:true},policy:{force_first_profile:true}});assert.equal(await badge.getAttribute('data-guard-state'),'protected');
-  const after=await page.evaluate(async()=>await(await fetch('/api/status')).json());assert.deepEqual(after.config,before.config);await page.evaluate(()=>renderSimple(state));
+  const after=await page.evaluate(async()=>await(await fetch('/api/status')).json());assert.deepEqual(after.config,before.config);await page.evaluate(()=>refresh());
  });
  await check('main pages and help dialogs fit small screens',async()=>{
   for(const width of [320,375,768,1280]){

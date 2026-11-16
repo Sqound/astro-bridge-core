@@ -162,7 +162,9 @@
     "readiness": {
       "enum": [
         "association",
-        "vespera_tcp"
+        "vespera_tcp",
+        "tcp_connect",
+        "udp_identity"
       ]
     },
     "validation": {
@@ -276,6 +278,205 @@
         "additionalProperties": false
       },
       "maxItems": 16
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "adapters": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "enum": [
+                  "link_v1",
+                  "vespera_status_v1",
+                  "alpaca_observer_v1"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "const": "seestar_events_v1"
+                  },
+                  "requires": {
+                    "const": "maker_key"
+                  }
+                },
+                "required": [
+                  "id",
+                  "requires"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "maxItems": 4,
+          "uniqueItems": true
+        },
+        "default_enabled": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "link_v1",
+              "vespera_status_v1",
+              "alpaca_observer_v1"
+            ]
+          },
+          "maxItems": 4,
+          "uniqueItems": true
+        },
+        "limitation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      },
+      "required": [
+        "adapters",
+        "default_enabled"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "default_enabled": {
+                "contains": {
+                  "const": "link_v1"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "adapters": {
+                "contains": {
+                  "const": "link_v1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "default_enabled": {
+                "contains": {
+                  "const": "vespera_status_v1"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "adapters": {
+                "contains": {
+                  "const": "vespera_status_v1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "default_enabled": {
+                "contains": {
+                  "const": "alpaca_observer_v1"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "adapters": {
+                "contains": {
+                  "const": "alpaca_observer_v1"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "protocol": {
+      "enum": [
+        "seestar",
+        "vespera",
+        "dwarf",
+        "lx200",
+        "synscan"
+      ]
+    },
+    "port_roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "role": {
+            "enum": [
+              "control",
+              "preview",
+              "imaging",
+              "rest",
+              "stream",
+              "other"
+            ]
+          },
+          "protocol": {
+            "enum": [
+              "json_rpc",
+              "binary",
+              "http",
+              "socketio",
+              "websocket",
+              "rtsp",
+              "lx200",
+              "synscan",
+              "alpaca",
+              "indi",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "port",
+          "role",
+          "protocol"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 16,
+      "minItems": 1
+    },
+    "maker_key": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "const": "seestar"
+        },
+        "algorithm": {
+          "const": "rsa-pkcs1v15-sha1"
+        },
+        "sources": {
+          "const": [
+            "maker_package",
+            "import"
+          ]
+        }
+      },
+      "required": [
+        "family",
+        "algorithm",
+        "sources"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -296,5 +497,52 @@
     "references"
   ],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "maker_key"
+        ]
+      },
+      "then": {
+        "properties": {
+          "id": {
+            "const": "seestar"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "telemetry"
+        ],
+        "properties": {
+          "telemetry": {
+            "properties": {
+              "adapters": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "const": "seestar_events_v1"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "maker_key"
+        ]
+      }
+    }
+  ],
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }

@@ -35,7 +35,7 @@ try {
   page.on("pageerror", error => failures.push(error.message));
   const url = `http://127.0.0.1:${port}`;
   const check = async (name, action) => { if(process.env.UI_LOCALIZATION_ONLY==="1"&&results.length>=3&&!name.startsWith("localization:"))return; if(process.env.UI_FIELD_ONLY==="1"&&results.length>=3&&!name.startsWith("field:"))return; if(process.env.UI_REPLACEMENT_ONLY==="1"&&results.length>=3&&!name.startsWith("replacement:"))return; if(process.env.UI_PROTECTION_ONLY==="1"&&results.length>=3&&!name.startsWith("protection:"))return; if(process.env.UI_ENSURE_ONLY==="1"&&results.length>=3&&!name.startsWith("ensure:"))return; if(process.env.UI_DISCOVERY_ONLY==="1"&&results.length>=3&&!name.startsWith("discovery:"))return; if(process.env.UI_EVENTS_ONLY==="1"&&results.includes("confirmed activity, grouped switch notification and independent tab reads"))return; await action(); results.push(name); console.log("PASS", name); };
-  const login = async () => { await page.locator("#login-password").fill("demo-telescope-2026"); await page.locator("#login-form button").click(); await page.locator("#dashboard").waitFor({ state: "visible" }); };
+  const login = async () => { await page.locator("#login-password").fill("12345678"); await page.locator("#login-form button").click(); await page.locator("#dashboard").waitFor({ state: "visible" }); };
   const data = () => page.evaluate(async () => (await fetch("/api/status")).json());
   const waitData = async predicate => {
     const end=Date.now()+10000;
@@ -43,6 +43,14 @@ try {
     throw new Error("Server status did not reach the expected state");
   };
   const clickTab = async id => { await page.locator("#" + id).click(); await page.waitForFunction(id => document.getElementById(id).getAttribute("aria-selected") === "true", id); };
+  const connect = async (number,profile) => {
+    const current=await data(),p=current.config.telescopes.find(p=>p.id===profile.id);
+    const groups=await page.evaluate(()=>[...connectionGroups(state)].map(([mac,g])=>({mac,number:g.number})));
+    if(p.enabled&&p.mac===groups.find(g=>g.number===number)?.mac){await page.locator(`#simple-connect-${number}-${p.id}`).click();return;}
+    await page.locator(p.enabled?`#instrument-${p.id}-move`:`#simple-connect-0-${p.id}`).click();
+    await page.locator(`#choice-connect-${number}-${p.id}`).click();
+  };
+  let firstRadio, secondRadio, firstConnection, secondConnection;
   await page.goto(url);
   await check("English default and authenticated actual demo state", async () => {
     assert.equal(await page.locator("html").getAttribute("lang"), "en");
@@ -57,7 +65,16 @@ try {
     await page.locator("#network-save").click();await page.locator("#editor").waitFor({state:"hidden"});
     if(await page.locator("#login").isVisible())await login();
     const fresh=(await data()).config.telescopes[0];assert.equal((await data()).config.home.ssid,undefined);
-    await clickTab("nav-telescopes");assert.equal(await page.locator(`#simple-connect-1-${fresh.id}`).count(),0);await page.locator(`[id^="simple-connect-"][id$="-${fresh.id}"]:enabled`).first().click();await waitData(s=>s.telescopes.find(p=>p.id===fresh.id)?.relay_ready);
+    const freshState=await data(),hotspotMac=freshState.hotspot.mac;
+    assert.equal(freshState.config.interface_roles[hotspotMac],"hotspot");
+    const groups=await page.evaluate(()=>[...connectionGroups(state)].map(([mac,g])=>({mac,number:g.number,reserved:g.reserved,available:g.available})));
+    assert.equal(groups.some(g=>g.mac===hotspotMac),false);
+    const usable=freshState.devices.filter(d=>d.mac!==hotspotMac&&["auto","telescope"].includes(freshState.config.interface_roles[d.mac]||"auto"));
+    assert.deepEqual(groups.filter(g=>g.available&&!g.reserved).map(g=>g.mac).sort(),usable.map(d=>d.mac).sort());
+    const free=groups.find(g=>g.available&&!g.reserved);assert.ok(free);
+    await clickTab("nav-telescopes");assert.equal(await page.locator(`[id^="simple-connect-"][id$="-${fresh.id}"]`).count(),1);
+    await connect(free.number,fresh);await waitData(s=>s.telescopes.find(p=>p.id===fresh.id)?.relay_ready);
+    const connected=await data();assert.equal(connected.config.telescopes[0].mac,free.mac);assert.equal(connected.hotspot.mac,hotspotMac);assert.equal(connected.hotspot.active,true);
     assert.equal((await data()).management.mode,"ap_only");assert.match(await page.locator("#simple-notice").textContent(),/You can use telescopes through the hotspot/);
     await page.waitForFunction(()=>state?.management?.mode==="ap_only");assert.equal(await page.locator("#management-notice").isVisible(),false);
     assert.equal(await page.locator("#other-network-interfaces").getAttribute("open"),null);
@@ -81,6 +98,14 @@ try {
     for(const badge of await page.locator('#other-connections .badge').all())assert.ok(await badge.evaluate(e=>e.getBoundingClientRect().width<=e.closest('.card').getBoundingClientRect().width-28));
     await page.screenshot({path:resolve(output,"other-network-interfaces-375.png"),fullPage:true});await page.setViewportSize({width:1280,height:960});
     await page.locator("#other-network-interfaces summary").click();
+    const state=await data();
+    const free=state.devices.filter(d=>d.mac!==state.config.home.mac&&d.mac!==state.hotspot.mac&&["auto","telescope"].includes(state.config.interface_roles[d.mac]||"auto"));
+    assert.equal(free.length,2);[firstRadio,secondRadio]=free;
+    const groups=await page.evaluate(()=>[...connectionGroups(state)].map(([mac,g])=>({mac,number:g.number,reserved:g.reserved})));
+    assert.equal(groups.some(g=>g.mac===state.hotspot.mac),false);
+    assert.deepEqual(groups.filter(g=>!g.reserved).map(g=>g.mac).sort(),free.map(d=>d.mac).sort());
+    firstConnection=groups.find(g=>g.mac===firstRadio.mac&&!g.reserved).number;
+    secondConnection=groups.find(g=>g.mac===secondRadio.mac&&!g.reserved).number;
   });
   await check("preset, real API scan, save and edit profile without adapter assignment", async () => {
     await clickTab("nav-configuration"); await clickTab("tab-telescopes"); await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -102,7 +127,7 @@ try {
   const profiles = (await data()).config.telescopes;
   if(process.env.UI_LOCALIZATION_ONLY==="1"){
     await check("localization: ten languages retain configuration roles and visible actions at four widths",async()=>{
-      await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.relay_ready);
+      await clickTab("nav-telescopes");await connect(firstConnection,profiles[0]);await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.relay_ready);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");assert.equal(await page.locator(`[id="profile-${profiles[0].id}-info"]`).count(),1);
       for(const locale of ["en","fr","ja","de","es","it","pt-BR","zh-Hans","zh-Hant","ru"]){
         await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();
@@ -118,7 +143,7 @@ try {
           if(width===320||width===375){await writeFile(resolve(output,`configuration-${locale}-${width}-aria.txt`),ax);for(const button of await page.locator("#telescopes tr").first().locator("button").all())assert.equal(await button.isVisible(),true);}
           if(width===375||width===1280)await page.screenshot({path:resolve(output,`configuration-${locale}-${width}.png`),fullPage:true,timeout:10000});
         }
-        const row=page.locator("#telescopes tr").first();assert.equal(await row.locator("button").count(),5);assert.ok(await row.locator("td").nth(1).getAttribute("data-label"));
+        const row=page.locator("#telescopes tr").first();assert.deepEqual(await row.locator("button").evaluateAll(buttons=>buttons.map(button=>button.id).sort()),["info","edit","ensure","reserve","lock","remove"].map(action=>"profile-"+profiles[0].id+"-"+action).sort());assert.ok(await row.locator("td").nth(1).getAttribute("data-label"));
       }
     });
     await check("localization: open editor draft and focus survive synchronized language changes",async()=>{
@@ -133,7 +158,7 @@ try {
       await page.locator("#credential-target").selectOption("linux");
       const fill=async password=>{await page.locator("#current-password").fill(password);await page.locator("#new-password").fill("synthetic-new-linux-password");await page.locator("#confirm-password").fill("synthetic-new-linux-password");await page.locator("#credentials-form button").click();};
       await fill("synthetic-wrong-password");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Incorrect current administrator password.");
-      await fill("demo-telescope-2026");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Password changed.");await page.evaluate(()=>BridgeI18n.setLocale("fr"));
+      await fill("12345678");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Password changed.");await page.evaluate(()=>BridgeI18n.setLocale("fr"));
       assert.equal(await page.locator("#credentials-message").textContent(),"Mot de passe modifié.");
       await clickTab("tab-telescopes");await page.locator(`[id="profile-${profiles[1].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#network-ssid").fill("😀".repeat(9));await page.locator("#network-password").fill("synthetic-scope-pass");await page.locator("#network-save").click();await page.locator("#editor-error").waitFor({state:"visible"});
       await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.evaluate(()=>BridgeI18n.setLocale("en"));await page.locator(`[id="profile-${profiles[1].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -141,7 +166,7 @@ try {
     });
   }
   if(process.env.UI_FIELD_ONLY==="1"){
-    const token=await(await fetch(url+"/api/v1/auth/token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"demo-telescope-2026"})})).json();
+    const token=await(await fetch(url+"/api/v1/auth/token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"12345678"})})).json();
     const native=async(method,path,body)=>{const response=await fetch(url+"/api/v1"+path,{method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token.access_token},...(body?{body:JSON.stringify(body)}:{})});const value=await response.json();assert.ok(response.ok,JSON.stringify(value));return value;};
     await check("field: real demo AP-only forwarding and per-path profile access",async()=>{
       const s=await data(),usb=s.devices.find(d=>d.usb&&d.mac!==s.config.home.mac);
@@ -179,12 +204,12 @@ try {
       await page.locator("#auto-policy-save").click();await page.waitForFunction(()=>document.getElementById("auto-policy-feedback").textContent.includes("not saved"));
       assert.equal((await data()).config.auto_policy.force_first_profile,false);
       await page.locator("#auto-ack").check();await page.locator("#auto-policy-save").click();await page.waitForFunction(()=>document.getElementById("auto-policy-feedback").textContent==="Automatic policy saved.");
-      await clickTab("nav-telescopes");await page.locator('[data-help="auto-info"]').click();assert.match(await page.locator("#vespera-demand-status").innerText(),/unavailable/);assert.match(await page.locator("#dwarf-demand-status").innerText(),/unavailable/);assert.match(await page.locator("#auto-info").innerText(),/sends no discovery replies/);await page.locator("#auto-info [data-close-help]").click();await clickTab("nav-configuration");await clickTab("tab-general");const policy=(await data()).config.auto_policy;assert.deepEqual(policy,{quiet_seconds:180,cooldown_seconds:60,force_first_profile:true,seestar_demand:true,vespera_demand:true,dwarf_demand:true});assert.equal(await page.locator("#auto-ack").isChecked(),false);
+      await clickTab("nav-telescopes");await page.locator('[data-help="auto-info"]').click();assert.match(await page.locator("#vespera-demand-status").innerText(),/unavailable/);assert.match(await page.locator("#dwarf-demand-status").innerText(),/unavailable/);assert.match(await page.locator("#auto-info").innerText(),/sends no discovery replies/);await page.locator("#auto-info [data-close-help]").click();await clickTab("nav-configuration");await clickTab("tab-general");const policy=(await data()).config.auto_policy;assert.deepEqual(policy,{quiet_seconds:180,cooldown_seconds:60,force_first_profile:true,protect_running_operations:false,seestar_demand:true,vespera_demand:true,dwarf_demand:true,zwo_mount_demand:true,synscan_demand:true});assert.equal(await page.locator("#auto-ack").isChecked(),false);
       await page.screenshot({path:resolve(output,"replacement-policy-en.png"),fullPage:true,timeout:10000});
     });
     await check("replacement: stale policy draft refuses an unrelated client change without reassociation",async()=>{
       await page.locator("#auto-quiet").fill("210");await page.locator("#auto-ack").check();
-      const before=await data();const token=await(await fetch(url+"/api/v1/auth/token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"demo-telescope-2026"})})).json();
+      const before=await data();const token=await(await fetch(url+"/api/v1/auth/token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"12345678"})})).json();
       const response=await fetch(url+"/api/v1/settings",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token.access_token,"If-Match":'"'+before.config_revision+'"'},body:JSON.stringify({auto_policy:{quiet_seconds:240}})});assert.equal(response.status,200);
       await page.waitForTimeout(5500);assert.equal(await page.locator("#auto-quiet").inputValue(),"210");
       await page.locator("#auto-policy-save").click();await page.waitForFunction(()=>document.getElementById("auto-policy-feedback").textContent.includes("changed elsewhere"));
@@ -199,7 +224,7 @@ try {
       await page.locator(`[id="profile-${profiles[0].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);assert.equal(await page.locator("#profile-replaceable").isChecked(),true);await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
     });
     await check("replacement: DWARF guidance offers actual Pi app endpoint separately from target",async()=>{
-      await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[2].id}`).click();await waitData(s=>s.telescopes.find(p=>p.id===profiles[2].id)?.dwarf_proxy);
+      await clickTab("nav-telescopes");await connect(firstConnection,profiles[2]);await waitData(s=>s.telescopes.find(p=>p.id===profiles[2].id)?.dwarf_proxy);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.waitForFunction(()=>document.getElementById("telescopes").textContent.includes("Connect by IP in DWARFLAB: 192.168.1.42"));
       assert.doesNotMatch(await page.locator("#telescopes").innerText(),/TCP 9900/);await page.locator(`[id="profile-${profiles[2].id}-info"]`).click();
       const text=await page.locator("#profile-info-body").innerText();assert.match(text,/DWARF app IP: 192.168.1.42/);assert.match(text,/TCP 9900 \/ 8082 \/ 554/);assert.match(text,/10.3.0.0/);await page.locator("#profile-info [data-close-help]").click();
@@ -220,10 +245,10 @@ try {
     let ownLease,foreignLease,nativeToken;
     const native=async(method,path,body,revision)=>{const response=await fetch(url+"/api/v1"+path,{method,headers:{"Content-Type":"application/json",...(nativeToken?{Authorization:"Bearer "+nativeToken}:{}),...(revision?{"If-Match":'"'+revision+'"'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});return {code:response.status,data:await response.json()};};
     await check("protection: reserve ready connection, renew owned lease and show foreign protection honestly",async()=>{
-      await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await waitData(s=>s.telescopes[0]?.relay_ready);
+      await clickTab("nav-telescopes");await connect(firstConnection,profiles[0]);await waitData(s=>s.telescopes[0]?.relay_ready);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.locator(`[id="profile-${profiles[0].id}-reserve"]`).click();await waitData(s=>s.connection_protection.leases.length===1);
       ownLease=(await data()).connection_protection.leases[0];assert.equal(ownLease.owned,true);
-      nativeToken=(await native("POST","/auth/token",{password:"demo-telescope-2026"})).data.access_token;
+      nativeToken=(await native("POST","/auth/token",{password:"12345678"})).data.access_token;
       foreignLease=(await native("POST","/telescopes/"+profiles[0].id+"/leases",{ttl_seconds:300},(await data()).config_revision)).data;assert.ok(foreignLease.id);
       await clickTab("tab-general");await page.locator("#connection-protection-settings>summary").click();await page.locator(`#lease-${ownLease.id}-renew`).click();await waitData(s=>s.connection_protection.leases.find(l=>l.id===ownLease.id)?.version===2);
       await page.locator(`#lease-${foreignLease.id}-release`).waitFor();assert.match(await page.locator("#protection-list").textContent(),/Another client reservation/);
@@ -232,13 +257,13 @@ try {
     await check("protection: owner release refuses renewed stale view and captures credentials for one action",async()=>{
       await clickTab("tab-general");await page.locator(`#lease-${foreignLease.id}-release`).click();
       assert.equal((await native("PATCH","/leases/"+foreignLease.id,{version:1,ttl_seconds:300})).code,200);
-      await page.locator("#protection-password").fill("demo-telescope-2026");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();
+      await page.locator("#protection-password").fill("12345678");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();
       await page.waitForFunction(()=>document.getElementById("protection-error").textContent.includes("renewed"));assert.equal(await page.locator("#protection-password").inputValue(),"");assert.equal(await page.locator("#protection-confirm").isChecked(),false);
       await page.locator("#protection-cancel").click();await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});await clickTab("nav-configuration");await clickTab("tab-general");
       await page.locator("#connection-protection-settings>summary").click();await page.locator("#locale-select").selectOption("fr");await page.locator(`#lease-${foreignLease.id}-release`).click();
       for(const width of [320,375,768]){await page.setViewportSize({width,height:960});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.getElementById("protection-dialog").scrollWidth<=document.getElementById("protection-dialog").clientWidth));}
       await page.setViewportSize({width:375,height:960});await page.screenshot({path:resolve(output,"owner-release-fr-375.png"),fullPage:false});
-      await page.locator("#protection-password").fill("demo-telescope-2026");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>!s.connection_protection.leases.some(l=>l.id===foreignLease.id));
+      await page.locator("#protection-password").fill("12345678");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>!s.connection_protection.leases.some(l=>l.id===foreignLease.id));
     });
     await check("protection: cancel and Escape clear secrets; late error cannot enter another dialog",async()=>{
       await page.setViewportSize({width:1280,height:960});await page.locator("#locale-select").selectOption("en");await clickTab("tab-telescopes");
@@ -248,12 +273,12 @@ try {
       await page.locator("#protection-cancel").click();await page.locator(`[id="profile-${profiles[1].id}-lock"]`).click();release();await completed;await context.unroute("**/api/protection");await page.waitForTimeout(150);assert.equal(await page.locator("#protection-error").isVisible(),false);await page.locator("#protection-cancel").click();
     });
     await check("protection: persistent lock blocks manual disconnect; logout clears DOM but keeps exposure protection",async()=>{
-      await page.locator(`[id="profile-${profiles[0].id}-lock"]`).click();await page.locator("#protection-password").fill("demo-telescope-2026");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>s.config.telescopes[0].owner_locked);
-      await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await page.locator("#error").waitFor({state:"visible"});assert.equal((await data()).config.telescopes[0].enabled,true);
+      await page.locator(`[id="profile-${profiles[0].id}-lock"]`).click();await page.locator("#protection-password").fill("12345678");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>s.config.telescopes[0].owner_locked);
+      await clickTab("nav-telescopes");await connect(firstConnection,profiles[0]);await page.locator("#error").waitFor({state:"visible"});assert.equal((await data()).config.telescopes[0].enabled,true);
       await clickTab("nav-configuration");await clickTab("tab-general");await page.locator("#protection-list").scrollIntoViewIfNeeded();await page.locator('[data-help="protection-info"]').click();await page.screenshot({path:resolve(output,"protection-desktop.png"),fullPage:false});await page.locator("#protection-info [data-close-help]").click();await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
       const html=await page.content();assert.ok(!html.includes(profiles[0].id)&&!html.includes(ownLease.id)&&!html.includes("Seestar DEMO edited"));assert.equal(await page.locator("#protection-list").textContent(),"");
       const stored=await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}));assert.ok(!stored.includes(ownLease.id)&&!stored.includes(profiles[0].id));
-      nativeToken=(await native("POST","/auth/token",{password:"demo-telescope-2026"})).data.access_token;const protection=(await native("GET","/protection")).data;assert.ok(protection.leases.some(l=>l.id===ownLease.id));assert.ok(protection.owner_locks.includes(profiles[0].id));
+      nativeToken=(await native("POST","/auth/token",{password:"12345678"})).data.access_token;const protection=(await native("GET","/protection")).data;assert.ok(protection.leases.some(l=>l.id===ownLease.id));assert.ok(protection.owner_locks.includes(profiles[0].id));
     });
   }
   if(process.env.UI_ENSURE_ONLY==="1"){
@@ -316,8 +341,47 @@ try {
       await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#profile-name").fill("Partial save DEMO");await page.locator("#network-ssid").fill("Partial-DEMO");await page.locator("#network-password").fill("synthetic-partial-pass");await page.locator("#target-ip").fill("10.5.0.1");await page.locator("#binding-bssid").fill("invalid");await page.locator("#binding-confirm").check();await page.locator("#bind-after-save").check();await page.locator("#network-save").click();
       await page.waitForFunction(()=>document.getElementById("editor-error").textContent.includes("Profile saved, but physical binding failed"));
       const saved=(await data()).config.telescopes.find(p=>p.name==="Partial save DEMO"),count=(await data()).config.telescopes.length;assert.ok(saved);assert.equal(saved.physical_binding,undefined);
+      await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
       await page.locator("#binding-bssid").fill("02:00:00:77:88:97");await page.locator("#binding-confirm").check();await page.locator("#bind-profile").click();await page.waitForFunction(()=>document.getElementById("binding-info").textContent.includes("77:88:97"));
       const retried=await data();assert.equal(retried.config.telescopes.length,count);assert.equal(retried.config.telescopes.find(p=>p.name==="Partial save DEMO").id,saved.id);await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
+    });
+    await check("discovery: delayed successful save cannot bind after user cancellation or editor replacement",async()=>{
+      for(const action of ["close","switch"]){
+        const name="Cancelled binding "+action,alias=action==="close"?"02:00:00:77:89:01":"02:00:00:77:89:02";
+        await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
+        await page.locator("#profile-name").fill(name);await page.locator("#network-ssid").fill("Cancelled-DEMO");await page.locator("#network-password").fill("synthetic-cancelled-pass");await page.locator("#target-ip").fill("10.6.0.1");await page.locator("#binding-bssid").fill(alias);await page.locator("#binding-confirm").check();await page.locator("#bind-after-save").check();
+        let release,held=false,finish,binds=0;const done=new Promise(resolve=>finish=resolve);
+        const observe=request=>{if(new URL(request.url()).pathname==="/api/telescopes/binding")binds++;};page.on("request",observe);
+        await context.route("**/api/config",async route=>{const response=await route.fetch();held=true;await new Promise(resolve=>release=resolve);try{await route.fulfill({response});}finally{finish();}});
+        await page.locator("#network-save").click();const deadline=Date.now()+10000;while(!held&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));assert.ok(held,"Real save response reached the delay barrier");
+        if(action==="close")await page.keyboard.press("Escape");else{await page.locator("#close-editor").click();await page.locator(`[id="profile-${profiles[0].id}-edit"]`).click();await page.locator("#profile-name").fill("UNSENT REPLACEMENT DRAFT");}
+        release();await done;await context.unroute("**/api/config");await page.waitForTimeout(250);await page.evaluate(()=>refresh());
+        const saved=(await data()).config.telescopes.find(profile=>profile.name===name);assert.ok(saved);assert.equal(saved.physical_binding,undefined);assert.equal(binds,0);page.off("request",observe);
+        if(action==="close")assert.equal(await page.locator("#editor").isVisible(),false);else{assert.equal(await page.locator("#profile-name").inputValue(),"UNSENT REPLACEMENT DRAFT");assert.equal(await page.locator("#editor-error").isVisible(),false);await page.locator("#close-editor").click();}
+      }
+    });
+    await check("discovery: delayed rejected save reports only to its current editor and never binds",async()=>{
+      for(const action of ["current","close","reopen","switch"]){
+        const name="Rejected binding "+action;
+        await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
+        await page.locator("#profile-name").fill(name);await page.locator("#network-ssid").fill("Rejected-DEMO");await page.locator("#network-password").fill("synthetic-rejected-pass");await page.locator("#target-ip").fill("10.7.0.1");await page.locator("#binding-bssid").fill("02:00:00:77:89:03");await page.locator("#binding-confirm").check();await page.locator("#bind-after-save").check();
+        let release,held=false,finish,binds=0;const done=new Promise(resolve=>finish=resolve);
+        const observe=request=>{if(new URL(request.url()).pathname==="/api/telescopes/binding")binds++;};page.on("request",observe);
+        await context.route("**/api/config",async route=>{
+          // Request fixture forces a real production validation refusal; no fake error response.
+          const payload=JSON.parse(route.request().postData());payload.country="invalid";
+          const response=await route.fetch({postData:JSON.stringify(payload)});assert.equal(response.status(),400);held=true;await new Promise(resolve=>release=resolve);try{await route.fulfill({response});}finally{finish();}
+        });
+        await page.locator("#network-save").click();const deadline=Date.now()+10000;while(!held&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));assert.ok(held,"Real refused save reached the delay barrier");
+        if(action==="close")await page.keyboard.press("Escape");
+        if(action==="reopen"){await page.locator("#close-editor").click();await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-name").fill("UNSENT REOPENED DRAFT");}
+        if(action==="switch"){await page.locator("#close-editor").click();await page.locator(`[id="profile-${profiles[0].id}-edit"]`).click();await page.locator("#profile-name").fill("UNSENT REPLACEMENT DRAFT");}
+        release();await done;await context.unroute("**/api/config");await page.waitForTimeout(250);await page.evaluate(()=>refresh());assert.equal(binds,0);page.off("request",observe);
+        assert.ok(!(await data()).config.telescopes.some(profile=>profile.name===name));
+        if(action==="current"){assert.equal(await page.locator("#editor-error").isVisible(),true);assert.ok((await page.locator("#editor-error").innerText()).length>0);assert.equal(await page.locator("#profile-name").inputValue(),name);await page.locator("#close-editor").click();}
+        else if(action==="close"){assert.equal(await page.locator("#editor").isVisible(),false);assert.equal(await page.locator("#editor-error").isVisible(),false);}
+        else{assert.equal(await page.locator("#editor-error").isVisible(),false);assert.equal(await page.locator("#profile-name").inputValue(),action==="reopen"?"UNSENT REOPENED DRAFT":"UNSENT REPLACEMENT DRAFT");await page.locator("#close-editor").click();}
+      }
     });
     await check("discovery: observed scan, stale response/editor barrier and optional post-save binding",async()=>{
       // Respect the real production discovery cooldown rather than override its clock.
@@ -336,8 +400,8 @@ try {
       assert.equal(await page.locator("#scan-results button").count(),0);assert.equal(await page.locator("#binding-bssid").inputValue(),"");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
     });
     await check("discovery: all occupied radios report manual entry; logout clears candidate/private binding DOM",async()=>{
-      await clickTab("nav-telescopes");await page.locator(`#simple-connect-2-${profiles[0].id}`).click();await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.connected);
-      await page.locator(`#simple-connect-3-${profiles[1].id}`).click();await waitData(s=>s.telescopes.filter(p=>p.connected).length===2);
+      await clickTab("nav-telescopes");await connect(firstConnection,profiles[0]);await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.connected);
+      await connect(secondConnection,profiles[1]);await waitData(s=>s.telescopes.filter(p=>p.connected).length===2);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.waitForTimeout(15000);await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#scan").click();await page.waitForFunction(()=>document.getElementById("scan-results").children.length>0);
       assert.ok((await data()).home_ip);assert.equal((await data()).telescopes.filter(p=>p.connected).length,2);
       await page.locator("#binding-bssid").fill("02:00:00:77:88:99");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
@@ -345,29 +409,121 @@ try {
     });
   }
   await check("connect and confirmed move use server status and preserve home access", async () => {
-    await clickTab("nav-telescopes"); await page.locator(`#simple-connect-2-${profiles[0].id}`).click();
+    await clickTab("nav-telescopes"); await connect(firstConnection,profiles[0]);
     await waitData(s => s.telescopes[0]?.connected); await page.waitForFunction(() => document.getElementById("occupied-count").textContent === "1 / 2");
-    await page.locator(`#simple-connect-3-${profiles[0].id}`).click(); await page.locator("#move-dialog").waitFor({ state: "visible" });
+    await connect(secondConnection,profiles[0]); await page.locator("#move-dialog").waitFor({ state: "visible" });
     const languageTab=await context.newPage(); await languageTab.goto(url+"/#configuration/general"); await languageTab.locator("#dashboard").waitFor({state:"visible"});
     await languageTab.locator("#locale-select").selectOption("fr"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("utilise"));
     await languageTab.locator("#locale-select").selectOption("en"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("is assigned")); await languageTab.close();
-    await page.locator("#cancel-move").click(); assert.equal((await data()).config.telescopes[0].mac, "02:00:00:00:00:02");
-    await page.locator(`#simple-connect-3-${profiles[0].id}`).click(); await page.locator("#confirm-move").click();
-    await waitData(s => s.telescopes[0]?.connected && s.telescopes[0]?.interface === "wlan3");
-    await page.locator(`#simple-connect-2-${profiles[1].id}`).click(); await waitData(s => s.telescopes.filter(p => p.connected).length === 2);
+    await page.locator("#cancel-move").click(); assert.equal((await data()).config.telescopes[0].mac, firstRadio.mac);
+    await connect(secondConnection,profiles[0]); await page.locator("#confirm-move").click();
+    await waitData(s => s.telescopes[0]?.connected && s.telescopes[0]?.interface === secondRadio.name);
+    await connect(firstConnection,profiles[1]); await waitData(s => s.telescopes.filter(p => p.connected).length === 2);
     await page.waitForFunction(() => document.getElementById("occupied-count").textContent === "2 / 2");
-    assert.ok((await data()).home_ip); assert.equal(await page.locator(".connection-table tbody tr").count(), 6);
+    assert.ok((await data()).home_ip); assert.equal(await page.locator(".instrument-card").count(), 2);assert.equal(await page.locator(".saved-instrument").count(), 1);
+  });
+  await check("ABU-1: two radios and four profiles show unique cards, one primary each, real endpoints and stable keyboard focus",async()=>{
+    await page.waitForFunction(()=>document.querySelectorAll('.instrument-card').length===2);
+    const original=await data();
+    await page.evaluate(()=>{
+      const s=structuredClone(state),saved=s.config.telescopes.find(p=>!p.enabled);
+      s.config.telescopes.push({...saved,id:'fourth-synthetic',name:'Fourth saved instrument'});renderSimple(s);
+    });
+    assert.equal(await page.locator('.instrument-card').count(),2);assert.equal(await page.locator('.saved-instrument').count(),2);
+    assert.equal(await page.locator('.saved-instruments button.primary').count(),0);
+    assert.equal(await page.locator('.saved-instruments .connection-action').count(),2);
+    assert.equal(await page.locator('.saved-instruments button:not(.connection-action):not(.text-button)').count(),0);
+    for(const saved of await page.locator('.saved-instrument').all()){
+      const id=await saved.getAttribute('data-profile-id'),connect=saved.locator('#simple-connect-0-'+id),history=page.locator('#session-history-'+id);
+      assert.equal(await saved.locator('.connection-action').count(),1);assert.equal(await connect.evaluate(e=>e.classList.contains('secondary')),true);assert.equal(await connect.innerText(),'Connect');
+      assert.equal(await history.evaluate(e=>e.classList.contains('text-button')),true);assert.equal(await history.innerText(),'All sessions');
+    }
+    for(const card of await page.locator('.instrument-card').all()){
+      assert.equal(await card.locator('.primary').count(),1);assert.equal(await card.locator('.primary.connection-action, .primary.session-open').count(),1);
+    }
+    assert.equal(await page.locator('#view-telescopes .connection-table').count(),0);
+    assert.equal(await page.locator('#connections-list .connection-role').count(),4);
+    assert.equal(await page.evaluate(()=>document.querySelector('#auto-switch-card').compareDocumentPosition(document.querySelector('#simple-connections'))&Node.DOCUMENT_POSITION_PRECEDING),2);
+    await page.evaluate(()=>renderSimple(state));
+    await waitData(s=>s.telescopes.filter(p=>p.relay_ready).length===2);await page.evaluate(()=>refresh());
+    const inventory=await page.evaluate(async()=>await(await fetch('/api/endpoints')).json());
+    const closeProfileInfo=async()=>{
+      await page.keyboard.press('Escape');
+      // Native focus restoration precedes the close handler; finish both before the next keyboard action.
+      await page.waitForFunction(()=>!document.getElementById('profile-info').open&&profileInfoOpener===null);
+    };
+    for(const endpoint of inventory.endpoints.filter(p=>p.paths.some(path=>path.ready))){
+      const card=page.locator('#instrument-'+endpoint.profile_id);
+      const ready=endpoint.paths.filter(path=>path.ready),primary=ready.find(path=>!path.requires_client_route)||ready[0];
+      assert.ok((await card.innerText()).includes(primary.host+':'+primary.port));
+      await page.locator('#instrument-'+endpoint.profile_id+'-info').click();for(const path of ready)assert.ok((await page.locator('#profile-info-body').innerText()).includes(path.host+':'+path.port));await closeProfileInfo();
+    }
+    const routed=inventory.endpoints.find(entry=>entry.paths.some(path=>path.ready&&path.requires_client_route));assert.ok(routed);
+    await page.evaluate(id=>{window.allEndpointPaths=endpointInventory;endpointInventory=structuredClone(endpointInventory);endpointInventory.endpoints.find(entry=>entry.profile_id===id).paths=endpointInventory.endpoints.find(entry=>entry.profile_id===id).paths.filter(path=>path.requires_client_route);renderSimple(state);},routed.profile_id);
+    const routedCard=page.locator('#instrument-'+routed.profile_id),direct=routed.paths.find(path=>path.ready&&path.requires_client_route);
+    assert.ok((await routedCard.innerText()).includes(direct.host+':'+direct.port));assert.match(await routedCard.locator('.endpoint-route').innerText(),/Requires a route/);
+    await page.evaluate(()=>{endpointInventory=window.allEndpointPaths;delete window.allEndpointPaths;renderSimple(state);});
+    const opener=page.locator('#instrument-'+profiles[0].id+'-info');await opener.focus();await page.keyboard.press('Enter');
+    await page.locator('#profile-info').waitFor({state:'visible'});await closeProfileInfo();assert.equal(await opener.evaluate(e=>e===document.activeElement),true);
+    const move=page.locator('#instrument-'+profiles[0].id+'-move');assert.equal(await move.isEnabled(),true);await move.focus();assert.equal(await move.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('Enter');
+    await page.locator('#connection-choice').waitFor({state:'visible'});const choice=page.locator('#connection-choices button').first();await choice.focus();
+    await page.waitForTimeout(5500);assert.equal(await choice.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('Escape');assert.equal(await move.evaluate(e=>e===document.activeElement),true);
+    const copy=page.locator('#endpoint-copy-'+profiles[0].id+'-0');await copy.focus();await page.waitForTimeout(5500);assert.equal(await copy.evaluate(e=>e===document.activeElement),true);
+    let copied='';await page.exposeFunction('captureCopiedAddress',value=>copied=value);
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:value=>window.captureCopiedAddress(value)}}));await copy.click();assert.ok(copied);assert.match(await page.locator('#simple-feedback').innerText(),/Address copied/);
+    await page.evaluate(()=>{Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});window.originalCopyCommand=document.execCommand;document.execCommand=command=>{window.fallbackCopy={command,text:document.activeElement.value};return true;};});
+    await copy.click();const fallback=await page.evaluate(()=>window.fallbackCopy);assert.equal(fallback.command,'copy');assert.equal(fallback.text,copied);assert.equal(await copy.evaluate(e=>e===document.activeElement),true);assert.equal(await page.locator('.copy-fallback').count(),0);
+    await page.evaluate(()=>document.execCommand=()=>false);await copy.click();assert.match(await page.locator('#simple-feedback').innerText(),/Could not copy/);assert.equal(await page.locator('.copy-fallback').count(),0);await page.evaluate(()=>document.execCommand=window.originalCopyCommand);
+    await page.locator('.connection-notice button').evaluateAll(buttons=>buttons.forEach(button=>button.click()));await page.evaluate(()=>{document.getElementById('simple-feedback').hidden=true;});
+    for(const width of [320,375,1280])for(const theme of ['light','dark']){
+      await page.setViewportSize({width,height:960});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,width+' '+theme);
+      assert.equal(await page.locator('#nav-telescopes').getAttribute('aria-selected'),'true');
+      await page.screenshot({path:resolve(output,`abu-1-${width}-${theme}.png`),fullPage:true});
+    }
+    await page.locator('#nav-telescopes').focus();await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>!document.getElementById('view-networks').hidden);await page.keyboard.press('ArrowLeft');
+    assert.deepEqual((await data()).config,original.config);await page.setViewportSize({width:1280,height:960});
+    await connect(firstConnection,profiles[1]);await waitData(s=>!s.config.telescopes.find(p=>p.id===profiles[1].id).enabled);
+    await page.waitForFunction(id=>document.activeElement.id==='simple-connect-0-'+id,profiles[1].id);
+    await connect(firstConnection,profiles[1]);await waitData(s=>s.telescopes.filter(p=>p.relay_ready).length===2);await page.evaluate(()=>refresh());
+  });
+  await check("ABU-1: stalled endpoint inventory is bounded, clears copy controls and rejects late or mismatched results",async()=>{
+    let release,finished;const gate=new Promise(r=>release=r),done=new Promise(r=>finished=r);
+    const stale=await page.evaluate(()=>structuredClone(endpointInventory));
+    for(const entry of stale.endpoints)for(const path of entry.paths)path.host='192.0.2.123';
+    const handler=async route=>{await gate;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(stale)});}catch(_){}finally{finished();}};
+    // Hold only this request: a later periodic poll must read the real inventory,
+    // rather than receive the stale fixture from an already released gate.
+    await context.route('**/api/endpoints',handler,{times:1});
+    const requested=page.waitForRequest('**/api/endpoints');await page.evaluate(()=>{void refresh();});
+    const request=await requested,aborted=page.waitForEvent('requestfailed',{predicate:value=>value===request,timeout:2500});
+    await page.evaluate(()=>{
+      window.heldEndpointRefresh=statusRefresh;window.endpointRefreshDone=false;
+      // Capture this refresh's timeout render before a fresh poll can replace it.
+      window.heldEndpointRefresh.then(ready=>{
+        window.endpointTimeoutSnapshot={ready,homeIp:state?.home_ip,inert:document.getElementById('dashboard').getAttribute('inert'),
+          copies:document.querySelectorAll('.endpoint-copy').length,unavailable:document.querySelector('.endpoint-unavailable')?.textContent||'',
+          disabledActions:document.querySelectorAll('.instrument-card button.primary:disabled').length};
+        window.endpointRefreshDone=true;
+      });
+    });
+    await aborted;await page.waitForFunction(()=>window.endpointRefreshDone,null,{timeout:2500});assert.match(request.failure().errorText,/ERR_ABORTED/);
+    const timeoutSnapshot=await page.evaluate(()=>window.endpointTimeoutSnapshot);
+    assert.equal(timeoutSnapshot.inert,null);assert.equal(timeoutSnapshot.copies,0);assert.match(timeoutSnapshot.unavailable,/unavailable/);
+    assert.equal(timeoutSnapshot.ready,true);assert.ok(timeoutSnapshot.homeIp);assert.equal(timeoutSnapshot.disabledActions,0);
+    release();await done;await page.evaluate(()=>window.heldEndpointRefresh);assert.doesNotMatch(await page.locator('#simple-connections').innerText(),/192\.0\.2\.123/);
+    const mismatch=async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...stale,config_revision:'outdated'})});await context.route('**/api/endpoints',mismatch);await page.evaluate(()=>refresh());assert.equal(await page.locator('.endpoint-copy').count(),0);await context.unroute('**/api/endpoints',mismatch);await page.evaluate(()=>refresh());assert.ok(await page.locator('.endpoint-copy').count()>0);
   });
   await check("confirmed activity, grouped switch notification and independent tab reads", async () => {
     await page.locator("#activity-toggle").click();
     const actionResponse=page.waitForResponse(response=>response.url().endsWith("/api/telescopes/action")&&response.request().method()==="POST");
-    await page.locator(`#simple-connect-2-${profiles[2].id}`).click();
+    await connect(firstConnection,profiles[2]);
     const accepted=await (await actionResponse).json();
     await waitData(s=>s.telescopes.find(p=>p.id===profiles[2].id)?.relay_ready);
     await page.waitForFunction(operation=>[...document.querySelectorAll(".connection-notice")].some(element=>element.dataset.operationId===operation&&element.textContent.includes("disconnected")&&element.textContent.includes("connected")),accepted.operation_id);
     assert.match(await page.locator(`[data-operation-id="${accepted.operation_id}"]`).innerText(),/Vespera DEMO disconnected/);
-    assert.equal(await page.locator(`#simple-status-2-${profiles[2].id}`).textContent(),"Connected here");
-    assert.notEqual(await page.locator(`#simple-status-2-${profiles[1].id}`).textContent(),"Connected here");
+    assert.match(await page.locator(`#simple-status-${firstConnection}-${profiles[2].id}`).textContent(),/service/);
+    assert.equal(await page.locator(`#instrument-${profiles[1].id}`).count(),0);
     assert.equal(await page.locator(".connection-notice").filter({hasText:"Vespera DEMO connected."}).count(),0);
     assert.match(await page.locator("#activity-list").innerText(),/Wi-Fi associated; checking services/);
     const readEvents=()=>page.evaluate(async()=> (await (await fetch("/api/events")).json()));
@@ -376,10 +532,38 @@ try {
     await page.waitForTimeout(3300);assert.equal((await readEvents()).latest_sequence,before.latest_sequence);await other.close();
     for(const main of ["networks","configuration","telescopes"]){await clickTab("nav-"+main);assert.equal(await page.locator("#activity-toggle").isVisible(),true);}
     const ids=await page.locator("#activity-list li").evaluateAll(elements=>elements.map(element=>element.dataset.eventId));assert.equal(ids.length,new Set(ids).size);
+    for(const event of before.events.filter(event=>event.type.includes(".")))assert.equal(ids.includes(event.boot_id+":"+event.sequence),false);
+    assert.doesNotMatch(await page.locator("#activity-list").innerText(),/undefined/);
+    assert.equal(await page.evaluate(async()=> (await fetch("/api/events?wait=0")).status),200);
     await page.screenshot({path:resolve(output,"events-desktop.png"),fullPage:true,timeout:10000});
     await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});await page.waitForFunction(()=>document.querySelectorAll("#activity-list li").length>0);
     assert.equal((await readEvents()).latest_sequence,before.latest_sequence);
     assert.equal(await page.locator(".connection-notice").count(),0);
+    // A synthetic 600-record disk journal must fill the latest 256-row UI window.
+    const syntheticBoot="a".repeat(32), synthetic=Array.from({length:600},(_,index)=>({
+      sequence:index+1,boot_id:syntheticBoot,timestamp:"2026-01-01T00:00:00+00:00",clock_status:"unverified",
+      operation_id:"synthetic-operation",profile_id:"synthetic",profile_name:"Synthetic instrument",
+      radio_id:null,type:"associated",cause:"RECONCILE",reason:"ASSOCIATED",outcome:"associated",associated:true,ready:false
+    }));
+    const historyRoute=async route=>{
+      const query=new URL(route.request().url()).searchParams;
+      const after=query.has("after")?Number(query.get("after")):null,limit=Number(query.get("limit")||50);
+      const selected=after===null?synthetic.slice(-limit):synthetic.filter(event=>event.sequence>after).slice(0,limit);
+      const next=after===null?600:(selected.at(-1)?.sequence??after);
+      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({api_version:"1",boot_id:syntheticBoot,
+        oldest_sequence:1,latest_sequence:600,next_cursor:next,has_more:next<600,gap:false,reset_reason:null,
+        persistent:true,history_available:true,clock_status:"unverified",events:selected})});
+    };
+    await page.route("**/api/events*",historyRoute);
+    await page.goto(url+"/#activity");await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});
+    await page.waitForFunction(()=>{
+      const nodes=[...document.querySelectorAll("#activity-list li")];
+      return nodes.length===256&&nodes[0].dataset.eventId.endsWith(":600")&&nodes.at(-1).dataset.eventId.endsWith(":345");
+    });
+    const retained=await page.locator("#activity-list li").evaluateAll(nodes=>nodes.map(node=>Number(node.dataset.eventId.split(":")[1])));
+    assert.deepEqual(retained,Array.from({length:256},(_,index)=>600-index));
+    await page.screenshot({path:resolve(output,"events-600-history.png"),fullPage:true,timeout:10000});
+    await page.unroute("**/api/events*",historyRoute);await page.goto(url+"/#telescopes");
   });
   await check("polling preserves editor draft, profile details, focus and unsaved General values", async () => {
     await clickTab("nav-configuration"); await clickTab("tab-telescopes");
@@ -443,14 +627,20 @@ try {
   await check("credentials and update controls remain backed by existing APIs", async () => {
     await page.setViewportSize({width:1280,height:960}); await clickTab("nav-configuration"); await clickTab("tab-general");
     assert.equal(await page.locator("#update-check").isDisabled(), true); assert.equal(await page.locator("#update-automatic").isDisabled(), true);
-    await page.locator("#credential-target").selectOption("linux"); await page.locator("#current-password").fill("demo-telescope-2026");
+    await page.locator("#credential-target").selectOption("linux"); await page.locator("#current-password").fill("12345678");
     await page.locator("#new-password").fill("synthetic-linux-password"); await page.locator("#confirm-password").fill("synthetic-linux-password");
     await page.locator("#credentials-form button").click(); await page.waitForFunction(() => document.getElementById("credentials-message").textContent.length > 0);
     assert.equal(await page.locator("#current-password").inputValue(), ""); assert.equal(await page.locator("#new-password").inputValue(), "");
   });
-  await check("logout clears authenticated event names and notifications",async()=>{
+  await check("logout clears authenticated event names, endpoints and late inventory responses",async()=>{
+    let release,finished;const gate=new Promise(r=>release=r),done=new Promise(r=>finished=r);
+    const stale=await page.evaluate(()=>endpointInventory);const handler=async route=>{await gate;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(stale)});}catch(_){}finally{finished();}};
+    await context.route('**/api/endpoints',handler,{times:1});const requested=page.waitForRequest('**/api/endpoints');await page.evaluate(()=>{void refresh();});
+    const request=await requested,settled=page.waitForEvent('requestfinished',{predicate:value=>value===request});
+    await page.evaluate(()=>{window.heldEndpointRefresh=statusRefresh;});
     await clickUserControl(page, '#logout');await page.locator("#login").waitFor({state:"visible"});
-    assert.equal(await page.locator("#activity-list li").count(),0);assert.equal(await page.locator(".connection-notice").count(),0);
+    release();await done;await settled;await page.evaluate(()=>window.heldEndpointRefresh);
+    assert.equal(await page.locator("#activity-list li").count(),0);assert.equal(await page.locator(".connection-notice").count(),0);assert.equal(await page.locator('.endpoint-copy').count(),0);assert.equal(await page.locator('#connections-list').innerText(),'');assert.equal(await page.evaluate(()=>endpointInventory),null);assert.equal(await page.locator('#dashboard').isVisible(),false);
   });
   assert.deepEqual(failures, [], "Page errors");
   console.log(JSON.stringify({passed:results.length,screenshots:output,pageErrors:failures},null,2));

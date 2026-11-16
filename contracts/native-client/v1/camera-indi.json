@@ -1,0 +1,51 @@
+{
+  "name": "camera-indi",
+  "description": "Healthy attached-camera INDI endpoint on the requesting management path, using synthetic USB metadata and a loopback fake indiserver.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/camera-1/endpoint",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instrument_id": "camera-1",
+          "request_path": "other",
+          "mode": "relay",
+          "requires_client_route": false,
+          "target_ip": "192.0.2.10",
+          "primary": {
+            "host": "192.0.2.10",
+            "ports": [
+              {
+                "port": 7624,
+                "transport": "tcp",
+                "service": "indi_camera",
+                "role": "control",
+                "protocol": "indi"
+              }
+            ]
+          },
+          "alternatives": []
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/target_ip": "^127\\.0\\.0\\.1$",
+        "/primary/host": "^127\\.0\\.0\\.1$"
+      }
+    }
+  ]
+}

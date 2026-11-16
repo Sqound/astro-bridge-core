@@ -10,7 +10,7 @@ import {createServer} from 'node:net';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-onboarding-')),output=resolve(root,'artifacts/onboarding-0634');await mkdir(output,{recursive:true});
+const folder=await mkdtemp(resolve(tmpdir(),'astro-onboarding-')),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/onboarding-0634');await mkdir(output,{recursive:true});
 const rows=[['S50_NEW123','02:00:00:77:88:01','WPA2'],['vespera-NEW456','02:00:00:77:88:02','--'],['DWARF_mini_NEW789','02:00:00:77:88:03','WPA2'],['Office-unrelated','02:00:00:77:88:04','WPA2']].map(([ssid,bssid,security])=>({ssid,bssid,security,signal:90,frequency:2412}));
 const runner=resolve(folder,'run.py');await writeFile(runner,`import sys\nsys.path.insert(0,${JSON.stringify(root)})\nfrom wifi_bridge.network import DemoNetwork\nDemoNetwork.scan=lambda self,name,**kwargs: ${JSON.stringify(rows)}\nfrom wifi_bridge.__main__ import main\nmain()\n`);
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
@@ -23,7 +23,7 @@ try{
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
  const context=await browser.newContext({viewport:{width:375,height:960}}),page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
- const login=async tab=>{await tab.locator('#login-password').fill('demo-telescope-2026');await tab.locator('#login-form button').click();await tab.locator('#dashboard').waitFor({state:'visible'});};
+ const login=async tab=>{await tab.locator('#login-password').fill('12345678');await tab.locator('#login-form button').click();await tab.locator('#dashboard').waitFor({state:'visible'});};
  await page.goto(origin);await login(page);await page.locator('#nav-configuration').click();await page.locator('#tab-telescopes').click();
  let observed;
  await check('first step scans recognized Wi-Fi types, excludes unrelated networks and leaves profiles untouched',async()=>{

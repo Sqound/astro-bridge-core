@@ -1,0 +1,502 @@
+{
+  "name": "telemetry-catch-up",
+  "description": "Real buffered catch-up, combined sample/event paging and all four reset reasons. Owner Alpaca selection and cadence settings round-trip through the revision-guarded API. Additive adapter_status reports sanitized state/counters and isolated priority; missing fields remain compatible with earlier v1 servers. Optional card_data supplies bounded source-receipt ages and clipped history; clients keep accepting servers that omit it. Full retained-session analysis is a bounded derived projection and does not record a raw-sample fetch. Contract 1.2: every page carries boot_id, the boot domain of next_cursor, so a client stores both together and sends them back unchanged.",
+  "contract_version": 1,
+  "requires": [
+    "telemetry"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&after=0&limit=2",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 2,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "link.rssi_dbm",
+              "value": -50
+            }
+          ],
+          "events": [
+            {
+              "seq": 1,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "type": "session.started",
+              "reason": null
+            }
+          ],
+          "next_cursor": 2,
+          "has_more": true,
+          "gap": false,
+          "reset_reason": null,
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&after=2&limit=2",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 3,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "mount.tracking",
+              "value": true
+            }
+          ],
+          "events": [],
+          "next_cursor": 3,
+          "has_more": false,
+          "gap": false,
+          "reset_reason": null,
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&after=3&boot_id=11111111111111111111111111111111",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 2,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "link.rssi_dbm",
+              "value": -50
+            },
+            {
+              "seq": 3,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "mount.tracking",
+              "value": true
+            }
+          ],
+          "events": [
+            {
+              "seq": 1,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "type": "session.started",
+              "reason": null
+            }
+          ],
+          "next_cursor": 3,
+          "has_more": false,
+          "gap": true,
+          "reset_reason": "BOOT_CHANGED",
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&after=99",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 2,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "link.rssi_dbm",
+              "value": -50
+            },
+            {
+              "seq": 3,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "mount.tracking",
+              "value": true
+            }
+          ],
+          "events": [
+            {
+              "seq": 1,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "type": "session.started",
+              "reason": null
+            }
+          ],
+          "next_cursor": 3,
+          "has_more": false,
+          "gap": true,
+          "reset_reason": "CURSOR_AHEAD",
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&after=0",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 3,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "mount.tracking",
+              "value": true
+            }
+          ],
+          "events": [
+            {
+              "seq": 1,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "type": "session.started",
+              "reason": null
+            }
+          ],
+          "next_cursor": 3,
+          "has_more": false,
+          "gap": true,
+          "reset_reason": "RETENTION_GAP",
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/samples?session_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "samples": [
+            {
+              "seq": 3,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "mono_ms": 1000,
+              "utc": "2026-01-01T00:00:00+00:00",
+              "utc_corrected": null,
+              "metric": "mount.tracking",
+              "value": true
+            }
+          ],
+          "events": [
+            {
+              "seq": 1,
+              "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "boot_id": "00000000000000000000000000000000",
+              "type": "session.started",
+              "reason": null
+            }
+          ],
+          "next_cursor": 3,
+          "has_more": false,
+          "gap": true,
+          "reset_reason": "HISTORY_UNAVAILABLE",
+          "boot_id": "00000000000000000000000000000000"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v1/telemetry/settings",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "profiles": {
+            "tel-seestar-1": {
+              "adapters": [
+                "alpaca_observer_v1"
+              ],
+              "alpaca_interval_seconds": 10
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "enabled": true,
+          "profiles": {
+            "tel-seestar-1": {
+              "alpaca_interval_seconds": 10,
+              "adapters": [
+                "alpaca_observer_v1"
+              ]
+            }
+          },
+          "persistent": true,
+          "retention": {
+            "nights": 30,
+            "max_bytes": 67108864
+          },
+          "used_bytes": 57344,
+          "sessions_count": 1,
+          "clock_status": "unverified",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_seq": 3,
+          "config_revision": "revision-1",
+          "adapter_status": {
+            "tel-seestar-1": [
+              {
+                "adapter_id": "seestar_events_v1",
+                "adapter_state": "unavailable",
+                "retry_after": 0,
+                "unavailable_reason": "owner_disabled"
+              }
+            ]
+          },
+          "card_data": {
+            "tel-seestar-1": {
+              "readings": {},
+              "recent": [
+                {
+                  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "started": "2026-01-01T00:00:00+00:00",
+                  "ended": null,
+                  "clock_status": "unverified",
+                  "frames_accepted": null,
+                  "frames_rejected": null
+                }
+              ],
+              "tonight": [],
+              "history_partial": false
+            }
+          }
+        }
+      },
+      "note": "Owner opts in to read-only Alpaca and a ten-second cadence; demo sends no discovery.",
+      "real_patterns": {
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/used_bytes": "^[0-9]+$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "enabled": true,
+          "profiles": {
+            "tel-seestar-1": {
+              "alpaca_interval_seconds": 10,
+              "adapters": [
+                "alpaca_observer_v1"
+              ]
+            }
+          },
+          "persistent": true,
+          "retention": {
+            "nights": 30,
+            "max_bytes": 67108864
+          },
+          "used_bytes": 57344,
+          "sessions_count": 1,
+          "clock_status": "unverified",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_seq": 3,
+          "config_revision": "revision-1",
+          "adapter_status": {
+            "tel-seestar-1": [
+              {
+                "adapter_id": "seestar_events_v1",
+                "adapter_state": "unavailable",
+                "retry_after": 0,
+                "unavailable_reason": "owner_disabled"
+              }
+            ]
+          },
+          "card_data": {
+            "tel-seestar-1": {
+              "readings": {},
+              "recent": [
+                {
+                  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "started": "2026-01-01T00:00:00+00:00",
+                  "ended": null,
+                  "clock_status": "unverified",
+                  "frames_accepted": null,
+                  "frames_rejected": null
+                }
+              ],
+              "tonight": [],
+              "history_partial": false
+            }
+          }
+        }
+      },
+      "note": "The persisted owner selection and cadence remain readable by a generic client.",
+      "real_patterns": {
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/used_bytes": "^[0-9]+$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/telemetry/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/analysis",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sample_count": 1,
+          "bucket_count": 240,
+          "from_mono_ms": 1000,
+          "to_mono_ms": 1000,
+          "points": [],
+          "limited": false,
+          "history_available": false,
+          "gaps": [
+            {
+              "from_seq": 2,
+              "to_seq": 2,
+              "reason": "RETENTION_GAP"
+            }
+          ],
+          "reader_coverage": {
+            "unknown_before_seq": 0,
+            "fetched": [
+              {
+                "from_seq": 2,
+                "to_seq": 3
+              }
+            ]
+          },
+          "exposure": {
+            "observed_seconds": null,
+            "observed_frames": 0,
+            "complete": false,
+            "latest_seconds": null
+          }
+        }
+      },
+      "note": "Derived retained-session analysis preserves known gaps and exact fetched ranges without marking additional raw samples read."
+    }
+  ]
+}

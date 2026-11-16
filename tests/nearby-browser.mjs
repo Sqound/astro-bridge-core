@@ -10,7 +10,7 @@ import {createServer} from 'node:net';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-nearby-')),output=resolve(root,'artifacts/nearby-0635');await mkdir(output,{recursive:true});
+const folder=await mkdtemp(resolve(tmpdir(),'astro-nearby-')),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/nearby-0635');await mkdir(output,{recursive:true});
 const rowsFile=resolve(folder,'wifi.json'),rows=[['S50_NEW_NEARBY','02:00:00:77:88:01','WPA2'],['vespera-NEARBY','02:00:00:77:88:02','--'],['Office-unrelated','02:00:00:77:88:03','WPA2']].map(([ssid,bssid,security])=>({ssid,bssid,security,signal:90,frequency:2412}));await writeFile(rowsFile,JSON.stringify(rows));
 const runner=resolve(folder,'run.py');await writeFile(runner,`import sys,json\nfrom pathlib import Path\nsys.path.insert(0,${JSON.stringify(root)})\nfrom wifi_bridge.network import DemoNetwork\nDemoNetwork.scan=lambda self,name,**kwargs: json.loads(Path(${JSON.stringify(rowsFile)}).read_text())\nfrom wifi_bridge.__main__ import main\nmain()\n`);
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
@@ -23,7 +23,7 @@ try{
  const page=await browser.newPage({viewport:{width:375,height:960}});page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
  let explicitScans=0;page.on('request',r=>{if(r.url().endsWith('/api/discovery')&&r.method()==='POST')explicitScans++;});
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
- const login=async()=>{await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});};
+ const login=async()=>{await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});};
  await page.goto(origin);await login();
  await check('recognized unsaved Wi-Fi appears on the home page without opening scan or adding a profile',async()=>{
   await page.locator('#nearby-telescopes').waitFor({state:'visible'});assert.equal(await page.locator('.nearby-telescope').count(),2);assert.doesNotMatch(await page.locator('#nearby-list').innerText(),/Office/);
@@ -44,7 +44,7 @@ try{
   await page.locator('#nav-telescopes').click();assert.equal(await page.locator('.nearby-telescope').count(),1);assert.doesNotMatch(await page.locator('#nearby-list').innerText(),/S50_NEW_NEARBY/);
  });
  await check('starting a saved telescope hides nearby suggestions; disconnecting restores recent results',async()=>{
-  await page.locator(`[id^="simple-connect-"][id$="-${profile.id}"]:enabled`).first().click();await page.waitForFunction(()=>state.config.telescopes[0].enabled);assert.equal(await page.locator('#nearby-telescopes').isVisible(),false);
+  await page.locator(`#simple-connect-0-${profile.id}`).click();if(await page.locator("#connection-choice").isVisible())await page.locator("#connection-choices button:enabled").first().click();await page.waitForFunction(()=>state.config.telescopes[0].enabled);assert.equal(await page.locator('#nearby-telescopes').isVisible(),false);
   await page.waitForFunction(()=>state.telescopes.some(t=>t.relay_ready));await page.locator(`[id^="simple-connect-"][id$="-${profile.id}"]:enabled`).first().click();await page.waitForFunction(()=>!state.config.telescopes[0].enabled&&!state.telescopes.some(t=>t.connected));await page.locator('#nearby-telescopes').waitFor({state:'visible'});
  });
  await check('logout clears nearby private names; login restores only current authenticated suggestions',async()=>{

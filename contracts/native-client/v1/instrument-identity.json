@@ -1,0 +1,120 @@
+{
+  "name": "instrument-identity",
+  "description": "Contract 1.1: a read-only manufacturer reply verifies which physical instrument answers on a profile; other profiles stay unverified.",
+  "contract_version": 1,
+  "requires": [
+    "instruments"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-vespera-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-vespera-1",
+          "kind": "smart_telescope",
+          "family": "vespera",
+          "name": "Test telescope two",
+          "link": "connected",
+          "service": "ready",
+          "protocol": "vespera",
+          "model": "vespera2",
+          "verified_identity": {
+            "model": "vespera2",
+            "hardware_id": "fedcba9876543210"
+          },
+          "identity_source": "vespera_status",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": {
+            "state": "unknown",
+            "kind": null,
+            "since": "2026-01-01T00:00:00.000+00:00"
+          },
+          "since_seq": 5,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1",
+              "vespera_status_v1"
+            ],
+            "maker_key": null
+          }
+        }
+      },
+      "note": "Verified by the read-only status reply: model and an installation-local hardware_id digest, never the manufacturer identifier.",
+      "real_patterns": {
+        "/verified_identity/hardware_id": "^[0-9a-f]{16}$",
+        "/current_operation/since": "^\\d{4}-\\d{2}-\\d{2}T"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-seestar-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-seestar-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test telescope",
+          "link": "saved",
+          "service": "not_probed",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 4,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1"
+            ],
+            "maker_key": "absent"
+          }
+        }
+      },
+      "note": "No read-only identity reply on this link: verified_identity is null and identity_source is unverified."
+    }
+  ]
+}

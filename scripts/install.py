@@ -12,7 +12,7 @@ import tempfile
 import urllib.request
 import venv
 
-RELEASE_VERSION = '1.0.1'
+RELEASE_VERSION = '1.1.0'
 RELEASE_SHA256 = None  # The release builder embeds the exact wheel checksum.
 
 
@@ -51,7 +51,7 @@ def main():
     print('Start the simulation:')
     state=Path.home()/'.local/state/astro-bridge-demo'
     print(shlex.quote(str(prefix/'bin/astro-bridge'))+' --demo --state-dir '+shlex.quote(str(state)))
-    print('Open http://127.0.0.1:8787; demo password: demo-telescope-2026')
+    print('Open http://127.0.0.1:8787; demo password: 12345678')
     print('Real Linux networking needs a host integration from astro-bridge-implementations.')
 
 

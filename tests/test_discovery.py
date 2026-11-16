@@ -1,5 +1,6 @@
 """Seestar request filtering and LAN-proxy lifecycle regressions."""
 import copy
+import json
 from unittest.mock import patch
 from test_bridge import Fixture
 from wifi_bridge.config import profiles
@@ -145,6 +146,61 @@ class CandidateTests(Fixture):
             self.store.config['telescopes'][0]['kind']='seestar';c.last=None
             self.assertEqual(c.run({'mode':'reachable'})['candidates'],[]);probe.assert_called_once()
             self.net.disconnect('telescope');c.last=None;probe.reset_mock();c.run({'mode':'reachable'});probe.assert_not_called()
+
+    def test_seestar_probe_request_ends_with_crlf_exact_bytes(self):
+        import json, re
+        from unittest.mock import MagicMock
+        from wifi_bridge.candidates import seestar_probe
+        sock=MagicMock();sock.__enter__.return_value=sock
+        sock.recvfrom.side_effect=OSError('no reply needed')
+        with patch('wifi_bridge.candidates.socket.socket',return_value=sock):
+            with self.assertRaises(OSError):seestar_probe({'name':'wlan2'},'10.0.0.2/24','10.0.0.1')
+        sent=sock.sendto.call_args.args[0]
+        # Observed on hardware: without the trailing CRLF the device does not answer.
+        self.assertRegex(sent,rb'\A\{"id":\d+,"method":"scan_iscope","params":""\}\r\n\Z')
+        self.assertEqual(json.loads(sent)['params'],'')
+
+    def test_seestar_probe_accepts_observed_reply_and_exposes_no_sensitive_field(self):
+        import json, logging
+        from unittest.mock import MagicMock
+        from wifi_bridge.candidates import seestar_probe
+        sensitive={'sn':'SYNTH-SN','ssid':'SYNTH-SSID','bssid':'02:00:00:00:00:01','password':'SYNTH-PW'}
+        sock=MagicMock();sock.__enter__.return_value=sock
+        def receive(size):
+            sent=json.loads(sock.sendto.call_args.args[0])
+            result=dict(sensitive,product_model='Synthetic Model',can_star_mode_sel_cam=False,serc='x',is_verified=True,tcp_client_num=0,connect_lock=False)
+            return json.dumps({'jsonrpc':'2.0','id':sent['id'],'method':'scan_iscope','code':0,'result':result}).encode()+b'\r\n',('10.0.0.1',4720)
+        sock.recvfrom.side_effect=receive
+        with patch('wifi_bridge.candidates.socket.socket',return_value=sock),self.assertNoLogs(level=logging.DEBUG):
+            result=seestar_probe({'name':'wlan2'},'10.0.0.2/24','10.0.0.1')
+        self.assertEqual(result['address'],'10.0.0.1')
+        dumped=json.dumps(result)
+        for key,value in sensitive.items():
+            self.assertNotIn(value,dumped);self.assertNotIn(key,result)
+
+    def test_relay_forwards_client_datagram_unchanged_including_crlf(self):
+        import threading
+        from unittest.mock import MagicMock
+        from wifi_bridge.discovery import SeestarDiscovery
+        from wifi_bridge.metrics import ForwardingMetrics
+        plan=('home0','192.168.1.2/24')
+        controller=MagicMock();controller.lock=threading.RLock();controller.stop=threading.Event()
+        controller.management_plans=(plan,);controller.discovery_plans=(plan+('scope0','10.0.0.1'),)
+        for request in (b'{"id":1,"method":"scan_iscope","params":""}\r\n',b'{"id":2,"method":"scan_iscope","params":""}'):
+            controller.stop.clear()
+            reply=b'{"id":%d,"method":"scan_iscope","code":0}\r\n'%json.loads(request)['id']
+            listener=MagicMock();upstream=MagicMock();upstream.__enter__.return_value=upstream
+            upstream.sendto.return_value=len(request);upstream.recvfrom.return_value=(reply,('10.0.0.1',4720))
+            listener.sendto.return_value=len(reply);calls=[0]
+            def receive(*_):
+                calls[0]+=1
+                if calls[0]>1:controller.stop.set();raise OSError
+                return request,('192.168.1.9',12000)
+            listener.recvfrom.side_effect=receive
+            with patch('wifi_bridge.discovery.socket.socket',side_effect=[listener,upstream]),patch('wifi_bridge.discovery.ForwardingMetrics',return_value=ForwardingMetrics()):
+                SeestarDiscovery(controller).loop()
+            self.assertEqual(upstream.sendto.call_args.args,(request,('10.0.0.1',4720)))
+            self.assertEqual(listener.sendto.call_args.args[0],reply)
 
     def test_seestar_wire_is_interface_bound_source_and_request_correlated_and_bounded(self):
         import json

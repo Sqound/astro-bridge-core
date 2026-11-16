@@ -46,7 +46,7 @@ class HotspotRouteTests(unittest.TestCase):
                 if args==['systemctl','restart','wifi-bridge-ap','wifi-bridge-dhcp']:
                     seen.append(Path(directory,'dnsmasq.conf').read_text())
                 return ''
-            with patch('wifi_bridge.network.run',side_effect=run),patch.object(net,'connected',return_value=True):
+            with patch('wifi_bridge.network.run',side_effect=run),patch.object(net,'connected',return_value=True),patch.object(net,'_wait_nm_unmanaged'):
                 net.hotspot({'name':'wlan0'},'abcdef','fictional-test-password',['192.168.88.1'])
             self.assertEqual(len(seen),1)
             self.assertIn('dhcp-option=121,192.168.88.1/32,192.168.77.1,0.0.0.0/0,192.168.77.1\n',seen[0])

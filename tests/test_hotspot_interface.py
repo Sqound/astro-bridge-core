@@ -72,7 +72,7 @@ class HotspotInterfaceTests(Fixture):
         with self.assertRaises(Invalid):
             validate_config(data, self.store.config, devices)
 
-    def test_missing_selected_adapter_retained_and_no_silent_normal_fallback(self):
+    def test_missing_selected_adapter_retained_while_free_radio_restores_hotspot(self):
         mac = self.devices[3]['mac']
         self.select(mac, enabled=True)
         remaining = self.devices[:3]
@@ -82,8 +82,9 @@ class HotspotInterfaceTests(Fixture):
         self.controller.update(devices=remaining)
         with patch.object(self.net, 'devices', return_value=remaining):
             self.controller.cycle(0)
-        self.assertFalse(self.controller.state['hotspot']['active'])
-        self.assertEqual(self.controller.state['hotspot']['reason'], 'selected_adapter_unavailable')
+        self.assertTrue(self.controller.state['hotspot']['active'])
+        self.assertEqual(self.controller.state['hotspot']['mac'], self.devices[2]['mac'])
+        self.assertEqual(self.store.config['hotspot']['mac'], mac)
         self.assertTrue(self.controller.state['telescopes'][0]['relay_ready'])
 
     def test_migration_keeps_home_and_instrument_and_is_idempotent(self):

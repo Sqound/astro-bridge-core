@@ -30,15 +30,24 @@
           "title": "Astro Bridge hardware support guide",
           "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/ADDING-HARDWARE.md"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1",
+          "alpaca_observer_v1"
+        ],
+        "default_enabled": [],
+        "limitation": "Position only when Alpaca is enabled; otherwise link only."
+      }
     },
     {
       "schema_version": 1,
       "id": "vespera",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "name": "Vespera",
       "description": "Use Singularity through Astro Bridge.",
       "category": "telescope",
+      "protocol": "vespera",
       "wifi": [
         {
           "prefix": "vespera",
@@ -54,6 +63,18 @@
           8083
         ]
       },
+      "port_roles": [
+        {
+          "port": 8082,
+          "role": "rest",
+          "protocol": "http"
+        },
+        {
+          "port": 8083,
+          "role": "stream",
+          "protocol": "socketio"
+        }
+      ],
       "identification": "none",
       "discovery": {
         "engine": "tcp_syn",
@@ -81,15 +102,27 @@
           "title": "Astro Bridge discovery evidence",
           "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1",
+          "vespera_status_v1",
+          "alpaca_observer_v1"
+        ],
+        "default_enabled": [
+          "vespera_status_v1"
+        ],
+        "limitation": "Read-only observations. Available values depend on the instrument and enabled adapters."
+      }
     },
     {
       "schema_version": 1,
       "id": "dwarf",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "name": "DWARF",
       "description": "Use DWARFLAB through Astro Bridge.",
       "category": "telescope",
+      "protocol": "dwarf",
       "wifi": [
         {
           "prefix": "dwarf",
@@ -106,6 +139,23 @@
           554
         ]
       },
+      "port_roles": [
+        {
+          "port": 9900,
+          "role": "control",
+          "protocol": "websocket"
+        },
+        {
+          "port": 8082,
+          "role": "rest",
+          "protocol": "http"
+        },
+        {
+          "port": 554,
+          "role": "preview",
+          "protocol": "rtsp"
+        }
+      ],
       "identification": "none",
       "discovery": {
         "engine": "dwarf_ping"
@@ -153,15 +203,23 @@
           "password": "DWARF_12345678",
           "target_ip": "192.168.88.1"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1"
+        ],
+        "default_enabled": [],
+        "limitation": "Link only. A DWARF accepts one app at a time."
+      }
     },
     {
       "schema_version": 1,
       "id": "seestar",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "name": "Seestar",
       "description": "Use the Seestar app through Astro Bridge.",
       "category": "telescope",
+      "protocol": "seestar",
       "wifi": [
         {
           "prefix": "seestar",
@@ -196,12 +254,44 @@
           4555
         ]
       },
+      "port_roles": [
+        {
+          "port": 4700,
+          "role": "control",
+          "protocol": "json_rpc"
+        },
+        {
+          "port": 4800,
+          "role": "imaging",
+          "protocol": "binary"
+        },
+        {
+          "port": 4801,
+          "role": "other",
+          "protocol": "unknown"
+        },
+        {
+          "port": 4804,
+          "role": "other",
+          "protocol": "unknown"
+        },
+        {
+          "port": 4554,
+          "role": "preview",
+          "protocol": "rtsp"
+        },
+        {
+          "port": 4555,
+          "role": "preview",
+          "protocol": "rtsp"
+        }
+      ],
       "identification": "seestar_scan_iscope",
       "discovery": {
         "engine": "seestar_scan_iscope"
       },
       "activity": "seestar_metadata_v1",
-      "readiness": "association",
+      "readiness": "tcp_connect",
       "validation": {
         "level": "partial_hardware",
         "models": [
@@ -232,15 +322,36 @@
           "prefix": "",
           "password": "12345678"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1",
+          "alpaca_observer_v1",
+          {
+            "id": "seestar_events_v1",
+            "requires": "maker_key"
+          }
+        ],
+        "default_enabled": [],
+        "limitation": "Position only without your key. Stacking data needs the Seestar key."
+      },
+      "maker_key": {
+        "family": "seestar",
+        "algorithm": "rsa-pkcs1v15-sha1",
+        "sources": [
+          "maker_package",
+          "import"
+        ]
+      }
     },
     {
       "schema_version": 1,
       "id": "zwo_mount",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "name": "ZWO mount",
       "description": "Connect compatible ZWO Wi-Fi mounts.",
       "category": "mount",
+      "protocol": "lx200",
       "wifi": [
         {
           "prefix": "AMH_",
@@ -255,13 +366,20 @@
           4030
         ]
       },
+      "port_roles": [
+        {
+          "port": 4030,
+          "role": "control",
+          "protocol": "lx200"
+        }
+      ],
       "identification": "zwo_model",
       "discovery": {
         "engine": "tcp_syn",
         "target_mode": "proxy_or_original"
       },
       "activity": "protect_all",
-      "readiness": "association",
+      "readiness": "tcp_connect",
       "validation": {
         "level": "partial_hardware",
         "models": [
@@ -292,15 +410,24 @@
           "prefix": "AMH_",
           "password": "12345678"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1",
+          "alpaca_observer_v1"
+        ],
+        "default_enabled": [],
+        "limitation": "Position only when Alpaca is enabled; otherwise link only."
+      }
     },
     {
       "schema_version": 1,
       "id": "synscan",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "name": "SynScan mount",
       "description": "Connect SynScan Wi-Fi mounts.",
       "category": "mount",
+      "protocol": "synscan",
       "wifi": [
         {
           "prefix": "SynScan_",
@@ -315,12 +442,19 @@
           11880
         ]
       },
+      "port_roles": [
+        {
+          "port": 11880,
+          "role": "control",
+          "protocol": "synscan"
+        }
+      ],
       "identification": "synscan_version",
       "discovery": {
         "engine": "synscan_version"
       },
       "activity": "protect_all",
-      "readiness": "association",
+      "readiness": "udp_identity",
       "validation": {
         "level": "simulation",
         "models": [],
@@ -341,7 +475,15 @@
           "title": "Sky-Watcher motor-controller command set",
           "url": "https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf"
         }
-      ]
+      ],
+      "telemetry": {
+        "adapters": [
+          "link_v1",
+          "alpaca_observer_v1"
+        ],
+        "default_enabled": [],
+        "limitation": "Position only when Alpaca is enabled; otherwise link only."
+      }
     }
   ]
 }

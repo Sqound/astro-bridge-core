@@ -25,6 +25,12 @@ class NetworkAuthenticationError(NetworkError):
         super().__init__('Wi-Fi authentication failed. Check the saved password.')
 
 
+class NetworkIsolationError(NetworkError):
+    def __init__(self, reason='ISOLATION_UNAVAILABLE'):
+        self.reason = reason
+        super().__init__('Isolated connection unavailable. Check namespace support, Wi-Fi driver and host tools.')
+
+
 def run(args, timeout=20, check=True, input=None):
     try:
         def execute(command):
@@ -172,6 +178,21 @@ class LinuxNetwork:
         self.country_code = "JP"
         self.telemetry = None
         self.sharing_active = None
+        self.link_cache = {}
+        self.isolated = None
+
+    def _isolation(self):
+        if self.isolated is None:
+            from .isolated import IsolatedRadios
+            self.isolated = IsolatedRadios(self.state_dir, run)
+        return self.isolated
+
+    def isolated_endpoints(self, entries, rows, paths):
+        if self.isolated or any(p.get('isolated') for p in entries):
+            self._isolation().sync(entries, rows, paths)
+
+    def close(self):
+        if self.isolated: self.isolated.close()
 
     def devices(self):
         devices = []
@@ -194,6 +215,9 @@ class LinuxNetwork:
             devices.append({"name": name, "mac": mac.lower(), "usb": usb,
                             "bands": bands, "ap": bool(re.search(r"^\s*\* AP\s*$", capabilities, re.M)),
                             "label": name + (" · USB" if usb else " · built-in")})
+        if self.isolated or (self.state_dir/'isolated').exists():
+            owned = self._isolation().present_devices()
+            devices = [d for d in devices if d['mac'] not in {r['mac'] for r in owned}] + owned
         return sorted(devices, key=lambda d: (d["usb"], d["name"]))
 
     def scan(self, name, rescan=True, timeout=None):
@@ -211,6 +235,7 @@ class LinuxNetwork:
         return sorted(networks, key=lambda n: -n["signal"])
 
     def scan_station(self, device, home, role="home"):
+        if self.isolated and self.isolated.record_for(device): return False
         # A scan request on our associated station never changes its connection.
         info=run(["iw","dev",device['name'],"info"],timeout=2,check=False)
         return (self.connected(role,device,home) and self._hotspot_device()!=device['name']
@@ -219,6 +244,7 @@ class LinuxNetwork:
     def cached_scan(self, name):return self.scan(name,rescan=False)
 
     def radio_idle(self, device):
+        if self.isolated and self.isolated.record_for(device): return False
         # Fail closed for unmanaged, unknown, externally associated and AP devices.
         state = run(["nmcli", "-g", "GENERAL.STATE", "device", "show", device["name"]], timeout=2, check=False)
         link = run(["iw", "dev", device["name"], "link"], timeout=2, check=False)
@@ -257,6 +283,9 @@ class LinuxNetwork:
         return True
 
     def discovery_associated(self, device, profile):
+        if self.isolated and self.isolated.record_for(device):
+            from .config import role_for
+            return self.isolated.connected(role_for(profile), device, profile)
         from .config import role_for
         current = run(["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", device["name"]], timeout=2, check=False)
         link = run(["iw", "dev", device["name"], "link"], timeout=2, check=False)
@@ -264,6 +293,8 @@ class LinuxNetwork:
                 and any(line.lstrip() == "SSID: " + profile['ssid'] for line in link.splitlines()))
 
     def link_observation(self, device, profile):
+        if self.isolated and self.isolated.record_for(device):
+            return self.isolated.link_observation(device, profile)
         from .config import role_for
         current = run(["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", device["name"]], timeout=2, check=False)
         link = run(["iw", "dev", device["name"], "link"], timeout=2, check=False)
@@ -277,6 +308,11 @@ class LinuxNetwork:
         return seestar_probe(device, self.address(device, timeout=2), profile['target_ip'])
 
     def discover_mount(self, device, profile):
+        if self.isolated and self.isolated.record_for(device):
+            from .isolated import in_namespace
+            record = self.isolated.record_for(device)
+            with in_namespace('/run/netns/'+record['namespace']):
+                return mount_probe(device, self.address(device, timeout=2), profile['target_ip'], profile['kind'])
         return mount_probe(device, self.address(device, timeout=2), profile['target_ip'], profile['kind'])
 
     def _profile(self, role, sections):
@@ -307,6 +343,10 @@ class LinuxNetwork:
                 "ipv6": {"method": "disabled"}}
 
     def connect(self, role, device, config):
+        if config.get('isolated'):
+            return self._isolation().connect(role, device, config)
+        if self.isolated and self.isolated.record_for(device):
+            self.isolated.release(self.isolated.record_for(device)['role'])
         if self._hotspot_device() == device["name"]:
             self.disconnect("setup")
         sections = self._base(role, device["name"], device["mac"], config["ssid"])
@@ -339,7 +379,7 @@ class LinuxNetwork:
     def known_telescope_roles(self):
         active = run(["nmcli", "-g", "NAME", "connection", "show"])
         return {name[len("wifi-bridge-"):] for name in active.splitlines()
-                if re.fullmatch(r"wifi-bridge-telescope(?:-[a-z0-9][a-z0-9-]{0,31})?", name)}
+                if re.fullmatch(r"wifi-bridge-telescope(?:-[a-z0-9][a-z0-9-]{0,31})?", name)} | ({r['role'] for r in self.isolated.records.values()} if self.isolated else set())
 
     def remove_profile(self, role):
         run(["nmcli", "--wait", "5", "connection", "delete", "id", "wifi-bridge-" + role],
@@ -352,6 +392,8 @@ class LinuxNetwork:
         return json.loads(path.read_text())["interface"]
 
     def disconnect(self, role):
+        if self.isolated and any(r['role'] == role for r in self.isolated.records.values()):
+            return self.isolated.release(role)
         if role == "setup":
             name = self._hotspot_device()
             if not name:
@@ -367,23 +409,47 @@ class LinuxNetwork:
     def connected(self, role, device, config=None):
         if not device:
             return False
+        if device.get('kind') == 'ethernet':
+            actual = self.wired_home()
+            return role == 'home' and actual is not None and all(actual[k] == device[k] for k in ('name', 'mac', 'address'))
+        if self.isolated and self.isolated.record_for(device):
+            return self.isolated.connected(role, device, config)
         if role == "setup":
-            active = run(["systemctl", "is-active", "wifi-bridge-ap", "wifi-bridge-dhcp"], check=False)
-            return (self._hotspot_device() == device["name"] and
-                    active.splitlines() == ["active", "active"] and
-                    self.address(device) == "192.168.77.1/24")
+            if self._hotspot_device() != device["name"]:
+                return False
+            try:
+                active = run(["systemctl", "is-active", "wifi-bridge-ap", "wifi-bridge-dhcp"], timeout=3, check=False)
+                if active.splitlines() != ["active", "active"] or self.address(device, timeout=3) != "192.168.77.1/24":
+                    return False
+                info = run(["iw", "dev", device["name"], "info"], timeout=2, check=False)
+                if re.findall(r'^\s*type\s+(\S+)\s*$', info, re.M) != ['AP']:
+                    return False
+                status = run(['hostapd_cli', '-p', '/run/wifi-bridge-hostapd', '-i', device['name'], 'status'], timeout=2, check=False)
+                return re.findall(r'^state=(.*)$', status, re.M) == ['ENABLED']
+            except NetworkError:
+                return False
         current = run(["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", device["name"]], check=False)
         if current != "wifi-bridge-" + role or not self.address(device):
             return False
         if config is not None:
             link = run(["iw", "dev", device["name"], "link"], check=False)
+            from .link_observations import remember_link
+            remember_link(self.link_cache, device["name"], link)
             ssid = next((line.lstrip()[6:] for line in link.splitlines() if line.lstrip().startswith("SSID: ")), None)
             if ssid != config["ssid"]:
                 return False
         return True
 
     def address(self, device, timeout=20):
+        if self.isolated and self.isolated.record_for(device): return self.isolated.address(device)
         raw = run(["ip", "-j", "-4", "address", "show", "dev", device["name"]], timeout=timeout)
+        if device.get('kind') == 'ethernet':
+            addresses = [addr['local'] + '/' + str(addr['prefixlen'])
+                         for item in json.loads(raw or '[]') for addr in item.get('addr_info', [])
+                         if addr.get('scope') == 'global']
+            if addresses != [device.get('address')]:
+                raise NetworkError('No confirmed management forwarding path.')
+            return addresses[0]
         for item in json.loads(raw or "[]"):
             for addr in item.get("addr_info", []):
                 if addr.get("scope") == "global":
@@ -447,9 +513,32 @@ class LinuxNetwork:
         except (OSError, ValueError, StopIteration):
             raise NetworkError('The current hotspot name could not be read.') from None
 
+    def _wait_nm_unmanaged(self, name):
+        # A successful set request is not proof NetworkManager has released the radio.
+        for attempt in range(8):
+            state = run(['nmcli', '-g', 'GENERAL.STATE', 'device', 'show', name], timeout=1, check=False)
+            if state.split(' ', 1)[0] == '10':
+                return
+            if attempt < 7:
+                time.sleep(.25)
+        raise NetworkError('NetworkManager did not release the hotspot interface.')
+
+    def _wait_hotspot_ready(self, device):
+        for attempt in range(8):
+            if self.connected('setup', device):
+                return
+            if attempt < 7:
+                time.sleep(.25)
+        raise NetworkError('The hotspot or its DHCP server did not start.')
+
     def hotspot(self, device, ssid, password, targets=()):
         # NetworkManager/wpa_supplicant AP mode rejected valid WPA2 clients on the
         # physical Zero W. A dedicated hostapd WPA2/CCMP AP completed the handshake.
+        # A stale or unverified owner may still have clients. Reconciliation may
+        # release it only after independently proving that both services stopped.
+        owned = self._hotspot_device()
+        if owned and not self.connected('setup', {'name': owned}):
+            raise NetworkError('The previous hotspot owner is not safely released.')
         self.disconnect("setup")
         name = device["name"]
         psk = hashlib.pbkdf2_hmac("sha1", password.encode(), ssid.encode(), 4096, 32).hex()
@@ -462,14 +551,20 @@ class LinuxNetwork:
         self.hotspot_dhcp(device, targets, restart=False)
         # Persist ownership before changing the radio so partial failures can be
         # recovered after an application restart. Client credentials never enter argv.
-        atomic_json(self.state_dir / "hotspot.json", {"interface": name})
-        run(["nmcli", "--wait", "5", "connection", "down", "id", "wifi-bridge-setup"], check=False)
-        run(["nmcli", "device", "set", name, "managed", "no"])
-        run(["ip", "address", "replace", "192.168.77.1/24", "dev", name])
-        run(["ip", "link", "set", name, "up"])
-        run(["systemctl", "restart", "wifi-bridge-ap", "wifi-bridge-dhcp"])
-        if not self.connected("setup", device):
-            raise NetworkError("The hotspot or its DHCP server did not start.")
+        atomic_json(self.state_dir / "hotspot.json", {"interface": name, **({"mac": device["mac"]} if device.get("mac") else {})})
+        try:
+            run(["nmcli", "--wait", "5", "connection", "down", "id", "wifi-bridge-setup"], check=False)
+            run(["nmcli", "device", "set", name, "managed", "no"])
+            self._wait_nm_unmanaged(name)
+            run(["ip", "address", "replace", "192.168.77.1/24", "dev", name])
+            run(["ip", "link", "set", name, "up"])
+            run(["systemctl", "restart", "wifi-bridge-ap", "wifi-bridge-dhcp"])
+            self._wait_hotspot_ready(device)
+        except NetworkError:
+            # Release our partial AP before the controller tries another radio.
+            # If cleanup itself fails, retain ownership and abort safely.
+            self.disconnect("setup")
+            raise
 
     def ap_vacant(self, device):
         """Current raw station observation, including unauthenticated stations."""
@@ -514,18 +609,19 @@ class LinuxNetwork:
             clients.append({"mac": mac, **leases.get(mac, {"ip": "", "hostname": ""})})
         return {"clients": clients, "clients_available": True}
 
-    def identity(self, hostname, home_device):
+    def identity(self, hostname, devices, settings=None, runtime=None):
         from .runtime import platform
-        if platform() != "raspberry": return  # Host mDNS configuration belongs to the deployment owner.
-        # Restrict mDNS to home or setup; never reflect telescope advertisements.
-        interface = ",".join(d["name"] for d in home_device) if isinstance(home_device, list) else home_device["name"]
-        config = ("[server]\nhost-name=" + hostname + "\nallow-interfaces=" + interface +
-                  "\nuse-ipv6=no\n[wide-area]\nenable-wide-area=no\n[publish]\n" +
-                  "publish-workstation=no\n[reflector]\nenable-reflector=no\n")
-        path = Path("/etc/avahi/avahi-daemon.conf")
-        if path.read_text() != config:
-            path.write_text(config)
-            run(["systemctl", "restart", "avahi-daemon"])
+        deployment = platform()
+        if deployment not in ("raspberry", "live-usb"):
+            if deployment != 'native':
+                return False
+            # The Pi 5 bench image is intentionally still classified native;
+            # its root-owned camera opt-in and device-tree model gate discovery.
+            from .cameras.discovery import pi5_gphoto_enabled
+            if not pi5_gphoto_enabled():
+                return False
+        from .announce import update
+        return update(Path('/etc/avahi'), hostname, devices, settings, runtime, run)
 
     def country(self, country):
         self.country_code = country
@@ -544,6 +640,13 @@ class LinuxNetwork:
         except OSError:
             return False
 
+    def wired_home(self):
+        from .wired import home
+        try:
+            return home(run, split_nm)
+        except (OSError, ValueError, NetworkError):
+            return None
+
     def management_paths(self, home=None, setup=None):
         return [{'role':role,'device':device,'address':self.address(device)}
                 for role,device in (('home',home),('ap',setup)) if device]
@@ -561,7 +664,7 @@ class LinuxNetwork:
                 return None,'SUBNET_CONFLICT'
             raw=run(['nmcli','-t','-f','GENERAL.CONNECTION,IP4.GATEWAY,IP4.DNS','device','show',home['name']],timeout=3)
             if len(raw)>4096:raise ValueError()
-            if re.findall(r'^GENERAL\.CONNECTION:(.*)$',raw,re.M)!=['wifi-bridge-home']:raise ValueError()
+            if re.findall(r'^GENERAL\.CONNECTION:(.*)$',raw,re.M)!=['wifi-bridge-wired' if home.get('kind') == 'ethernet' else 'wifi-bridge-home']:raise ValueError()
             gateways=re.findall(r'^IP4\.GATEWAY:(.*)$',raw,re.M)
             if len(gateways)!=1:raise ValueError()
             gateway=ipaddress.IPv4Address(gateways[0])
@@ -724,6 +827,8 @@ class LinuxNetwork:
             active=run(command,timeout=2)
             if not re.fullmatch('/org/freedesktop/NetworkManager/ActiveConnection/[0-9]+',active):return None
             link=run(['iw','dev',device['name'],'link'],timeout=2)
+            from .link_observations import remember_link
+            remember_link(self.link_cache, device['name'], link)
             match=re.search(r'^Connected to ([0-9a-fA-F:]{17})\b',link)
             if not match or not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}',match[1]):return None
             if run(command,timeout=2)!=active or networkmanager_process_identity()!=manager:return None
@@ -800,6 +905,7 @@ class LinuxNetwork:
                 self.telemetry.plan();self.telemetry.catalog['coverage_lost']=True
 
     def sample_activity(self, *, force=False, policy=None):
+        if self.isolated and policy: self.isolated.policy = dict(policy)
         if self.telemetry:
             policy=policy or {'quiet_seconds':120,'cooldown_seconds':60}
             self.telemetry.sample(force=force,quiet_seconds=policy['quiet_seconds'],cooldown_seconds=policy['cooldown_seconds'])
@@ -807,6 +913,8 @@ class LinuxNetwork:
     def selection_activity(self, profile, device, home):
         """Only a current association catalog entry may supply idle evidence."""
         unknown = {'state':'unknown','reason':'ASSOCIATION_NOT_MEASURED','sample_age_seconds':16}
+        if self.isolated and self.isolated.record_for(device):
+            return self.isolated.activity().get(profile['id'], unknown)
         if not self.telemetry: return unknown
         token = self.association_identity(device)
         if not token: return unknown
@@ -816,8 +924,40 @@ class LinuxNetwork:
         if record.get('instrument_signature')!=signature:return unknown
         return self.activity_status()['profiles'].get(profile['id'], unknown)
 
+    def link_observations(self, rows):
+        """Private normalized cached evidence; collector never executes commands."""
+        result = {}
+        for ident, row in rows.items():
+            radio = self.link_cache.get(row.get('interface'), {})
+            result[ident] = {'radio': dict(radio) if time.monotonic()-radio.get('observed', -100) <= 30 else {}}
+        if self.telemetry:
+            activity = self.telemetry.status()['profiles']
+            for ident, value in list(self.telemetry.values.items()):
+                if ident not in rows: continue
+                if (activity.get(ident, {}).get('sample_age_seconds', 16) > 15
+                        or value.get('generation') != self.telemetry.generation): continue
+                mark = self.telemetry.current.get(ident)
+                record = self.telemetry.catalog['records'].get(str(mark), {})
+                radio = self.link_cache.get(record.get('device'), {})
+                result[ident] = {'activity': dict(activity.get(ident, {}), **{
+                    key:value[key] for key in ('bytes_to_instrument','bytes_from_instrument') if key in value}),
+                    'generation': value.get('group'),
+                    'radio': dict(radio) if time.monotonic()-radio.get('observed', -100) <= 30 else {}}
+        if self.isolated:
+            for ident, value in self.isolated.activity().items():
+                if ident not in rows: continue
+                record = next((r for r in list(self.isolated.records.values()) if r['profile_id'] == ident), {})
+                radio = record.get('link_observation', {})
+                result[ident] = {'activity': value, 'generation': record.get('intent'),
+                    'radio': dict(radio) if time.monotonic()-radio.get('observed', -100) <= 30 else {}}
+        return result
+
     def activity_status(self):
-        return self.telemetry.status() if self.telemetry else {'supported':False,'profiles':{},'reason':'COLLECTOR_NOT_READY','idle_selection_implemented':True}
+        result = self.telemetry.status() if self.telemetry else {'supported':False,'profiles':{},'reason':'COLLECTOR_NOT_READY','idle_selection_implemented':True}
+        if self.isolated:
+            result['profiles'].update(self.isolated.activity())
+            if self.isolated.activity(): result['supported'] = True
+        return result
 
     def linux_password(self, password):
         # The one-shot helper can only change bridge; neither account nor command
@@ -841,6 +981,16 @@ class DemoNetwork:
         self.instrument_addresses = {}
         self.ap_device = ""
         self.links = {}
+        self.isolated = None
+
+    def isolated_endpoints(self, entries, rows, paths):
+        from .isolated import IsolatedRadios
+        if self.isolated is None:
+            self.isolated = IsolatedRadios.__new__(IsolatedRadios)
+            self.isolated.relays = {}; self.isolated.counters = {}; self.isolated.records = {}; self.isolated.ping_at = {}
+            self.isolated.udp_owners = {}
+            self.isolated.policy = {'quiet_seconds':120, 'cooldown_seconds':60}
+        self.isolated.sync(entries, rows, paths, demo=True)
 
     def devices(self):
         return ([{"name": "wlan0", "mac": "b8:27:eb:12:ab:cd", "usb": False, "bands": ["2.4"], "label": "wlan0 · built-in"},
@@ -924,6 +1074,7 @@ class DemoNetwork:
         return False
 
     def hotspot(self, device, ssid, password, targets=()):
+        self.disconnect("setup")
         self.connect("setup", device, {"ssid": ssid})
         self.ap_ssid = ssid
 
@@ -938,7 +1089,7 @@ class DemoNetwork:
     def hotspot_clients(self, device):
         return {"clients": [{"mac": "02:00:00:77:00:01", "ip": "192.168.77.12", "hostname": "Demo phone"}], "clients_available": True}
 
-    def identity(self, *args): pass
+    def identity(self, *args, **kwargs): return False
     def country(self, *args): pass
     def firewall(self, *args, **kwargs): pass
     def probe(self, *args): return True

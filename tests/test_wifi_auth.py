@@ -91,7 +91,7 @@ class ControllerAuthenticationTests(Fixture):
         row = self.controller.status()['telescopes'][0]
         self.assertEqual(row['state'], 'authentication_failed'); self.assertTrue(row['retry_blocked'])
         self.assertTrue(self.controller.status()['home_ip'])
-        events = [e for e in self.controller.event_store.events if e['reason']=='WIFI_AUTHENTICATION_FAILED']
+        events = [e for e in self.controller.event_store.events if e.get('reason')=='WIFI_AUTHENTICATION_FAILED']
         self.assertEqual(len(events), 1); self.assertEqual(events[0]['type'], 'failed')
         with self.assertRaises(ApiError) as error: self.controller.telescope_action({'id':'primary', 'action':'connect'})
         self.assertEqual(error.exception.code, 'WIFI_AUTHENTICATION_FAILED')

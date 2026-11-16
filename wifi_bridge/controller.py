@@ -1,23 +1,34 @@
 """Reconcile independent home, telescope and optional access-point radios."""
 import copy
+import hashlib
+import json
 import hmac
+import re
 import ipaddress
 import threading
 import time
+import uuid
 from collections import deque
 
-from .config import Invalid, profiles, public_config, role_for, validate_config, password_hash, password_matches, text, network_intent, auto_policy, hotspot_ssid, reserved_hotspot_mac
-from .network import NetworkError, NetworkAuthenticationError, hotspot_route_targets
+from .config import device_identity, Invalid, profiles, public_config, role_for, validate_config, password_hash, password_matches, text, network_intent, auto_policy, hotspot_ssid, reserved_hotspot_mac
+from .network import NetworkError, NetworkAuthenticationError, NetworkIsolationError, hotspot_route_targets
 from .plugins import relay_plugins, proxy_flag, plugin, require_config_plugins
 from .events import EventStore, ConnectionEvents
 from .tls import CertificateState
 from .api import ApiError
+from .readiness import ServiceReadiness, empty_service
+from .radio_roles import role_allows, interface_roles
 
 
 class Controller:
     def __init__(self, store, network, bootstrap, demo=False):
         require_config_plugins(store.config)
         self.store, self.net, self.bootstrap, self.demo = store, network, bootstrap, demo
+        from .cameras.discovery import platform_supported
+        self.camera_supported = platform_supported(demo)
+        self.device_id = device_identity(store.path.parent)
+        from .identity import Identities
+        self.identities = Identities(store.path.parent)
         self.lock = threading.RLock()
         self.net_lock = threading.Lock()
         self.stop = threading.Event()
@@ -58,6 +69,13 @@ class Controller:
         self.candidates = CandidateDiscovery(self)
 
         self.event_store = EventStore(store.path.parent / "events.json")
+        from .telemetry import TelemetryStore, Sessions
+        self.telemetry_store = TelemetryStore(store.path.parent / 'telemetry.sqlite3',
+                                              clock=self.event_store.clock, boot_id=self.event_store.boot_id)
+        from .telemetry.settings import prune_settings
+        prune_settings(self.telemetry_store, profiles(store.config))
+        self.telemetry_sessions = Sessions(self.telemetry_store, events=self.event_store)
+        self.event_store.track_instruments(p['id'] for p in profiles(store.config))
         self.connection_events = ConnectionEvents(self.event_store)
         self._event_config = None
         self._event_contexts = {}
@@ -73,6 +91,168 @@ class Controller:
         self.synscan_demand=self.plugin_adapters['synscan']
         from .protection import ConnectionProtection
         self.protection = ConnectionProtection(self)
+        self.protection.lease_hook = self._lease_event
+        from .cameras.native import NativeCameras
+        self.camera_native = NativeCameras(self)
+        self.connection_events.leased = lambda ident: any(value['profile_id'] == ident and value['expires'] > self.protection.clock() for value in self.protection.leases.values())
+        self.service_readiness = ServiceReadiness(network, demo)
+        from .telemetry.link import LinkCollector
+        self.link_collector = LinkCollector(self)
+        from .telemetry.adapters.vespera_status import VesperaCollector
+        self.vespera_collector = VesperaCollector(self)
+        from .telemetry.adapters.alpaca_observer import AlpacaCollector
+        self.alpaca_collector = AlpacaCollector(self)
+        from .maker_keys.service import MakerKeys
+        self.maker_keys = MakerKeys(self)
+        from .telemetry.adapters.seestar_events import SeestarCollector
+        self.seestar_collector = SeestarCollector(self)
+        from .telemetry.adapters.dwarf_capture import DwarfCapture
+        self.dwarf_capture = DwarfCapture(self)
+        self.operation_since = {}
+        from .stations import Stations
+        self.stations = Stations(self)
+        from .serial_mounts import SerialMounts
+        self.serial_mounts = SerialMounts(self)
+        if demo:
+            from .telemetry.demo import DemoTelemetry
+            self.demo_telemetry = DemoTelemetry(self)
+
+    def operation_state(self, profile):
+        """Operation reporters may strengthen protection, never infer quiet."""
+        states = [collector.operation_state(profile) for collector in
+                  (self.vespera_collector, self.alpaca_collector, self.seestar_collector, getattr(self, 'dwarf_capture', None))
+                  if hasattr(collector, 'operation_state')]
+        if 'running' in states: return 'running'
+        if 'unknown' in states: return 'unknown'
+        return next((state for state in states if state is not None), None)
+
+    def operation_detail(self, profile):
+        """Contract 1.2 projection {state, kind, since} of the same evidence, or None.
+
+        since is the bridge time the current state and kind were first observed.
+        """
+        state = self.operation_state(profile)
+        if state is None:
+            self.operation_since.pop(profile['id'], None); return None
+        kind = None
+        if state == 'running':
+            kind = next((k for k in (getattr(collector, 'operation_kind', lambda _: None)(profile) for collector in
+                         (self.vespera_collector, self.seestar_collector, getattr(self, 'dwarf_capture', None)) if collector)
+                         if k is not None), None)
+        previous = self.operation_since.get(profile['id'])
+        if previous is None or previous[:2] != (state, kind):
+            from .clock import utc
+            previous = self.operation_since[profile['id']] = (state, kind, utc(time.time()))
+        return {'state': state, 'kind': kind, 'since': previous[2]}
+
+    def _lease_event(self, kind, ident, lease_id, expires_in, reason=None):
+        fields = {'expires_in': expires_in} if kind == 'lease.expiring' else {'reason': reason or 'EXPIRED'}
+        self.event_store.native(kind, ident, lease_id=lease_id, **fields)
+
+    def instrument_catalog(self, snapshot, client=None, camera_rows=None):
+        from .instruments import catalog
+        cameras = self.camera_native.catalog(client, camera_rows)
+        self.event_store.track_instruments([p['id'] for p in profiles(self.store.config)] + [p['id'] for p in self.store.config.get('stations', [])]
+                                           + [row['id'] for row in cameras])
+        discovery = self.candidates
+        age = discovery.clock() - discovery.nearby_at if discovery.nearby_at is not None else None
+        from .telemetry.settings import selected_adapters
+        collector = getattr(self, 'link_collector', None)
+        available = bool(collector and not collector.halt.is_set() and not self.telemetry_sessions.closed)
+        vespera = getattr(self, 'vespera_collector', None)
+        alpaca = getattr(self, 'alpaca_collector', None)
+        seestar = getattr(self, 'seestar_collector', None)
+        telemetry = {p['id']:[a for a in selected_adapters(self.telemetry_store.settings, p)
+                              if (available and a == 'link_v1') or (a == 'vespera_status_v1' and vespera and vespera.available(p['id']))
+                              or (a == 'alpaca_observer_v1' and alpaca and alpaca.available(p['id']))
+                              or (a == 'seestar_events_v1' and seestar and seestar.available(p['id']))]
+                     for p in profiles(self.store.config)}
+        from .instrument_pages import ordered_catalog
+        self.identities.prune({p['id'] for p in profiles(self.store.config)})
+        return ordered_catalog(self._radio_catalog(snapshot, client, telemetry, discovery, age)
+                               + self.stations.catalog(client, self.event_store.events, self.event_store.instrument_sequences), cameras)
+
+    def _radio_catalog(self, snapshot, client, telemetry, discovery, age):
+        from .instruments import catalog
+        return (catalog(snapshot, self.protection.leases.values(), client, now=self.protection.clock(), telemetry=telemetry, maker_keys=self.maker_keys.inventory(), identities=self.identities, free_radios=self.free_radios(),
+                       operations={p['id']: self.operation_detail(p) for p in profiles(self.store.config)},
+                       observations=discovery.nearby_rows, observation_age=age, events=self.event_store.events, sequences=self.event_store.instrument_sequences))
+
+    def _native_event_snapshot(self):
+        from .instruments import endpoint
+        snapshot = self.status()
+        camera_rows = self.camera_native.inventory()
+        by_id = {row['instrument_id']: row for row in camera_rows}
+        for item in self.instrument_catalog(snapshot, camera_rows=camera_rows):
+            ident = item['id']
+            self.connection_events.native_state(ident, item['link'], item['service'])
+            if item['link'] != 'connected': continue
+            state = self.connection_events.states.setdefault(ident, {})
+            # Compare both ingress projections without retaining endpoint addresses.
+            primary = []
+            for path in ('home', 'hotspot', 'other'):
+                value = (self.camera_native.endpoint(ident, path, row=by_id[ident]) if item['kind'] == 'camera'
+                         else endpoint(snapshot, ident, path))
+                primary.append(None if value is None else {key: value[key] for key in ('primary', 'mode', 'requires_client_route')})
+            signature = hashlib.sha256(json.dumps(primary, sort_keys=True).encode()).hexdigest()
+            if 'endpoint_signature' in state and signature != state['endpoint_signature']:
+                self.event_store.native('instrument.endpoint_changed', ident)
+            state['endpoint_signature'] = signature
+
+    def _switch_events(self):
+        """Emit one progress event per phase change and one completion per operation."""
+        ops = self.operations
+        seen = self.__dict__.setdefault('_switch_seen', {})
+        for ident in dict.fromkeys(filter(None, (ops.active, ops.last))):
+            record = ops.records.get(ident)
+            if record is None: continue
+            value, current = record['public'], ops.progress(ident)
+            previous = seen.get(ident)
+            if current['phase'] in ('ready', 'failed'):
+                if previous != 'completed':
+                    reason = value.get('reason') if isinstance(value.get('reason'), str) and re.fullmatch('[A-Z][A-Z0-9_]{0,63}', value['reason']) else 'UNKNOWN'
+                    self.event_store.native('instrument.switch_completed', value['profile_id'], operation=ident,
+                                            outcome=current['phase'], reason=reason)
+                    seen[ident] = 'completed'
+            elif previous != current['phase']:
+                self.event_store.native('instrument.switch_progress', value['profile_id'], operation=ident,
+                                        phase=current['phase'], eta_seconds=current['eta_seconds'])
+                seen[ident] = current['phase']
+        while len(seen) > 16: seen.pop(next(iter(seen)))
+
+    def free_radios(self):
+        """Instrument-capable radios with no management role and no active profile."""
+        from .radio_roles import role_allows
+        with self.lock:
+            config = self.store.config
+            used = {config.get('home', {}).get('mac'), self.state['hotspot'].get('mac'), reserved_hotspot_mac(config)}
+            used |= {p['mac'] for p in profiles(config) if p['enabled']}
+            used |= {row.get('mac') for row in self.state['telescopes'] if row.get('connected')}
+            return min(16, sum(1 for d in self.state['devices'] if d.get('mac') not in used
+                               and d.get('kind', 'wifi') != 'ethernet' and role_allows(config, d['mac'], 'telescope')))
+
+    def announcement(self):
+        """Shared public identity for DNS-SD and HTTP; no manufacturer probing."""
+        from .announce import display_name
+        with self.lock:
+            # Add future capabilities only when their routes/runtime become available.
+            runtime = {'pairing': hasattr(self, 'paired_clients'), 'instruments': True, 'connect': True, 'events-wait': True,
+                       'telemetry': not self.telemetry_sessions.closed, 'maker-keys': not self.maker_keys.closed}
+            cameras = getattr(self, 'camera_service', None)
+            runtime['alpaca-camera'] = bool(cameras and cameras.listening_port() is not None)
+            secure = getattr(self, 'secure_access', None)
+            if secure:
+                status = secure.status()
+                if status['listener']['ready']:
+                    runtime['https_port'] = 443
+                    fingerprint = (status.get('identity') or {}).get('fingerprint_sha256')
+                    if isinstance(fingerprint, str) and re.fullmatch('[0-9a-f]{64}', fingerprint):
+                        runtime['tls_fingerprint'] = fingerprint
+            # Contract 1.1 hints: radios a client could use without replacing anything.
+            runtime['free_radios'] = self.free_radios()
+            runtime['hotspot'] = bool(self.state.get('hotspot', {}).get('active'))
+            return {'name': display_name(self.store.config['hostname']),
+                    'device_id': self.device_id}, runtime
 
     def update(self, **values):
         with self.lock:
@@ -82,8 +262,35 @@ class Controller:
         with self.lock:
             result = copy.deepcopy(self.state)
             result["config"] = public_config(self.store.config)
+            manager = getattr(self.net, 'isolated', None)
+            if manager:
+                for row in result['telescopes']:
+                    count = manager.counters.get(row['id'])
+                    if (row.get('client_endpoint') or {}).get('transport') == 'udp':
+                        ownership = manager.owner_status(row['id'])
+                        row['client_endpoint'].update(ownership)
+                        for path in row['client_endpoint'].get('alternatives', []): path.update(ownership)
+                    if row.get('client_endpoint') and count and not self.demo:
+                        row['transport_metrics'] = count.snapshot(**manager._policy_args())
             result["nearby_telescopes"] = self.candidates.nearby()
+            saved_profiles = {p['id']:p for p in profiles(self.store.config)}
+            for row in result['telescopes']:
+                saved = saved_profiles.get(row['id'])
+                if row.get('client_endpoint') and (not saved or not saved['enabled']
+                        or network_intent(saved) != network_intent(self.applied.get(role_for(saved)))):
+                    row['client_endpoint'].update(ready=False, reason='CONFIGURATION_PENDING')
+                    if saved and saved.get('client_port'): row['client_endpoint']['port'] = saved['client_port']
+                    from .isolated import SERVICES, client_ports
+                    ports = dict(zip((p for p, _ in SERVICES.get(saved['kind'], ())), client_ports(saved))) if saved and saved.get('client_port') else {}
+                    for path in row['client_endpoint'].get('alternatives', []) + row['client_endpoint'].get('services', []):
+                        path.update(ready=False, reason='CONFIGURATION_PENDING')
+                        if saved and saved.get('client_port'): path['port'] = ports.get(path.get('target_port'), saved['client_port'])
             result['connection_operation'] = self.operations.latest()
+            result['stations'] = self.stations.public()
+            result['serial_mounts'] = self.serial_mounts.public()
+            result['serial_detected'] = self.serial_mounts.detected()
+            from .devices import declared_devices
+            result['declared_devices'] = declared_devices(result)
             result['maker_demand'] = self.operations.demand_status()
             result['maker_demands'] = {'seestar':dict(result['maker_demand']),**{kind:adapter.status() for kind,adapter in self.plugin_adapters.items()}}
             result['connection_protection'] = self.protection.status()
@@ -105,6 +312,16 @@ class Controller:
         result["url"] = "http://" + result["config"]["hostname"] + ".local"
         return result
 
+    def serial_events(self, rows):
+        """Appearance and removal of serial adapters reach native clients as events."""
+        import hashlib
+        seen = {'ser-' + hashlib.sha256(r['node'].encode()).hexdigest()[:12]: r for r in rows}
+        previous = getattr(self, '_serial_seen', None)
+        self._serial_seen = set(seen)
+        if previous is None: return
+        for key in sorted(set(seen) - previous): self.event_store.native('serial.detected', key)
+        for key in sorted(previous - set(seen)): self.event_store.native('serial.removed', key)
+
     def update_safe(self):
         """App-owned maintenance gate; future reservations/locks extend this hook."""
         with self.lock:
@@ -125,7 +342,7 @@ class Controller:
         ap_mac=self.state.get('hotspot',{}).get('mac') if self.state.get('hotspot',{}).get('active') else None
         reserved = {ap_mac, reserved_hotspot_mac(config)} - {None, ''}
         if any(p['enabled'] and p['mac'] in reserved for p in profiles(config)):
-            raise ApiError(409,'MANAGEMENT_RADIO_RESERVED','Stop the hotspot explicitly before assigning its adapter to an instrument.')
+            raise ApiError(409,'MANAGEMENT_RADIO_RESERVED','Change the adapter role in Wi-Fi adapters before assigning it to an instrument.')
 
     def _save_locked(self, payload, cause, expected=None, revision=None):
         from .runtime import capabilities
@@ -148,6 +365,7 @@ class Controller:
                                  (('connection_mode', 'private'), ('hotspot_private_lan', False)))
             access_changed |= value['hotspot'].get('ssid', '') != previous.get('hotspot', {}).get('ssid', '')
             access_changed |= value['hotspot'].get('mac', '') != previous.get('hotspot', {}).get('mac', '')
+            access_changed |= 'interface_roles' in payload and payload['interface_roles'] != interface_roles(previous)
             if access_changed:
                 self.protection.precondition(expected, revision or (lambda: ''))
                 self.protection.reject()
@@ -165,6 +383,7 @@ class Controller:
                 if self.pauses.error: raise ApiError(409, 'PAUSE_REGISTRY_RECOVERY_REQUIRED', 'Recover the pause registry before editing held network intent.')
                 self.protection.precondition(expected, revision or (lambda: ''))
             self.store.save(value)
+            self.serial_mounts.reconcile()
             self.refresh_auth_failures(profiles(value))
             if value['home']!=previous['home']:self.next_home_attempt=0
             self.pauses.clear(changed)
@@ -244,6 +463,8 @@ class Controller:
                     raise Invalid("The selected adapter is unavailable.")
                 if target == value.get("home", {}).get("mac"):
                     raise Invalid("This adapter is reserved for the private network.")
+                if not role_allows(value, target, 'telescope'):
+                    raise ApiError(409, 'MANAGEMENT_RADIO_RESERVED', 'Change the adapter role in Wi-Fi adapters before assigning it to an instrument.')
                 if "expected_mac" in payload and payload["expected_mac"] != chosen["mac"]:
                     raise Invalid("Assignment changed. Refresh before moving this telescope.")
                 chosen["mac"] = target
@@ -317,13 +538,32 @@ class Controller:
                         or self.certificate_job_pending or self.certificates.busy() or self.action_at is not None
                         or self.stop.is_set() or self.cleanup_required)
 
+    def _hotspot_event(self, reason=None, device=None):
+        """Change-only management events; never include network names or errors."""
+        previous = getattr(self, '_hotspot_failure', None)
+        if reason == previous: return
+        self._hotspot_failure = reason
+        self.event_store.append('hotspot_unavailable' if reason else 'hotspot_restored',
+            operation_id=uuid.uuid4().hex, profile_id='hotspot', profile_name='',
+            radio_id=self.connection_events.radio(device['mac']) if device else None,
+            cause='RECONCILE', reason=reason or 'HOTSPOT_RESTORED',
+            outcome='failed' if reason else 'ready', associated=not reason, ready=not reason)
+
     def _ap(self, devices, reserved, emergency=False, only=None):
         current = self.active_ap(devices)
+        if not current and self.state['hotspot'].get('active'):
+            self._hotspot_event('HOTSPOT_RADIO_UNAVAILABLE')
         preferred = self.store.config.get('hotspot', {}).get('mac', '')
         password = self.store.config.get('hotspot_password', self.bootstrap['password'])
+        if current and not role_allows(self.store.config, current['mac'], 'hotspot'):
+            self.protection.reject()
+            self.net.disconnect('setup')
+            self.update(setup_ssid='', hotspot={'active': False, 'reason': 'adapter_role_changed'})
+            current = None
         current_name = self.net.hotspot_name() if current else ''
         if current and (not preferred or current['mac'] == preferred) and self.ap_password in (None,password) and current_name == hotspot_ssid(self.store.config, current['mac']):
             self.ap_password = password
+            self._hotspot_event(device=current)
             reason=self.state['hotspot'].get('reason')
             if reason not in ('requested','recovery','recovery_retained'):reason='recovery' if emergency else 'requested'
             self.update(setup_ssid=current_name,hotspot={'active':True,'reason':reason,'interface':current['name'],'mac':current['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(current)})
@@ -336,14 +576,14 @@ class Controller:
             return None
         protected = {p['mac'] for p in profiles(self.store.config) if self.protection.protected(p['id']) or self.pauses.held(p['id'])}
         home_mac = self.store.config.get('home',{}).get('mac')
-        candidates = [d for d in devices if d['mac'] not in protected and d.get('ap',True)
+        candidates = [d for d in devices if d['mac'] not in protected and d.get('ap',True) and role_allows(self.store.config, d['mac'], 'hotspot')
                       and (d['mac'] not in reserved or emergency and d['mac']==home_mac)
                       and (only is None or d['mac']==only['mac']) and self.net.radio_idle(d)]
         candidates.sort(key=lambda d:(d['mac']==home_mac,d['usb'],d['name']))
         selected = next((d for d in candidates if d['mac'] == preferred), None)
         if preferred:
             device = selected or (current if current and current['mac'] == preferred else None)
-            if device is None and (current or emergency):
+            if device is None:
                 # Keep a working management path; recovery may use another free
                 # radio, but never change the persisted owner-selected adapter.
                 device = current or (candidates[0] if candidates else None)
@@ -356,16 +596,44 @@ class Controller:
         if current:self.protection.reject()
         if not device:
             self.update(setup_ssid='',hotspot={'active':False,'reason':'protected_no_recovery_radio' if emergency and protected else 'selected_adapter_unavailable' if preferred else 'no_free_radio'})
+            self._hotspot_event('HOTSPOT_RADIO_UNAVAILABLE')
             return None
-        # No backend empty-plan reset: stage isolation while retaining every valid route.
-        self.firewall(extra_isolated=[device])
-        ssid = hotspot_ssid(self.store.config, device['mac'])
-        self.net.hotspot(device,ssid,password,self.hotspot_route_targets(devices))
-        self.ap_password = password
-        self.update(setup_ssid=ssid,
-                    hotspot={'active':True,'reason':'recovery' if emergency else 'requested',
-                             'interface':device['name'],'mac':device['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(device)})
-        return device
+        # Try each eligible radio once per reconcile; a failed preferred adapter
+        # never prevents an independent free radio from restoring management.
+        attempts = [device] + [d for d in candidates if d['mac'] != device['mac']]
+        for device in attempts:
+            self.firewall(extra_isolated=[device])
+            # Migrate an existing preference even if absent; only a first-ever
+            # bootstrap reserves the selected radio before starting the AP.
+            if not self.store.config.get('home') and 'interface_roles' not in self.store.config:
+                with self.lock:
+                    saved = copy.deepcopy(self.store.config)
+                    reservation = preferred or device['mac']
+                    saved['interface_roles'] = {reservation: 'hotspot'}
+                    saved['hotspot'] = dict(saved.get('hotspot', {}), mac=reservation, enabled=True)
+                    self.store.save(saved)
+            ssid = hotspot_ssid(self.store.config, device['mac'])
+            try:
+                self.net.hotspot(device,ssid,password,self.hotspot_route_targets(devices))
+            except NetworkError:
+                surviving = self.active_ap(devices)
+                if surviving:
+                    # A failure before backend teardown can leave the old AP
+                    # healthy. Preserve it instead of reporting a false outage.
+                    self.update(setup_ssid=self.net.hotspot_name(), hotspot={'active':True,
+                        'reason':'selected_adapter_unavailable', 'interface':surviving['name'],
+                        'mac':surviving['mac'], 'ip':'192.168.77.1', **self.net.hotspot_clients(surviving)})
+                    return surviving
+                self._hotspot_event('HOTSPOT_START_FAILED', device)
+                continue
+            self.ap_password = password
+            self._hotspot_event(device=device)
+            self.update(setup_ssid=ssid,
+                        hotspot={'active':True,'reason':'recovery' if emergency else 'requested',
+                                 'interface':device['name'],'mac':device['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(device)})
+            return device
+        self.update(setup_ssid='', hotspot={'active':False,'reason':'start_failed'})
+        return None
 
     def hotspot_route_targets(self, devices):
         # Include inactive saved instruments so normal switching can reuse a lease.
@@ -380,10 +648,15 @@ class Controller:
             addresses.update((interface.ip, interface.network.network_address, interface.network.broadcast_address))
             if device['mac'] == home_mac:
                 networks.append(interface.network)
-        return hotspot_route_targets((p.get('target_ip') for p in profiles(self.store.config)), networks, addresses)
+        return hotspot_route_targets((p.get('target_ip') for p in profiles(self.store.config) if not p.get('isolated')), networks, addresses)
 
     def management_paths(self, home, ap):
         return self.net.management_paths(home,ap)
+
+    def wired_home(self):
+        # Demo and older synthetic backends need not expose physical Ethernet.
+        getter = getattr(self.net, 'wired_home', None)
+        return getter() if getter else None
 
     def current_management(self, devices=None):
         """Recheck only advertised paths under net_lock before a network mutation."""
@@ -392,6 +665,9 @@ class Controller:
         for path in self.state.get('management',{}).get('paths',[])[:2]:
             mac=self.store.config.get('home',{}).get('mac') if path['role']=='home' else self.state['hotspot'].get('mac')
             device=next((d for d in devices if d['mac']==mac and d['name']==path['interface']),None)
+            if path['role'] == 'home':
+                wired = self.wired_home()
+                if wired and wired['name'] == path['interface']: device = wired
             if not device:continue
             up=self.net.connected('home',device,self.store.config['home']) if path['role']=='home' else self.net.connected('setup',device)
             if not up:continue
@@ -412,14 +688,38 @@ class Controller:
         tick=time.monotonic();by_mac={d['mac']:d for d in devices}
         home=by_mac.get(config.get('home',{}).get('mac'));ap=self.active_ap(devices)
         if not ap:self.net.release_stale_hotspot(devices)
-        if ap:ap=self._ap(devices,set(),emergency=not config.get('hotspot',{}).get('enabled',False))
+        reserved={p['mac'] for p in profiles(config) if p['enabled']}
+        if config.get('home'): reserved.add(config['home']['mac'])
+        if ap:ap=self._ap(devices,reserved,emergency=not config.get('hotspot',{}).get('enabled',False))
         retry={'reason':'NOT_CONFIGURED' if not config['home'] else 'HOME_READY','remaining_seconds':0}
         home_changed='home' in self.applied and self.applied['home']!=config['home']
         if home_changed:
             self.firewall();self.net.disconnect('home');self.applied.pop('home',None);self.next_home_attempt=0
         home_up=bool(home and config['home'] and self.net.connected('home',home,config['home']))
+        wired=self.wired_home()
+        # An owned Ethernet path can free the only onboard radio for the AP.
+        # Keep other allocations and user-protected work unchanged.
+        from .cameras.discovery import pi5_gphoto_enabled
+        single_radio_shared=(pi5_gphoto_enabled() and config.get('connection_mode')=='hotspot_shared' and wired
+            and wired['name']=='eth0' and len(devices)==1 and home and home['name']=='wlan0'
+            and not home.get('usb',True) and home.get('ap',True)
+            and role_allows(config,home['mac'],'hotspot')
+            and not any(p['enabled'] and p['mac']==home['mac'] for p in profiles(config)))
+        if single_radio_shared:
+            wired_network=ipaddress.ip_interface(self.net.address(wired)).network
+            if wired_network.overlaps(ipaddress.ip_network('192.168.77.0/24')):
+                single_radio_shared=False
+        if single_radio_shared and home_up and not ap:
+            with self.lock:
+                safe=not (self.protection.protected() or self.operations.pending or self.discovery_pending
+                    or self.certificate_job_pending or self.certificates.busy() or self.action_at is not None
+                    or self.stop.is_set() or self.cleanup_required or self.pauses.error or self.pauses.records)
+            # Recheck ownership immediately before the disruptive command.
+            if safe and self.wired_home()==wired and self.net.connected('home',home,config['home']):
+                self.firewall(home=wired,setup=None,telescopes=[])
+                self.net.disconnect('home');home_up=False
         stopped_ap=None
-        if config['home'] and not home_up:
+        if config['home'] and not home_up and not single_radio_shared:
             retry={'reason':'HOME_RADIO_MISSING' if not home else 'RETRY_WAIT','remaining_seconds':max(0,int(self.next_home_attempt-now))}
             if home and now>=self.next_home_attempt:
                 if ap and ap['mac']==home['mac']:
@@ -446,10 +746,11 @@ class Controller:
                         self.last_home_attempt=completed;self.next_home_attempt=completed+45
                     elif not ap or ap['mac']!=home['mac']:retry={'reason':'HOME_RETRY_DEFERRED_RADIO_BUSY','remaining_seconds':0}
         if not home_up:home=None
+        home = self.wired_home() or home
         instrument_networks=[];instrument_subnets={}
         for profile in profiles(config):
             device=by_mac.get(profile['mac'])
-            if profile['enabled'] and device and self.net.connected(role_for(profile),device,profile):
+            if profile['enabled'] and not profile.get('isolated') and device and self.net.connected(role_for(profile),device,profile):
                 subnet=ipaddress.ip_interface(self.net.address(device)).network
                 instrument_networks.append(subnet);instrument_subnets[profile['id']]=subnet
         self.routing_conflicts={ident for ident,subnet in instrument_subnets.items() if home and ipaddress.ip_interface(self.net.address(home)).network.overlaps(subnet)}
@@ -472,10 +773,21 @@ class Controller:
         # A home association established above may add a newly conflicting route.
         if ap:self.net.hotspot_dhcp(ap,self.hotspot_route_targets(devices))
         paths=self.management_paths(home,ap)
-        if paths:self.net.identity(config['hostname'],[p['device'] for p in paths])
+        settings, runtime = self.announcement()
+        cameras = getattr(self, 'camera_service', None)
+        if cameras:
+            ingress = {(str(ipaddress.ip_interface(p['address']).ip), p['device']['name'],
+                        str(ipaddress.ip_interface(p['address']).network)) for p in paths}
+            if cameras.advertises_indi(ingress):
+                runtime['indi'] = 7624
+        if self.net.identity(config['hostname'], [p['device'] for p in paths], settings, runtime):
+            self.event_store.append('announcement_updated', operation_id=uuid.uuid4().hex,
+                profile_id='bridge', profile_name='', radio_id=None, cause='RECONCILE',
+                reason='ANNOUNCEMENT_UPDATED', outcome='ready',
+                interfaces=['home' if p['role'] == 'home' else 'hotspot' for p in paths])
         with self.lock:
             self.state['management']={'mode':'dual' if home and ap else 'home_only' if home else 'ap_only' if ap else 'none',
-                'paths':[{'role':p['role'],'interface':p['device']['name'],'ip':str(ipaddress.ip_interface(p['address']).ip),'subnet':str(ipaddress.ip_interface(p['address']).network)} for p in paths],
+                'paths':[{'role':p['role'],'kind':p['device'].get('kind','wifi'),'interface':p['device']['name'],'ip':str(ipaddress.ip_interface(p['address']).ip),'subnet':str(ipaddress.ip_interface(p['address']).network)} for p in paths],
                 'reason':'ROUTING_CONFLICT' if self.routing_conflicts else 'READY' if paths else 'MANAGEMENT_UNAVAILABLE','home_retry':retry}
         self.update(home_ip=self.net.address(home).split('/')[0] if home else '')
         return home,ap
@@ -486,12 +798,13 @@ class Controller:
         devices = {d['mac']:d for d in self.state['devices']}
         home = devices.get(config.get('home', {}).get('mac'))
         if not home or not self.net.connected('home', home, config['home']): home = None
+        home = self.wired_home() or home
         rows = {row['id']:row for row in self.state['telescopes']}
         pending = self.operations.records[self.operations.active]['public']['profile_id'] if self.operations.pending else None
         relays = []
         for profile in profiles(config):
             row = rows.get(profile['id'], {}); device = devices.get(profile['mac'])
-            if (self.pauses.held(profile['id']) or profile['id'] == pending or profile['id'] == getattr(self.operations, 'victim_id', None) or not profile['enabled'] or not device
+            if (profile.get('isolated') or self.pauses.held(profile['id']) or profile['id'] == pending or profile['id'] == getattr(self.operations, 'victim_id', None) or not profile['enabled'] or not device
                     or row.get('state') not in ('online','waiting_service') or not row.get('connected')
                     or network_intent(self.applied.get(role_for(profile))) != network_intent(profile)):
                 continue
@@ -560,6 +873,8 @@ class Controller:
             associated = bool(device and self.net.connected(role, device))
             if not associated:
                 with self.lock:
+                    collector = getattr(self, 'link_collector', None)
+                    if collector: collector.connection(profile['id'], False)
                     self._event_contexts[profile["id"]] = self.connection_events.observe(
                         dict(profile, enabled=False), False, False, "saved", "PROFILE_DISABLED", context)
             else:
@@ -626,9 +941,17 @@ class Controller:
             else:
                 reason = "READY"
             with self.lock:
+                collector = getattr(self, 'link_collector', None)
+                if collector: collector.connection(ident, associated)
                 self._event_contexts[ident] = self.connection_events.observe(profile, associated, ready, phase, reason, context)
+                self.connection_events.service(profile, row.get('service'), associated, self._event_contexts[ident])
         with self.lock:
-            self.connection_events.prune(current, devices)
+            self._native_event_snapshot()
+            self._switch_events()
+            self.connection_events.prune(self.event_store.instrument_sequences, devices)
+            self.event_store.flush()
+            self.telemetry_sessions.reconcile(current,
+                {ident for ident, state in self.connection_events.states.items() if state.get('associated')})
             self._event_contexts = {ident: context for ident, context in self._event_contexts.items()
                                     if ident in self.connection_events.contexts}
 
@@ -642,8 +965,14 @@ class Controller:
             # stretching each interval by the reconcile plus the loop's sleep.
             if hasattr(self.net, "sample_activity"): self.net.sample_activity(policy=auto_policy(self.store.config))
             self._cycle(now)
+            stations = getattr(self, 'stations', None)
+            if stations: stations.tick()
+            serial = getattr(self, 'serial_mounts', None)
+            if serial: self.serial_events(serial.tick())
             with self.lock: self.operations.gate_cycle()
         except Exception:
+            if hasattr(self.net, 'isolated_endpoints'):
+                self.net.isolated_endpoints([], [], [])
             with self.lock:
                 self.discovery_plan=None;self.discovery_plans=()
                 self.state['network_access']={'available':False,'reason':'PLANNING_FAILED'}
@@ -652,6 +981,11 @@ class Controller:
                     row['relay_ready']=False;row['legacy_ports']=False;row['seestar_proxy']=False;row['dwarf_proxy']=False
                     for p in relay_plugins():row[proxy_flag(p['id'])]=False
                     for path in row.get('management_paths',[]):path['forwarding_ready']=False
+                    endpoint = row.get('client_endpoint')
+                    if endpoint:
+                        endpoint.update(ready=False, reason='PLANNING_FAILED')
+                        for path in endpoint.get('alternatives', []):
+                            path.update(ready=False, reason='PLANNING_FAILED')
             self._observe_cycle(failed=True)
             raise
         else:
@@ -660,6 +994,7 @@ class Controller:
             if hasattr(self.net, "sample_activity"): self.net.sample_activity(policy=auto_policy(self.store.config))
 
     def _cycle(self, now=None):
+        with self.lock: self.protection.prune()
         now = time.monotonic() if now is None else now
         devices = self.net.devices()
         self.update(devices=devices)
@@ -683,7 +1018,7 @@ class Controller:
                 else:
                     self.stop.wait(5)
             return
-        if self.country != config["country"]:
+        if devices and self.country != config["country"]:
             self.net.country(config["country"])
             self.country = config["country"]
         for role, mac in list(self.cleanup_required.items()):
@@ -703,7 +1038,7 @@ class Controller:
         home,ap=self._management(devices,config,now)
         entries = profiles(config)
         self.refresh_auth_failures(entries)
-        desired = {role_for(p): p for p in entries if p["enabled"]}
+        desired = {role_for(p): p for p in entries if p["enabled"] and role_allows(config, p["mac"], "telescope")}
         stale = self.managed_roles - desired.keys()
         changed = {r for r, p in desired.items() if r in self.applied and network_intent(self.applied[r]) != network_intent(p)}
         if stale or changed:
@@ -735,6 +1070,7 @@ class Controller:
                     or not self.net.connected(role_for(profile),device,profile)):
                 proxy_owners[flag]=None
 
+        self.service_readiness.prune(entries)
         rows, relays = [], []
         paths=self.management_paths(home,ap)
         occupied=[ipaddress.ip_interface(p["address"]).network for p in paths]
@@ -749,7 +1085,7 @@ class Controller:
         for p in sorted(entries,key=priority):
             role, device = role_for(p), by_mac.get(p["mac"])
             row = {"id": p["id"], "target_ip": p["target_ip"], "client_ip": "", "connected": False,
-                   "relay_ready": False, "interface": device["name"] if device else "", "state": "saved", "message": "Saved"}
+                   "relay_ready": False, "interface": device["name"] if device else "", "state": "saved", "message": "Saved", "service": empty_service()}
             rows.append(row)
             if self.auth_failures.held(p):
                 row.update(state='authentication_failed', reason='WIFI_AUTHENTICATION_FAILED', retry_blocked=True,
@@ -758,6 +1094,9 @@ class Controller:
             if self.pauses.held(p['id']):
                 row.update(state='paused', message='Connection paused: explicit owner action required.')
             if not p["enabled"]:
+                continue
+            if not role_allows(config, p["mac"], "telescope"):
+                row.update(state="conflict", reason="ADAPTER_ROLE_RESERVED", message="This Wi-Fi adapter is reserved for another role. Change its role in Wi-Fi adapters first.")
                 continue
             if not device:
                 row.update(state="missing", message="Adapter missing")
@@ -771,7 +1110,10 @@ class Controller:
                 continue
             up = self.net.connected(role, device, p)
             if not up:
+                self.service_readiness.disconnected(p['id'])
                 with self.lock:
+                    collector = getattr(self, 'link_collector', None)
+                    if collector: collector.connection(p['id'], False)
                     if self.connection_events.states.get(p["id"], {}).get("associated"):
                         self._event_contexts[p["id"]] = self.connection_events.observe(
                             p, False, False, "waiting", "CONNECTION_LOST", self._event_contexts.get(p["id"]))
@@ -790,10 +1132,14 @@ class Controller:
                     up = False
                     rejected = isinstance(error, NetworkAuthenticationError)
                     if rejected: self.auth_failures.hold(p)
-                    reason = 'WIFI_AUTHENTICATION_FAILED' if rejected else 'ASSOCIATION_FAILED'
+                    reason = error.reason if isinstance(error, NetworkIsolationError) else 'WIFI_AUTHENTICATION_FAILED' if rejected else 'ASSOCIATION_FAILED'
                     self.operations.fail_association(p, reason)
                     with self.lock:
-                        self.connection_events.phase(p, "failed", reason, self._event_contexts.get(p["id"]))
+                        self.connection_events.phase(p, "failed", "ASSOCIATION_FAILED" if isinstance(error, NetworkIsolationError) else reason, self._event_contexts.get(p["id"]))
+                    if isinstance(error, NetworkIsolationError):
+                        row.update(state='error', reason=error.reason, message=str(error))
+                        self.blocked[role] = copy.deepcopy(row)
+                        continue
                     if rejected:
                         row.update(state='authentication_failed', reason=reason, retry_blocked=True,
                                    message='Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.')
@@ -808,7 +1154,7 @@ class Controller:
             if p['id'] in self.routing_conflicts:
                 row.update(state='conflict',subnet=str(network.network),message='Home routing conflicts with this instrument; forwarding is suspended without disconnecting it.')
                 continue
-            if any(network.network.overlaps(n) for n in occupied):
+            if not p.get('isolated') and any(network.network.overlaps(n) for n in occupied):
                 protected=self.protection.protected(p["id"])
                 if not protected:self._disconnect_profile(role)
                 row.update(connected=bool(protected), client_ip=address if protected else "", state="conflict", message="Subnet already in use. Connect this profile alone or change its network.")
@@ -822,25 +1168,29 @@ class Controller:
                 continue
             if not self.operations.verify_association(p, device):
                 row.update(relay_ready=False, state='error'); continue
-            occupied.append(network.network)
+            if not p.get('isolated'): occupied.append(network.network)
             route = {"profile_id":p['id'],"kind":p['kind'],"device":device,"target":p['target_ip']}
             for spec in relay_plugins():
                 flag=proxy_flag(spec['id']);ports={(spec['relay']['transport'],port) for port in spec['relay']['ports']}
                 conflicting=any(owner and owner!=p['id'] and ports & {(plugin(proxy_kinds[other])['relay']['transport'],port) for port in plugin(proxy_kinds[other])['relay']['ports']}
                                 for other,owner in proxy_owners.items())
-                route[flag]=p['kind']==spec['id'] and not conflicting and proxy_owners[flag] in (None,p['id'])
+                route[flag]=not p.get('isolated') and p['kind']==spec['id'] and not conflicting and proxy_owners[flag] in (None,p['id'])
             for flag in proxy_owners:
                 if route.get(flag):proxy_owners[flag]=p['id']
-            if paths:relays.append(route)
+            if paths and not p.get('isolated'):relays.append(route)
             ready = self.net.probe(p["target_ip"], device) if plugin(p['kind'])['readiness']=='vespera_tcp' else True
+            row['service'] = self.service_readiness.check(p, device, address, now,
+                vespera=ready if plugin(p['kind'])['readiness']=='vespera_tcp' else None)
             row.update(relay_ready=bool(ready and paths), state="online" if ready and paths else "waiting_service",
                        message="Forwarding available" if ready else "Wi-Fi connected · waiting for service",
                        subnet=str(network.network),
                        **{proxy_flag(spec['id']):bool(paths and route[proxy_flag(spec['id'])]) for spec in relay_plugins()},
-                       native_proxy_reason='NATIVE_PROXY_CONFLICT' if plugin(p['kind'])['relay'] and not route[proxy_flag(p['kind'])] else None,
+                       native_proxy_reason='DEDICATED_ENDPOINT_ONLY' if p.get('isolated') else 'NATIVE_PROXY_CONFLICT' if plugin(p['kind'])['relay'] and not route[proxy_flag(p['kind'])] else None,
                        management_paths=[{'role':path['role'],'host':str(ipaddress.ip_interface(path['address']).ip),'subnet':str(ipaddress.ip_interface(path['address']).network),'forwarding_ready':bool(ready)} for path in paths])
         self.proxy_owners=proxy_owners
         self.firewall(home=home, telescopes=relays, setup=ap)
+        if hasattr(self.net, 'isolated_endpoints'):
+            self.net.isolated_endpoints(entries, rows, paths)
         # Adopt an already-owned association only after addressing/forwarding validated.
         # Later password/target/selector changes still compare against this snapshot.
         for profile in entries:

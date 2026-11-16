@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
   "id": "zwo_mount",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "name": "ZWO mount",
   "description": "Connect compatible ZWO Wi-Fi mounts.",
   "category": "mount",
+  "protocol": "lx200",
   "wifi": [
     {
       "prefix": "AMH_",
@@ -19,13 +20,20 @@
       4030
     ]
   },
+  "port_roles": [
+    {
+      "port": 4030,
+      "role": "control",
+      "protocol": "lx200"
+    }
+  ],
   "identification": "zwo_model",
   "discovery": {
     "engine": "tcp_syn",
     "target_mode": "proxy_or_original"
   },
   "activity": "protect_all",
-  "readiness": "association",
+  "readiness": "tcp_connect",
   "validation": {
     "level": "partial_hardware",
     "models": [
@@ -56,5 +64,13 @@
       "prefix": "AMH_",
       "password": "12345678"
     }
-  ]
+  ],
+  "telemetry": {
+    "adapters": [
+      "link_v1",
+      "alpaca_observer_v1"
+    ],
+    "default_enabled": [],
+    "limitation": "Position only when Alpaca is enabled; otherwise link only."
+  }
 }

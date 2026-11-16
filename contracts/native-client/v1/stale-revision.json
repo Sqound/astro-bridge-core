@@ -1,0 +1,230 @@
+{
+  "name": "stale-revision",
+  "description": "Refresh the catalog after a stale revision; never guess a revision.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-0\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 412,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "PRECONDITION_FAILED",
+            "message": "Configuration changed. Reload it."
+          }
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "connected",
+              "service": "not_probed",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-seestar-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "tel-seestar-1",
+            "request_path": "home",
+            "mode": "proxy",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [
+              {
+                "host": "192.168.77.1",
+                "ports": [
+                  {
+                    "port": 4700,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "control",
+                    "protocol": "json_rpc"
+                  },
+                  {
+                    "port": 4800,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "imaging",
+                    "protocol": "binary"
+                  },
+                  {
+                    "port": 4801,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4804,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4554,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  },
+                  {
+                    "port": 4555,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  }
+                ]
+              }
+            ],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.1"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    }
+  ]
+}

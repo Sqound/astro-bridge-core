@@ -35,3 +35,23 @@ Compare the [complete Raspberry Pi image, Core application and Docker](https://g
 - [Validation scope](reference/validation.md)
 
 Deployment instructions live in [Astro Bridge Implementations](https://github.com/Sqound/astro-bridge-implementations/tree/main/doc). Screenshots show the actual demo interface, not physical hardware acceptance.
+
+## Sessions and attached cameras
+
+Current application guidance: [English](guides/session-camera/en.md) ·
+[Français](guides/session-camera/fr.md) · [日本語](guides/session-camera/ja.md) ·
+[Deutsch](guides/session-camera/de.md) · [Español](guides/session-camera/es.md) ·
+[Italiano](guides/session-camera/it.md) · [Português](guides/session-camera/pt-BR.md) ·
+[简体中文](guides/session-camera/zh-Hans.md) · [繁體中文](guides/session-camera/zh-Hant.md) ·
+[Русский](guides/session-camera/ru.md).
+
+These translated sections describe retained session history, partial data,
+export/deletion, attached-camera ownership and limits. Deployment and OS upgrades
+remain in the implementation guides.
+
+![Synthetic retained session](../docs/assets/session-dark.png)
+![Explicit camera simulator settings](../docs/assets/cameras-dark.png)
+
+Current [desktop](../docs/assets/interface-dark.png) and
+[mobile](../docs/assets/interface-mobile.png) captures also use fictional data and
+the explicitly plugged simulator. They are not physical acceptance evidence.

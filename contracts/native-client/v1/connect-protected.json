@@ -1,0 +1,67 @@
+{
+  "name": "connect-protected",
+  "description": "Protection and foreign leases always override replacement consent.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "allow_replace": [
+            "tel-vespera-1"
+          ]
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "INSTRUMENT_PROTECTED",
+            "message": "Release reservations and explicitly remove the owner lock before changing this connection.",
+            "reason": "OWNER_LOCKED"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {}
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "LEASED_BY_OTHER_CLIENT",
+            "message": "Release reservations and explicitly remove the owner lock before changing this connection."
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {}
+    }
+  ]
+}

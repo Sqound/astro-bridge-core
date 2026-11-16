@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "zwo_asi",
+  "driver": "zwo_asi",
+  "indi_driver": "indi_asi_ccd",
+  "usb": [
+    {"vendor_id": 963, "product_id": 4618},
+    {"vendor_id": 963, "product_id": 4619},
+    {"vendor_id": 963, "product_id": 4620},
+    {"vendor_id": 963, "product_id": 4622},
+    {"vendor_id": 963, "product_id": 8713},
+    {"vendor_id": 963, "product_id": 8778},
+    {"vendor_id": 963, "product_id": 10575},
+    {"vendor_id": 963, "product_id": 21311}
+  ],
+  "validation": "unverified"
+}

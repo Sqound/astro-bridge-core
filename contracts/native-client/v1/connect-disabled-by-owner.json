@@ -1,0 +1,36 @@
+{
+  "name": "connect-disabled-by-owner",
+  "description": "A paired client cannot override owner permission.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "CLIENT_CONNECT_DISABLED",
+            "message": "Paired apps cannot connect this telescope."
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {}
+    }
+  ]
+}

@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
   "id": "synscan",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "SynScan mount",
   "description": "Connect SynScan Wi-Fi mounts.",
   "category": "mount",
+  "protocol": "synscan",
   "wifi": [
     {
       "prefix": "SynScan_",
@@ -19,12 +20,19 @@
       11880
     ]
   },
+  "port_roles": [
+    {
+      "port": 11880,
+      "role": "control",
+      "protocol": "synscan"
+    }
+  ],
   "identification": "synscan_version",
   "discovery": {
     "engine": "synscan_version"
   },
   "activity": "protect_all",
-  "readiness": "association",
+  "readiness": "udp_identity",
   "validation": {
     "level": "simulation",
     "models": [],
@@ -45,5 +53,13 @@
       "title": "Sky-Watcher motor-controller command set",
       "url": "https://inter-static.skywatcher.com/downloads/skywatcher_motor_controller_command_set.pdf"
     }
-  ]
+  ],
+  "telemetry": {
+    "adapters": [
+      "link_v1",
+      "alpaca_observer_v1"
+    ],
+    "default_enabled": [],
+    "limitation": "Position only when Alpaca is enabled; otherwise link only."
+  }
 }

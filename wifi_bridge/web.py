@@ -14,6 +14,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from .config import Invalid, password_matches
+from .pairing import PairedClients
 from .network import NetworkError
 from .api import MobileAPI, ApiError
 from .updates import Updates
@@ -42,19 +43,46 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, address, controller, shared=None, capacity=16):
         self.controller = controller
-        self.api = MobileAPI(controller)
+        self.paired_clients = shared.paired_clients if shared else PairedClients(controller.store.path.parent)
+        controller.paired_clients = self.paired_clients
+        self.api = shared.api if shared else MobileAPI(controller)
         self.updates = shared.updates if shared else Updates(controller.store.path.parent, controller.demo)
         self.auth = shared.auth if shared else {'sessions': {}, 'attempts': {}}
         self.auth_lock = shared.auth_lock if shared else threading.Lock()
         self.slots = threading.BoundedSemaphore(capacity)
         self.secure_access = shared.secure_access if shared else SecureAccess(controller)
         self.owns_secure_access = shared is None
+        controller.secure_access = self.secure_access
         super().__init__(address, Handler)
         if self.owns_secure_access: self.secure_access.initialize()
         self.push = shared.push if shared else PushService(controller, lambda: self.secure_access.status())
 
+    def serve_forever(self, poll_interval=.5):
+        self.metrics_poll_interval = poll_interval
+        self.metrics_deadline = time.monotonic()+poll_interval
+        return super().serve_forever(poll_interval=poll_interval)
+
+    def service_actions(self):
+        now = time.monotonic()
+        if self.owns_secure_access and now >= self.metrics_deadline:
+            self.api.metrics.tick(self.metrics_deadline, now)
+            self.controller.telemetry_sessions.tick()
+            self.metrics_deadline = now+self.metrics_poll_interval
+
     def server_close(self):
         if self.owns_secure_access:
+            self.controller.seestar_collector.close()
+            self.controller.maker_keys.close()
+            camera_runtime = getattr(self.controller, "camera_runtime", None)
+            if camera_runtime: camera_runtime.close()
+            camera_service = getattr(self.controller, "camera_service", None)
+            if camera_service: camera_service.close()
+            collector = getattr(self.controller, "link_collector", None)
+            if collector: collector.close()
+            observer = getattr(self.controller, "vespera_collector", None)
+            if observer: observer.close()
+            self.controller.telemetry_sessions.close()
+            self.controller.event_store.close()
             self.push.close()
             self.secure_access.close()
         super().server_close()
@@ -155,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
     def controller(self):
         return self.server.controller
 
-    def reply(self, code, payload, content_type="application/json; charset=utf-8", cookie=None, shell_revision=None, certificate=False, profile=False):
+    def reply(self, code, payload, content_type="application/json; charset=utf-8", cookie=None, shell_revision=None, certificate=False, profile=False, retry_after=None):
         if self.native_path() and isinstance(payload, dict) and isinstance(payload.get("error"), str):
             codes = {400: "INVALID_REQUEST", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 429: "RATE_LIMITED"}
             payload = {"error": {"code": codes.get(code, "REQUEST_FAILED"), "message": payload["error"]}}
@@ -175,6 +203,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         self.send_header("Connection", "close")
+        if retry_after is None and code == 429: retry_after = 60
+        if retry_after is not None:
+            self.send_header("Retry-After", str(max(1, int(retry_after))))
         if cookie:
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
@@ -258,6 +289,7 @@ class Handler(BaseHTTPRequestHandler):
                     and value.get("transport", "http") == self.transport
                     and value.get("tls_identity") == self.transport_identity and self.current_tls_identity())
             live = {hashlib.sha256(v['csrf'].encode()).hexdigest() for v in self.server.sessions.values()}
+            live |= {v['client_id'] for v in self.server.sessions.values() if v.get('client_id')}
         self.controller.operations.retain_clients(live)
         return value if valid else None
 
@@ -272,7 +304,23 @@ class Handler(BaseHTTPRequestHandler):
             else:raise ApiError(400,'INVALID_FIELDS','Choose a supported protection action.')
             return dict(value,config_revision=self.server.api.revision())
 
+    def serial_cookie_path(self):
+        path = urlsplit(self.path).path
+        return any(path == '/api/' + name or path.startswith('/api/' + name + '/') for name in ('serial-mounts', 'serial-devices', 'serial-profiles', 'devices'))
+
     def do_GET(self):
+        if self.serial_cookie_path():
+            self.native_request('GET', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/maker-keys' or urlsplit(self.path).path.startswith('/api/maker-keys/'):
+            self.native_request('GET', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/cameras' or urlsplit(self.path).path.startswith('/api/cameras/'):
+            self.native_request("GET", cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/telemetry' or urlsplit(self.path).path.startswith('/api/telemetry/'):
+            self.telemetry_request("GET")
+            return
         if urlsplit(self.path).path == "/api/update-health" and self.client_address[0] in ("127.0.0.1", "::1"):
             state = self.controller.status()
             self.reply(200, {"version": __version__, "build_id": BUILD_ID, "mode": state["mode"],
@@ -287,6 +335,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(421, {"error": "Use the bridge .local hostname or 192.168.77.1."})
             return
         path = urlsplit(self.path).path
+        if path == "/api/ui-info":
+            self.reply(200, {"demo": bool(self.controller.demo)})
+            return
         if path in ASSETS or path == "/sw.js":
             body, mime, current = public_asset(path)
             self.reply(200, body, mime, shell_revision=current)
@@ -299,6 +350,7 @@ class Handler(BaseHTTPRequestHandler):
             with self.controller.lock:
                 status = self.controller.status() | {"csrf": session["csrf"], "ui_revision": revision(),
                     "config_revision": self.server.api.revision(),
+                    "paired_clients": self.server.paired_clients.public(),
                     "event_context": hashlib.sha256(session["csrf"].encode()).hexdigest(),
                     "connection_protection": self.controller.protection.status(hashlib.sha256(session["csrf"].encode()).hexdigest())}
             self.reply(200, status)
@@ -312,6 +364,12 @@ class Handler(BaseHTTPRequestHandler):
             except ApiError as error:self.reply(error.status,{'error':error.message,'code':error.code})
         elif path == "/api/plugins":
             self.reply(200,self.server.api.read('plugins'))
+        elif path == '/api/endpoints' or path.startswith('/api/endpoints/'):
+            try:
+                ident = None if path == '/api/endpoints' else path.removeprefix('/api/endpoints/')
+                self.reply(200, self.server.api.read('endpoints', ident))
+            except ApiError as error:
+                self.reply(error.status, {'error': error.message, 'code': error.code})
         elif path == "/api/push":
             self.reply(200, self.server.push.status())
         elif path in ("/api/https", "/api/https/certificate", "/api/https/profile"):
@@ -344,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
     def read_events(self):
         try:
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-            if set(query) - {"after", "boot_id", "limit"} or any(len(values) != 1 for values in query.values()):
+            if set(query) - {"after", "boot_id", "limit", "wait"} or any(len(values) != 1 for values in query.values()):
                 raise ValueError("Invalid query")
             cursor_text = query.get("after", [None])[0]
             if cursor_text is not None and (not 1 <= len(cursor_text) <= 19 or not cursor_text.isascii() or not cursor_text.isdigit()):
@@ -354,14 +412,37 @@ class Handler(BaseHTTPRequestHandler):
             if not 1 <= len(limit_text) <= 3 or not limit_text.isascii() or not limit_text.isdigit():
                 raise ValueError("Invalid limit")
             limit = int(limit_text)
-            result = self.controller.event_store.read(after, query.get("boot_id", [None])[0], limit)
-            self.reply(200, dict(result, api_version="1"))
+            wait_text = query.get("wait", ["0"])[0]
+            if not 1 <= len(wait_text) <= 2 or not wait_text.isascii() or not wait_text.isdigit():
+                raise ValueError("Invalid wait")
+            result = self.controller.event_store.read(after, query.get("boot_id", [None])[0], limit, int(wait_text))
+            retry_after = result.pop('_retry_after', None)
+            markers = [event for event in result['events'] if event['type'] == 'instrument.endpoint_changed']
+            if markers:
+                from .instruments import endpoint
+                snapshot = self.controller.status()
+                request_path = self.server.api.info(self.connection.getsockname()[0])['request_path']
+                camera_rows = {row['instrument_id']: row for row in self.controller.camera_native.inventory(self.connection.getsockname()[0])}
+                for event in markers:
+                    ident = event['instrument_id']
+                    event['endpoint'] = (self.controller.camera_native.endpoint(ident, request_path, self.connection.getsockname()[0], row=camera_rows[ident])
+                                         if ident in camera_rows else endpoint(snapshot, ident, request_path))
+            self.reply(200, dict(result, api_version="1"), retry_after=retry_after)
         except (ValueError, TypeError):
             if self.native_path():
                 raise ApiError(400, "INVALID_EVENT_CURSOR", "Invalid event cursor, boot ID or limit.") from None
             self.reply(400, {"error": "Invalid event cursor, boot ID or limit.", "code": "INVALID_EVENT_CURSOR"})
 
     def do_POST(self):
+        if self.serial_cookie_path():
+            self.native_request('POST', cookie=True)
+            return
+        if urlsplit(self.path).path.startswith('/api/cameras/'):
+            self.native_request('POST', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/maker-keys' or urlsplit(self.path).path.startswith('/api/maker-keys/'):
+            self.native_request('POST', cookie=True)
+            return
         if self.native_path():
             self.native_request("POST")
             return
@@ -395,7 +476,13 @@ class Handler(BaseHTTPRequestHandler):
             if path not in ("/api/logout", "/api/protection") and self.server.updates.busy():
                 self.reply(409, {"error": "Interrupted update requires console recovery." if self.server.updates.recovery_required() else "An application update is in progress. Try again shortly."})
                 return
-            if path == '/api/protection':
+            if path == '/api/auth/clients/revoke':
+                self.server.api.fields(data, {'client_id', 'config_revision'})
+                revision_value = data.get('config_revision')
+                expected = '"' + revision_value + '"' if isinstance(revision_value, str) else None
+                self.revoke_client(data.get('client_id'), expected)
+                self.reply(200, {'ok': True})
+            elif path == '/api/protection':
                 if not isinstance(data,dict):raise ApiError(400,'INVALID_FIELDS','Provide an object.')
                 action=data.get('action');ident=data.get('id');revision=data.get('config_revision')
                 if not isinstance(action,str) or not isinstance(ident,str) or revision is not None and not isinstance(revision,str):
@@ -467,6 +554,12 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403, {"error": "TLS identity changed. Reconnect and authenticate again."}); return
         ip = self.client_address[0]
         now = time.monotonic()
+        client_login = native and ('client_id' in data or 'client_secret' in data)
+        if client_login:
+            if (set(data) != {'client_id', 'client_secret'} or not isinstance(data['client_id'], str)
+                    or not 1 <= len(data['client_id']) <= 32 or not isinstance(data['client_secret'], str)
+                    or not 1 <= len(data['client_secret']) <= 128):
+                raise ApiError(400, 'INVALID_CLIENT_FIELDS', 'Provide a client ID and secret.')
         password = data.get("password", "")
         if not isinstance(password, str) or len(password) > 128:
             raise Invalid("Invalid password.")
@@ -482,9 +575,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             attempts[ip] = (since, count + 1)
             self.server.attempts = attempts
+            client = self.server.paired_clients.authenticate(data['client_id'], data['client_secret']) if client_login else None
             encoded = self.controller.store.config["admin_hash"]
-            valid = password_matches(password, encoded) if encoded else hmac.compare_digest(
-                password.encode(), self.controller.bootstrap["password"].encode())
+            valid = bool(client) if client_login else (password_matches(password, encoded) if encoded else hmac.compare_digest(
+                password.encode(), self.controller.bootstrap["password"].encode()))
             if not valid:
                 self.reply(401, {"error": "Incorrect password."})
                 return
@@ -496,25 +590,60 @@ class Handler(BaseHTTPRequestHandler):
             if not self.current_tls_identity():
                 self.reply(403, {"error": "TLS identity changed. Reconnect and authenticate again."}); return
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-            self.server.sessions[token] = {"csrf": csrf, "expires": now + 12 * 3600, "kind": "api" if native else "browser", "transport": self.transport, "tls_identity": self.transport_identity}
+            self.server.sessions[token] = {"csrf": csrf, "expires": now + 12 * 3600, "kind": "api" if native else "browser", "scopes": client["scopes"][:] if client else ["admin"], "client_id": client["client_id"] if client else None, "transport": self.transport, "tls_identity": self.transport_identity}
         if native:
-            self.reply(200, {"access_token": token, "token_type": "Bearer", "expires_in": 43200, "api_version": "1"})
+            self.reply(200, {"access_token": token, "token_type": "Bearer", "expires_in": 43200,
+                             **({'scopes': client['scopes'][:]} if client else {'api_version': '1'})})
             return
         self.reply(200, {"csrf": csrf}, cookie=self.cookie(token, 43200))
 
+    def revoke_client(self, ident, expected):
+        if not isinstance(ident, str) or not re.fullmatch(r'client-[a-f0-9]{24}', ident):
+            raise ApiError(404, 'CLIENT_NOT_FOUND', 'Paired app not found.')
+        with self.server.auth_lock, self.controller.lock:
+            if expected is None or expected in ('*', '"*"'):
+                raise ApiError(428, 'PRECONDITION_REQUIRED', 'Reload paired apps before revoking access.')
+            self.server.api.check_revision(expected)
+            self.server.paired_clients.revoke(ident)
+            self.server.sessions = {key: value for key, value in self.server.sessions.items() if value.get('client_id') != ident}
+            live = {hashlib.sha256(value['csrf'].encode()).hexdigest() for value in self.server.sessions.values()}
+            live |= {value['client_id'] for value in self.server.sessions.values() if value.get('client_id')}
+        self.controller.operations.retain_clients(live)
+
     def do_PUT(self):
+        if urlsplit(self.path).path == '/api/maker-keys' or urlsplit(self.path).path.startswith('/api/maker-keys/'):
+            self.native_request('PUT', cookie=True)
+            return
         if self.native_path():
             self.native_request("PUT")
         else:
             self.reply(405, {"error": "Method not allowed."})
 
     def do_PATCH(self):
+        if self.serial_cookie_path():
+            self.native_request('PATCH', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/cameras' or urlsplit(self.path).path.startswith('/api/cameras/'):
+            self.native_request("PATCH", cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/telemetry' or urlsplit(self.path).path.startswith('/api/telemetry/'):
+            self.telemetry_request("PATCH")
+            return
         if self.native_path():
             self.native_request("PATCH")
         else:
             self.reply(405, {"error": "Method not allowed."})
 
     def do_DELETE(self):
+        if self.serial_cookie_path():
+            self.native_request('DELETE', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/maker-keys' or urlsplit(self.path).path.startswith('/api/maker-keys/'):
+            self.native_request('DELETE', cookie=True)
+            return
+        if urlsplit(self.path).path == '/api/telemetry' or urlsplit(self.path).path.startswith('/api/telemetry/'):
+            self.telemetry_request("DELETE")
+            return
         if self.native_path():
             self.native_request("DELETE")
         else:
@@ -533,27 +662,91 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "INVALID_REQUEST", "A JSON object is required.")
         return data
 
-    def native_request(self, method):
+    def telemetry_request(self, method):
+        self.native_request(method, cookie=True)
+
+    def native_request(self, method, cookie=False):
         try:
             if not self.valid_host():
                 raise ApiError(421, "INVALID_HOST", "Use the bridge's local hostname or management IP.")
             # Native clients omit Origin. Browser requests must remain same-origin;
-            # no wildcard CORS, cookie authentication or CSRF exemption is added to UI routes.
+            # native routes remain Bearer-only; explicit cookie mirrors retain CSRF checks.
             if self.headers.get("Origin") is not None and not self.same_origin():
                 raise ApiError(403, "FORBIDDEN_ORIGIN", "Cross-origin browser requests are not allowed.")
-            path = urlsplit(self.path).path[len(MobileAPI.PREFIX):]
+            path = urlsplit(self.path).path[len('/api' if cookie else MobileAPI.PREFIX):]
             api = self.server.api
             if method == "GET" and path in ("/info", "/openapi.json"):
-                self.reply(200, api.info() if path == "/info" else api.specification())
+                self.reply(200, api.info(*self.connection.getsockname()[:2]) if path == "/info" else api.specification())
                 return
             data = self.native_body(method) if method != "GET" else {}
             if path == "/auth/token" and method == "POST":
-                api.fields(data, {"password"})
+                api.fields(data, {"password", "client_id", "client_secret"})
                 self.login(data, native=True)
                 return
-            session = self.session(bearer=True)
+            session = self.session(bearer=not cookie)
             if session is None:
                 raise ApiError(401, "UNAUTHORIZED", "A valid Bearer token is required.")
+            if cookie and method != 'GET' and (not self.same_origin() or not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf'])):
+                raise ApiError(403, 'FORBIDDEN', 'Request refused. Reload the page.')
+            required = api.required_scope(method, path)
+            if not cookie and required not in (None, 'authenticated') and not {'admin', required} & set(session.get('scopes', [])):
+                raise ApiError(403, 'INSUFFICIENT_SCOPE', 'The token does not grant access to this resource.')
+            if api.planned_native_route(method, path, data, parse_qs(urlsplit(self.path).query, keep_blank_values=True)):
+                raise ApiError(404, "NOT_IMPLEMENTED", "This native client feature is not implemented yet.")
+            if path == '/telemetry' or path.startswith('/telemetry/'):
+                if method != 'GET' and self.server.updates.busy():
+                    raise ApiError(409, 'UPDATE_IN_PROGRESS', 'An application update is in progress. Try again shortly.')
+                client = next((c['name'] for c in self.server.paired_clients.public() if c['client_id'] == session.get('client_id')), None)
+                value = api.telemetry.handle(method, path, parse_qs(urlsplit(self.path).query, keep_blank_values=True), data, self.headers.get('If-Match'), client)
+                if isinstance(value, tuple):
+                    filename, format, chunks = value
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/csv; charset=utf-8' if format == 'csv' else 'application/json')
+                    self.send_header('Content-Disposition', 'attachment; filename="' + filename + '"')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    try:
+                        for chunk in chunks: self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError): pass
+                    finally: chunks.close()
+                else: self.reply(200, value)
+                return
+            if path == '/maker-keys' or path.startswith('/maker-keys/'):
+                if method != 'GET' and self.server.updates.busy():
+                    raise ApiError(409, 'UPDATE_IN_PROGRESS', 'An application update is in progress. Try again shortly.')
+                code, value = api.maker_keys.handle(method, path, parse_qs(urlsplit(self.path).query, keep_blank_values=True), data, self.headers.get('If-Match'))
+                self.reply(code, value)
+                return
+            if path == '/cameras' or path.startswith('/cameras/'):
+                if method != 'GET' and self.server.updates.busy():
+                    raise ApiError(409, 'UPDATE_IN_PROGRESS', 'An application update is in progress. Try again shortly.')
+                value = api.cameras.handle(method, path, parse_qs(urlsplit(self.path).query, keep_blank_values=True),
+                                           data, self.headers.get('If-Match'), self.connection.getsockname()[0])
+                self.reply(200, value)
+                return
+            if path == '/system/metrics' and method == 'GET':
+                self.reply(200, api.system_metrics())
+                return
+            if path == '/system/time' and method == 'GET':
+                self.reply(200, api.system_time())
+                return
+            if path == '/system/time-hint' and method == 'POST':
+                client = session.get('client_id') or hashlib.sha256(session['csrf'].encode()).hexdigest()
+                self.reply(200, api.system_time(data, client))
+                return
+            if path == '/auth/clients' and method in ('GET', 'POST'):
+                with self.server.auth_lock, self.controller.lock:
+                    value = self.server.paired_clients.create(data) if method == 'POST' else {
+                        'clients': self.server.paired_clients.public(), 'config_revision': api.revision()}
+                self.reply(201 if method == 'POST' else 200, value)
+                return
+            if path.startswith('/auth/clients/') and method == 'DELETE':
+                api.fields(data, set())
+                self.revoke_client(path.removeprefix('/auth/clients/'), self.headers.get('If-Match'))
+                self.reply(200, {'ok': True})
+                return
             if path == "/auth/token" and method == "DELETE":
                 api.fields(data, set())
                 with self.server.auth_lock:
@@ -563,7 +756,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/auth/revoke-all" and method == "POST":
                 api.fields(data, set())
                 self.server.push.revoke_all()
-                with self.server.auth_lock:
+                with self.server.auth_lock, self.controller.lock:
+                    self.server.paired_clients.revoke()
                     self.server.sessions.clear()
                 self.controller.operations.retain_clients(set())
                 self.reply(200, {"ok": True})
@@ -576,6 +770,31 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/system/https/certificate" and method == "GET":
                 self.reply(200, self.server.secure_access.certificate(), "application/x-pem-file", certificate=True); return
             parts = path.strip("/").split("/")
+            if parts[0] == 'instruments' and len(parts) <= 3:
+                client = session.get('client_id') or hashlib.sha256(session['csrf'].encode()).hexdigest()
+                request_path = api.info(self.connection.getsockname()[0])['request_path']
+                if method == 'GET' and len(parts) <= 2:
+                    query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                    if set(query) - ({'after'} if len(parts) == 1 else set()) or any(len(values) != 1 for values in query.values()):
+                        raise ApiError(400, 'INVALID_CURSOR', 'Invalid instrument cursor.')
+                    self.reply(200, api.instruments.read(parts[1] if len(parts) == 2 else None, client, query.get('after', [None])[0])); return
+                if method == 'GET' and len(parts) == 3 and parts[2] == 'endpoint':
+                    self.reply(200, api.instruments.endpoint(parts[1], request_path, self.connection.getsockname()[0])); return
+                if method == 'POST' and len(parts) == 3 and parts[2] == 'connect':
+                    code, value = api.instruments.connect(parts[1], data, self.headers.get('If-Match'), client, session['expires'], request_path, self.connection.getsockname()[0])
+                    self.reply(code, value); return
+                if method == 'POST' and len(parts) == 3 and parts[2] in ('lease', 'release', 'disconnect'):
+                    self.reply(200, api.instruments.action(parts[1], parts[2], data, client)); return
+            if parts[0] == 'endpoints' and len(parts) in (1, 2) and method == 'GET':
+                if not {'admin', 'read'} & set(session.get('scopes', [])):
+                    raise ApiError(403, 'INSUFFICIENT_SCOPE', 'Read scope is required.')
+                self.reply(200, api.read('endpoints', parts[1] if len(parts) == 2 else None))
+                return
+            if len(parts) == 3 and parts[0] == 'endpoints' and parts[2] == 'release-owner' and method == 'POST':
+                if 'admin' not in session.get('scopes', []):
+                    raise ApiError(403, 'INSUFFICIENT_SCOPE', 'Administrator scope is required.')
+                self.reply(200, api.release_endpoint_owner(parts[1], data, self.headers.get('If-Match')))
+                return
             if path=='/protection' and method=='GET':
                 self.reply(200,dict(self.controller.protection.status(hashlib.sha256(session['csrf'].encode()).hexdigest()),api_version='1'));return
             if path=='/activity' and method=='GET':
@@ -592,7 +811,7 @@ class Handler(BaseHTTPRequestHandler):
             if protection_action:
                 self.reply(200,dict(self.protection_action(protection_action,parts[1],data,session,self.headers.get('If-Match')),api_version='1'));return
             if len(parts) == 2 and parts[0] == 'operations' and method == 'GET':
-                self.reply(200, dict(self.controller.operations.read(parts[1]), api_version='1')); return
+                self.reply(200, api.instruments.operation(parts[1], api.info(self.connection.getsockname()[0])['request_path'])); return
             if len(parts) == 3 and parts[0] == 'telescopes' and parts[2] == 'ensure' and method == 'POST':
                 api.fields(data, set())
                 code, value = self.controller.operations.ensure(parts[1], self.headers.get('If-Match'), api.revision,
@@ -639,6 +858,35 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(201, api.update("telescopes", data, create=True, expected=self.headers.get("If-Match")))
                 return
             parts = path.strip("/").split("/")
+            if parts[0] == 'stations' and len(parts) in (1, 2):
+                ident = parts[1] if len(parts) == 2 else None
+                if method == 'GET': self.reply(200, api.read('stations', ident)); return
+                if method == 'POST' and ident is None:
+                    self.reply(201, api.update('stations', data, create=True, expected=self.headers.get('If-Match'))); return
+                if method == 'PATCH' and ident:
+                    self.reply(200, api.update('stations', data, ident, expected=self.headers.get('If-Match'))); return
+                if method == 'DELETE' and ident:
+                    api.fields(data, set())
+                    self.reply(200, api.update('stations', None, ident, expected=self.headers.get('If-Match'))); return
+            if parts[0] == 'devices' and len(parts) == 1 and method == 'GET':
+                self.reply(200, api.devices()); return
+            if parts[0] == 'serial-profiles' and len(parts) == 1 and method == 'GET':
+                self.reply(200, api.read('serial-profiles')); return
+            if parts[0] == 'serial-devices' and len(parts) in (1, 2):
+                if method == 'GET' and len(parts) == 1: self.reply(200, api.read('serial-devices')); return
+                if method == 'POST' and parts[1:] == ['identify']: self.reply(200, api.serial_identify(data)); return
+            if parts[0] == 'serial-mounts' and len(parts) in (1, 2, 3):
+                ident = parts[1] if len(parts) >= 2 else None
+                if len(parts) == 3:
+                    if method == 'POST' and parts[2] == 'identify': self.reply(200, api.serial_identify(data, ident)); return
+                elif method == 'GET': self.reply(200, api.read('serial-mounts', ident)); return
+                elif method == 'POST' and ident is None:
+                    self.reply(201, api.update('serial-mounts', data, create=True, expected=self.headers.get('If-Match'))); return
+                elif method == 'PATCH' and ident:
+                    self.reply(200, api.update('serial-mounts', data, ident, expected=self.headers.get('If-Match'))); return
+                elif method == 'DELETE' and ident:
+                    api.fields(data, set())
+                    self.reply(200, api.update('serial-mounts', None, ident, expected=self.headers.get('If-Match'))); return
             if len(parts) in (2, 3) and parts[0] == "telescopes":
                 ident = parts[1]
                 if len(parts) == 2:
@@ -664,13 +912,20 @@ class Handler(BaseHTTPRequestHandler):
                 api.fields(data, set())
                 self.controller.retry()
                 self.reply(202, {"ok": True, "reboot_in": 4}); return
-            known = path in resources or path in ("/auth/token", "/auth/revoke-all", "/credentials", "/system/reboot", "/system/updates", "/wifi/networks", "/plugins", "/events", "/system/https", "/system/https/certificate", "/discovery")
-            known = known or path in ('/protection','/activity') or parts[0] == 'leases' and len(parts) in (2,3)
+            known = path in resources or path in ("/auth/token", "/auth/revoke-all", "/auth/clients", "/credentials", "/system/reboot", "/system/updates", "/wifi/networks", "/plugins", "/events", "/system/https", "/system/https/certificate", "/discovery")
+            known = known or path in ('/protection','/activity','/system/time','/system/time-hint','/system/metrics') or parts[0] == 'leases' and len(parts) in (2,3)
+            known = known or len(parts) == 3 and parts[0] == 'endpoints' and parts[2] == 'release-owner'
+            known = known or parts[0] == 'endpoints' and len(parts) in (1, 2)
             known = known or parts[0] == 'operations' and len(parts) == 2
+            known = known or parts[0] == 'stations' and len(parts) in (1, 2)
+            known = known or parts[0] in ('serial-mounts', 'serial-devices', 'serial-profiles', 'devices') and len(parts) in (1, 2, 3)
             known = known or parts[0] == "telescopes" and (len(parts) == 2 or len(parts) == 3 and parts[2] in ("connect", "disconnect", "binding", "ensure", "leases", "owner-lock"))
             raise ApiError(405 if known else 404, "METHOD_NOT_ALLOWED" if known else "NOT_FOUND", "Unsupported API route or method.")
         except ApiError as error:
-            self.reply(error.status, {"error": {"code": error.code, "message": error.message, **getattr(error, "details", {})}})
+            details = dict(getattr(error, "details", {}))
+            retry = getattr(error, "retry_after", None)
+            if retry is not None: details["retry_after"] = max(1, int(retry))
+            self.reply(error.status, {"error": {"code": error.code, "message": error.message, **details}}, retry_after=retry)
         except Invalid as error:
             self.reply(400, {"error": {"code": "VALIDATION_ERROR", "message": str(error)}})
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError):

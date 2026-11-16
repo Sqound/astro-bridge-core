@@ -10,7 +10,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-network-modes-')),output=resolve(root,'artifacts/network-0622');await mkdir(output,{recursive:true});
+const folder=await mkdtemp(resolve(tmpdir(),'astro-network-modes-')),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/network-0622');await mkdir(output,{recursive:true});
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
 const server=spawn('python3',['-u','-m','wifi_bridge','--demo','--demo-radios','4','--state-dir',folder,'--port',String(port)],{cwd:root,stdio:['ignore','pipe','pipe']});let logs='',browser;
 server.stdout.on('data',v=>logs+=v);server.stderr.on('data',v=>logs+=v);
@@ -20,7 +20,7 @@ try{
  await wait(()=>logs.includes('SIMULATION'));
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
  const page=await browser.newPage({viewport:{width:375,height:900}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
+ await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
  await page.locator('#nav-networks').click();
  await check('three explanatory modes, collapsed advanced access and one stable help modal',async()=>{
@@ -94,7 +94,7 @@ try{
  await check('hotspot adapter options repopulate after logout and login',async()=>{
   const mac=await page.locator('#hotspot-interface').inputValue();
   await clickUserControl(page, '#logout');await page.locator('#login').waitFor({state:'visible'});
-  await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();
+  await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();
   await page.locator('#dashboard').waitFor({state:'visible'});await page.locator('#nav-networks').click();
   assert.equal(await page.locator('#hotspot-interface').inputValue(),mac);
   assert.ok(await page.locator('#hotspot-interface option').count()>1);

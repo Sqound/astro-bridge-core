@@ -27,12 +27,26 @@ def package(root=ROOT, destination=None):
         raise ValueError('Plugin catalog is stale; run tools/build-plugins.py')
     version = re.search(r'__version__ = "([^"]+)"', (root/'wifi_bridge/__init__.py').read_text())[1]
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version): raise ValueError('Invalid version')
+    from wifi_bridge.ota import allowed_file, NESTED_FILES
+    from wifi_bridge.privacy import public_artifact
     files = {}
     for path in sorted((root/'wifi_bridge').rglob('*')):
         relative = path.relative_to(root/'wifi_bridge')
         if path.is_symlink(): raise ValueError('Source symlinks are forbidden')
-        if path.is_file() and '__pycache__' not in relative.parts and (len(relative.parts)==1 and path.suffix=='.py' or len(relative.parts)==2 and relative.parts[0]=='static'):
-            files['wifi_bridge/'+relative.as_posix()] = path.read_bytes()
+        if '__pycache__' in relative.parts or path.is_dir(): continue
+        if not path.is_file() or not allowed_file(relative.as_posix(), True):
+            raise ValueError('Unexpected application source')
+        data = path.read_bytes()
+        public_artifact(relative.as_posix(), data)
+        files['wifi_bridge/'+relative.as_posix()] = data
+    if not all('wifi_bridge/' + name in files for name in NESTED_FILES):
+        raise ValueError('Missing nested application source')
+    from wifi_bridge.cameras.registry import load_registry
+    expected = {'wifi_bridge/cameras/tables/' + table['id'] + '.json':
+                (json.dumps(table, indent=2) + '\n').encode()
+                for table in load_registry(root/'cameras').descriptors()}
+    if expected != {name:data for name,data in files.items() if name.startswith('wifi_bridge/cameras/tables/')}:
+        raise ValueError('Camera tables are stale; run tools/build-cameras.py')
     from wifi_bridge.ota import source_identity
     identity = source_identity(files)
     files['wifi_bridge/build.py'] = f'BUILD_ID = "{identity}"\n'.encode()

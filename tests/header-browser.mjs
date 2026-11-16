@@ -29,7 +29,7 @@ try {
   await route.fulfill({json:{boot_id:boot,oldest_sequence:events[0]?.sequence||sequence+1,latest_sequence:sequence,next_cursor:after===null?sequence:selected.at(-1)?.sequence??after,has_more:after!==null&&available.length>selected.length,gap:false,reset_reason:null,persistent:true,history_available:true,events:selected}});
  });
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
- await page.goto('http://127.0.0.1:'+port);await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelectorAll('#activity-list li').length===50);
+ await page.goto('http://127.0.0.1:'+port);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelectorAll('#activity-list li').length===50);
  await check('historical snapshot is read; new events alone increase the bell badge',async()=>{
   assert.equal(await page.locator('#activity-count').isVisible(),false);append(12);await page.evaluate(()=>BridgeEvents.refresh());await page.waitForFunction(()=>document.querySelector('#activity-count').textContent==='12');
   await page.evaluate(()=>BridgeEvents.refresh());assert.equal(await page.locator('#activity-count').textContent(),'12');

@@ -76,6 +76,7 @@ class ConnectionNotices:
         self.failures = OrderedDict()
 
     def accept(self, event):
+        if 'profile_id' not in event: return False
         profile = event['profile_id']
         if event['type'] in ('connected', 'restored'):
             self.failures = OrderedDict((key, value) for key, value in self.failures.items() if key[0] != profile)

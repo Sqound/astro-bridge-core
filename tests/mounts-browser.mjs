@@ -10,7 +10,7 @@ import {createServer} from 'node:net';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-mounts-')),output=resolve(root,'artifacts/mounts-0630');
+const folder=await mkdtemp(resolve(tmpdir(),'astro-mounts-')),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/mounts-0630');
 await mkdir(output,{recursive:true});
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
 const server=spawn('python3',['-u','-m','wifi_bridge','--demo','--demo-radios','4','--state-dir',folder,'--port',String(port)],{cwd:root,stdio:['ignore','pipe','pipe']});
@@ -20,7 +20,7 @@ try{
  for(let n=0;!logs.includes('SIMULATION');n++){if(n===100)throw new Error('Server start: '+logs);await new Promise(r=>setTimeout(r,100));}
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
  const page=await browser.newPage({viewport:{width:375,height:960}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
+ await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
  const data=()=>page.evaluate(()=>state);
  await check('fresh switching settings include both mount families and retain explicit choices',async()=>{
@@ -39,6 +39,7 @@ try{
    await page.locator('#profile-name').fill(name);await page.locator('#network-ssid').fill('Synthetic mount network');await page.locator('#network-password').fill('synthetic-mount-pass');
    await page.waitForTimeout(5500);assert.equal(await page.locator('#profile-name').inputValue(),name);
    await page.locator('#network-save').click();await page.locator('#editor').waitFor({state:'hidden'});
+   await page.waitForFunction(name=>state.config.telescopes.some(p=>p.name===name),name);
    const profile=(await data()).config.telescopes.find(p=>p.name===name);assert.equal(profile.kind,kind);assert.equal(profile.enabled,false);assert.equal(profile.mac,'');assert.ok(!profile.physical_binding);
   }
  });
@@ -52,6 +53,18 @@ try{
    await page.locator(`#profile-${profile.id}-info`).click();assert.match(await page.locator('#profile-info-body').innerText(),/Control and guiding traffic/);
    assert.doesNotMatch(await page.locator('#profile-info-body').innerText(),/Small status exchanges/);await page.keyboard.press('Escape');
   }
+ });
+ await check('home mount service states are independent from association and use the endpoint inventory',async()=>{
+  await page.locator('#nav-telescopes').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.instrument-card').length===1);
+  const profile=(await data()).config.telescopes.find(p=>p.enabled),card=page.locator('#instrument-'+profile.id);
+  const inventory=await page.evaluate(async()=>await(await fetch('/api/endpoints')).json());
+  const ready=inventory.endpoints.find(p=>p.profile_id===profile.id).paths.filter(p=>p.ready);const primary=ready.find(p=>!p.requires_client_route)||ready[0];assert.ok((await card.innerText()).includes(primary.host+':'+primary.port));
+  for(const [service,badge,message] of [['not_answering','No answer','Wi-Fi connected · not answering'],['ready','Connected','Instrument service answers.'],['not_probed','Connected','Instrument service is not checked for this family.'],['unknown','Connected','Instrument service has not been verified.']]){
+   await page.evaluate(({id,service})=>{const s=structuredClone(state);s.telescopes.find(p=>p.id===id).service={state:service};renderSimple(s);},{id:profile.id,service});
+   assert.equal(await card.locator('.badge').innerText(),badge);assert.equal(await card.locator('.instrument-service').innerText(),message);assert.equal(await card.locator('.primary').count(),1);
+  }
+  await page.evaluate(()=>renderSimple(state));
  });
  await check('mount profiles fit narrow screens in every language',async()=>{
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){

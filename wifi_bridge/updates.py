@@ -39,8 +39,13 @@ class Updates:
     def supported(self):
         try:
             from .runtime import platform
-            return platform() == "raspberry" and (not ALPINE or UPDATER.is_file() and Path('/etc/wifi-bridge/updater-version').read_text().strip() == '2')
-        except OSError:
+            selected = platform()
+            if selected == 'live-usb':
+                from .ota import live_platform
+                return bool(ALPINE and live_platform() and UPDATER.is_file()
+                            and Path('/etc/wifi-bridge/updater-version').read_text().strip() == '3')
+            return selected == "raspberry" and (not ALPINE or UPDATER.is_file() and Path('/etc/wifi-bridge/updater-version').read_text().strip() in ('2', '3'))
+        except (OSError, ValueError):
             return False
 
     def status(self):

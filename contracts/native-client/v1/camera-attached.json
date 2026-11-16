@@ -1,0 +1,437 @@
+{
+  "name": "camera-attached",
+  "description": "Real bridge catalog/connect/endpoint/native reservations over a temporary sysfs camera and a bound loopback Alpaca service; native disconnect leaves device operations unchanged.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "primary",
+              "kind": "smart_telescope",
+              "family": "vespera",
+              "name": "Telescope",
+              "link": "connected",
+              "service": "ready",
+              "protocol": "vespera",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 1,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": null
+              }
+            },
+            {
+              "id": "camera-1",
+              "kind": "camera",
+              "family": "uvc",
+              "name": "simulator",
+              "protocol": "alpaca",
+              "model": "simulator",
+              "verified_identity": {
+                "model": "simulator",
+                "hardware_id": null
+              },
+              "identity_source": "camera_driver",
+              "access": "attached",
+              "simultaneous": true,
+              "link": "connected",
+              "service": "ready",
+              "since_seq": 1,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [],
+                "maker_key": null
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 1
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/instruments/0/since_seq": "^[0-9]+$",
+        "/instruments/1/id": "^usb-[0-9a-f]{24}$",
+        "/instruments/1/since_seq": "^[0-9]+$",
+        "/latest_event_seq": "^[0-9]+$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/camera-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "lease_seconds": 900
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "camera-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "camera-1",
+            "request_path": "other",
+            "mode": "relay",
+            "requires_client_route": false,
+            "target_ip": "192.0.2.10",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 11111,
+                  "transport": "tcp",
+                  "service": "alpaca_camera",
+                  "role": "control",
+                  "protocol": "alpaca",
+                  "device_number": 0
+                }
+              ]
+            },
+            "alternatives": []
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$",
+        "/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/endpoint/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/endpoint/target_ip": "^127\\.0\\.0\\.1$",
+        "/endpoint/primary/host": "^127\\.0\\.0\\.1$",
+        "/endpoint/primary/ports/0/port": "^[0-9]{4,5}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/camera-1/endpoint",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instrument_id": "camera-1",
+          "request_path": "other",
+          "mode": "relay",
+          "requires_client_route": false,
+          "target_ip": "192.0.2.10",
+          "primary": {
+            "host": "192.0.2.10",
+            "ports": [
+              {
+                "port": 11111,
+                "transport": "tcp",
+                "service": "alpaca_camera",
+                "role": "control",
+                "protocol": "alpaca",
+                "device_number": 0
+              }
+            ]
+          },
+          "alternatives": []
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/target_ip": "^127\\.0\\.0\\.1$",
+        "/primary/host": "^127\\.0\\.0\\.1$",
+        "/primary/ports/0/port": "^[0-9]{4,5}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/camera-1/lease",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1",
+          "lease_seconds": 60
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "lease-1",
+          "expires_in": 60
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/camera-1/release",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/camera-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "lease_seconds": 900
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "camera-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "camera-1",
+            "request_path": "other",
+            "mode": "relay",
+            "requires_client_route": false,
+            "target_ip": "192.0.2.10",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 11111,
+                  "transport": "tcp",
+                  "service": "alpaca_camera",
+                  "role": "control",
+                  "protocol": "alpaca",
+                  "device_number": 0
+                }
+              ]
+            },
+            "alternatives": []
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$",
+        "/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/endpoint/instrument_id": "^usb-[0-9a-f]{24}$",
+        "/endpoint/target_ip": "^127\\.0\\.0\\.1$",
+        "/endpoint/primary/host": "^127\\.0\\.0\\.1$",
+        "/endpoint/primary/ports/0/port": "^[0-9]{4,5}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/camera-1/disconnect",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "primary",
+              "kind": "smart_telescope",
+              "family": "vespera",
+              "name": "Telescope",
+              "link": "connected",
+              "service": "ready",
+              "protocol": "vespera",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 1,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": null
+              }
+            },
+            {
+              "id": "camera-1",
+              "kind": "camera",
+              "family": "uvc",
+              "name": "simulator",
+              "protocol": "alpaca",
+              "model": "simulator",
+              "verified_identity": {
+                "model": "simulator",
+                "hardware_id": null
+              },
+              "identity_source": "camera_driver",
+              "access": "attached",
+              "simultaneous": true,
+              "link": "connected",
+              "service": "ready",
+              "since_seq": 1,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [],
+                "maker_key": null
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 1
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/instruments/0/since_seq": "^[0-9]+$",
+        "/instruments/1/id": "^usb-[0-9a-f]{24}$",
+        "/instruments/1/since_seq": "^[0-9]+$",
+        "/latest_event_seq": "^[0-9]+$"
+      }
+    }
+  ]
+}

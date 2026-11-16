@@ -10,7 +10,7 @@ import {createServer} from 'node:net';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const folder=await mkdtemp(resolve(tmpdir(),'astro-plugins-')),workspace=resolve(folder,'app'),output=resolve(root,'artifacts/plugins-0633');await mkdir(output,{recursive:true});await mkdir(workspace);
+const folder=await mkdtemp(resolve(tmpdir(),'astro-plugins-')),workspace=resolve(folder,'app'),output=resolve(root,process.env.UI_ARTIFACTS||'artifacts/plugins-0633');await mkdir(output,{recursive:true});await mkdir(workspace);
 await cp(resolve(root,'wifi_bridge'),resolve(workspace,'wifi_bridge'),{recursive:true,filter:path=>!path.includes('__pycache__')});
 const catalog=JSON.parse(await readFile(resolve(workspace,'wifi_bridge/static/plugins.json'),'utf8'));
 const extra=structuredClone(catalog.plugins.find(p=>p.id==='zwo_mount'));
@@ -27,7 +27,7 @@ try{
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
  const page=await browser.newPage({viewport:{width:375,height:960}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
- const login=async()=>{await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});};
+ const login=async()=>{await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});};
  await page.goto(origin);await login();await page.locator('#nav-configuration').click();await page.locator('#tab-plugins').click();
  await check('authenticated catalog lists registered families plus a community fixture with honest evidence',async()=>{
   assert.equal(await page.locator('[data-plugin-id]').count(),7);

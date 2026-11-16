@@ -227,11 +227,11 @@ class SecureAccess:
         fingerprint = hashlib.sha256(der).hexdigest()
         def ident(kind): return str(uuid.uuid5(uuid.NAMESPACE_URL, 'astro-bridge:' + fingerprint + ':' + kind))
         certificate = dict(PayloadType='com.apple.security.root', PayloadVersion=1,
-                           PayloadIdentifier='space.planastro.bridge.ca.' + fingerprint,
+                           PayloadIdentifier='io.github.sqound.astrobridge.ca.' + fingerprint,
                            PayloadUUID=ident('ca'), PayloadDisplayName='Astro Bridge local CA',
                            PayloadContent=der)
         return plistlib.dumps(dict(PayloadType='Configuration', PayloadVersion=1,
-            PayloadIdentifier='space.planastro.bridge.trust.' + fingerprint, PayloadUUID=ident('profile'),
+            PayloadIdentifier='io.github.sqound.astrobridge.trust.' + fingerprint, PayloadUUID=ident('profile'),
             PayloadDisplayName='Astro Bridge HTTPS', PayloadDescription='Local HTTPS trust for this Astro Bridge only.',
             PayloadRemovalDisallowed=False, PayloadContent=[certificate]))
 

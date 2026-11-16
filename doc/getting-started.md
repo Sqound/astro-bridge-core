@@ -12,13 +12,17 @@
 
 Use the complete Raspberry image for a dedicated appliance. Core and Docker require an existing operating system; physical Wi-Fi management also requires compatible Linux adapters and host integration. [Compare the options](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/deployment-options.md).
 
+## Initial password
+
+New Raspberry, native Linux and Docker installations use **`12345678`** for web access and the hotspot. Demo mode uses the same initial web password. Set your own passwords in Settings after setup. Existing installations retain their credentials during upgrades.
+
 ## Run the demo
 
 ```sh
 python3 -m wifi_bridge --demo --demo-radios 4
 ```
 
-Open **http://127.0.0.1:8787**. Password: **`demo-telescope-2026`**. Configuration is stored in `.runtime/`; no real radios or telescope commands are used.
+Open **http://127.0.0.1:8787**. Password: **`12345678`**. Configuration is stored in `.runtime/`; no real radios or telescope commands are used.
 
 ![Saved equipment in the demo](images/saved-equipment.png)
 
@@ -27,20 +31,20 @@ Open **http://127.0.0.1:8787**. Password: **`demo-telescope-2026`**. Configurati
 The release includes a small standalone installer. On Linux, install Python 3.11+ and its venv support first (Debian/Ubuntu: `sudo apt install python3 python3-venv curl`). Then:
 
 ```sh
-curl -fLO https://github.com/Sqound/astro-bridge-core/releases/download/v1.0.1/install.py
+curl -fLO https://github.com/Sqound/astro-bridge-core/releases/download/v1.1.0/install.py
 python3 install.py
-"$HOME/.local/share/astro-bridge-1.0.1/bin/astro-bridge" --demo \
+"$HOME/.local/share/astro-bridge-1.1.0/bin/astro-bridge" --demo \
   --state-dir "$HOME/.local/state/astro-bridge-demo"
 ```
 
 The versioned installer downloads the exact wheel, verifies its embedded SHA-256, and creates a separate environment in your home directory. It needs no sudo, does not change system Python, and refuses to overwrite an existing installation. Download and inspect it before running if desired. The complete MIT notice is included.
 
-For an offline install, download the wheel and `SHA256SUMS` from [the same release](https://github.com/Sqound/astro-bridge-core/releases/tag/v1.0.1):
+For an offline install, download the wheel and `SHA256SUMS` from [the same release](https://github.com/Sqound/astro-bridge-core/releases/tag/v1.1.0):
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
-python3 install.py --wheel astro_bridge_core-1.0.1-py3-none-any.whl \
-  --sha256 THE_VERIFIED_WHEEL_SHA256 --prefix "$HOME/.local/share/astro-bridge-1.0.1"
+python3 install.py --wheel astro_bridge_core-1.1.0-py3-none-any.whl \
+  --sha256 THE_VERIFIED_WHEEL_SHA256 --prefix "$HOME/.local/share/astro-bridge-1.1.0"
 ```
 
 Core installation alone provides the application/demo. Physical radio management is Linux-only and needs the [Linux/Docker deployment](https://github.com/Sqound/astro-bridge-implementations/tree/main/doc), which owns NetworkManager, host services, privileges and drivers. Demo mode can also run on macOS or Docker Desktop; native Windows Wi-Fi control is unsupported.

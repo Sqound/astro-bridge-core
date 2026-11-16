@@ -1,0 +1,277 @@
+{
+  "name": "night-reservation",
+  "description": "Contract 1.1: reserve an instrument for the night (up to 14 h). The reservation is an ordinary lease with a longer horizon; it survives client sleep, keeps the radio and telemetry, and stays revocable by the owner.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "reserve_seconds": 36000
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-seestar-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 3600,
+            "reservation_expires_in": 36000
+          },
+          "endpoint": {
+            "instrument_id": "tel-seestar-1",
+            "request_path": "home",
+            "mode": "proxy",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [
+              {
+                "host": "192.168.77.1",
+                "ports": [
+                  {
+                    "port": 4700,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "control",
+                    "protocol": "json_rpc"
+                  },
+                  {
+                    "port": 4800,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "imaging",
+                    "protocol": "binary"
+                  },
+                  {
+                    "port": 4801,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4804,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4554,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  },
+                  {
+                    "port": 4555,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  }
+                ]
+              }
+            ],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.1"
+          }
+        }
+      },
+      "note": "expires_in keeps its 1.0 bound (3600); reservation_expires_in is the true horizon.",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-seestar-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-seestar-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test telescope",
+          "link": "connected",
+          "service": "not_probed",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 4,
+          "reason": null,
+          "client_connect": true,
+          "blockers": [],
+          "lease": {
+            "held": true,
+            "mine": true,
+            "expires_in": 3600,
+            "reservation_expires_in": 36000
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1"
+            ],
+            "maker_key": "absent"
+          }
+        }
+      },
+      "note": "The catalog lease summary shows the reservation horizon to every client."
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/lease",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1",
+          "lease_seconds": 900
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "lease-1",
+          "expires_in": 3600,
+          "reservation_expires_in": 36000
+        }
+      },
+      "note": "An ordinary renewal never shortens a reservation.",
+      "real_patterns": {
+        "/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/lease",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1",
+          "lease_seconds": 900,
+          "reserve_seconds": 7200
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "lease-1",
+          "expires_in": 3600,
+          "reservation_expires_in": 7200
+        }
+      },
+      "note": "reserve_seconds sets a new horizon, here earlier than before.",
+      "real_patterns": {
+        "/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/release",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": "Release at dawn; normal quiet and switching policy applies again."
+    }
+  ]
+}

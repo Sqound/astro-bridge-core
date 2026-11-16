@@ -1,0 +1,426 @@
+{
+  "name": "lost-and-restored",
+  "description": "While the reservation runs, the bridge restores a lost connection.",
+  "contract_version": 1,
+  "requires": [
+    "connect",
+    "events-wait"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-seestar-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "tel-seestar-1",
+            "request_path": "home",
+            "mode": "proxy",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [
+              {
+                "host": "192.168.77.1",
+                "ports": [
+                  {
+                    "port": 4700,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "control",
+                    "protocol": "json_rpc"
+                  },
+                  {
+                    "port": 4800,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "imaging",
+                    "protocol": "binary"
+                  },
+                  {
+                    "port": 4801,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4804,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4554,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  },
+                  {
+                    "port": 4555,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  }
+                ]
+              }
+            ],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.1"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/events?after=4&boot_id=00000000000000000000000000000000&limit=100&wait=25",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "boot_id": "00000000000000000000000000000000",
+          "oldest_sequence": 1,
+          "latest_sequence": 12,
+          "next_cursor": 12,
+          "has_more": false,
+          "gap": false,
+          "reset_reason": null,
+          "persistent": true,
+          "history_available": true,
+          "clock_status": "unverified",
+          "events": [
+            {
+              "sequence": 5,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "type": "instrument.lost",
+              "instrument_id": "tel-seestar-1",
+              "reason": "RADIO_UNAVAILABLE"
+            },
+            {
+              "sequence": 6,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "operation_id": "00000000000000000000000000000000",
+              "profile_id": "tel-seestar-1",
+              "profile_name": "Test telescope",
+              "radio_id": "radio-0000000000000000",
+              "type": "disconnected",
+              "cause": "RECONCILE",
+              "reason": "RADIO_UNAVAILABLE",
+              "outcome": "disconnected",
+              "associated": false,
+              "ready": false
+            },
+            {
+              "sequence": 7,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "operation_id": "00000000000000000000000000000000",
+              "profile_id": "tel-seestar-1",
+              "profile_name": "Test telescope",
+              "radio_id": "radio-0000000000000000",
+              "type": "failed",
+              "cause": "RECONCILE",
+              "reason": "RADIO_UNAVAILABLE",
+              "outcome": "failed",
+              "associated": false,
+              "ready": false
+            },
+            {
+              "sequence": 8,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "type": "instrument.state",
+              "instrument_id": "tel-seestar-1",
+              "link": "saved",
+              "service": "not_probed"
+            },
+            {
+              "sequence": 9,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "type": "instrument.restored",
+              "instrument_id": "tel-seestar-1"
+            },
+            {
+              "sequence": 10,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "operation_id": "00000000000000000000000000000000",
+              "profile_id": "tel-seestar-1",
+              "profile_name": "Test telescope",
+              "radio_id": "radio-0000000000000000",
+              "type": "associated",
+              "cause": "RECONCILE",
+              "reason": "ASSOCIATED",
+              "outcome": "associated",
+              "associated": true,
+              "ready": false
+            },
+            {
+              "sequence": 11,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "operation_id": "00000000000000000000000000000000",
+              "profile_id": "tel-seestar-1",
+              "profile_name": "Test telescope",
+              "radio_id": "radio-0000000000000000",
+              "type": "restored",
+              "cause": "RECONCILE",
+              "reason": "READY",
+              "outcome": "ready",
+              "associated": true,
+              "ready": true
+            },
+            {
+              "sequence": 12,
+              "boot_id": "00000000000000000000000000000000",
+              "timestamp": "2026-01-01T00:00:00.000+00:00",
+              "clock_status": "unverified",
+              "type": "instrument.state",
+              "instrument_id": "tel-seestar-1",
+              "link": "connected",
+              "service": "not_probed"
+            }
+          ],
+          "api_version": "1"
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/events/0/boot_id": "^[0-9a-f]{32}$",
+        "/events/0/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/1/boot_id": "^[0-9a-f]{32}$",
+        "/events/1/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/1/operation_id": "^[0-9a-f]{32}$",
+        "/events/1/radio_id": "^radio-[0-9a-f]{16}$",
+        "/events/2/boot_id": "^[0-9a-f]{32}$",
+        "/events/2/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/2/operation_id": "^[0-9a-f]{32}$",
+        "/events/2/radio_id": "^radio-[0-9a-f]{16}$",
+        "/events/3/boot_id": "^[0-9a-f]{32}$",
+        "/events/3/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/4/boot_id": "^[0-9a-f]{32}$",
+        "/events/4/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/5/boot_id": "^[0-9a-f]{32}$",
+        "/events/5/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/5/operation_id": "^[0-9a-f]{32}$",
+        "/events/5/radio_id": "^radio-[0-9a-f]{16}$",
+        "/events/6/boot_id": "^[0-9a-f]{32}$",
+        "/events/6/timestamp": "^\\d{4}-\\d{2}-\\d{2}T",
+        "/events/6/operation_id": "^[0-9a-f]{32}$",
+        "/events/6/radio_id": "^radio-[0-9a-f]{16}$",
+        "/events/7/boot_id": "^[0-9a-f]{32}$",
+        "/events/7/timestamp": "^\\d{4}-\\d{2}-\\d{2}T"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-seestar-1/endpoint",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instrument_id": "tel-seestar-1",
+          "request_path": "home",
+          "mode": "proxy",
+          "primary": {
+            "host": "192.0.2.10",
+            "ports": [
+              {
+                "port": 4700,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "control",
+                "protocol": "json_rpc"
+              },
+              {
+                "port": 4800,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "imaging",
+                "protocol": "binary"
+              },
+              {
+                "port": 4801,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "other",
+                "protocol": "unknown"
+              },
+              {
+                "port": 4804,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "other",
+                "protocol": "unknown"
+              },
+              {
+                "port": 4554,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "preview",
+                "protocol": "rtsp"
+              },
+              {
+                "port": 4555,
+                "transport": "tcp",
+                "service": "seestar_native",
+                "role": "preview",
+                "protocol": "rtsp"
+              }
+            ]
+          },
+          "alternatives": [
+            {
+              "host": "192.168.77.1",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            }
+          ],
+          "requires_client_route": false,
+          "target_ip": "198.51.100.1"
+        }
+      },
+      "note": ""
+    }
+  ]
+}

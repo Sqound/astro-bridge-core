@@ -43,7 +43,7 @@ test("HTML and client keys, interpolation and literal addresses match across ten
   const html = readFileSync(new URL("../wifi_bridge/static/index.html", import.meta.url), "utf8");
   const decode = value => value.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&#x27;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">");
   const keys = [...html.matchAll(/data-i18n(?:-aria-label|-placeholder)?="([^"]*)"/g)].map(match => decode(match[1]));
-  for (const file of ["app.js", "theme.js", "events.js", "pwa.js", "secure.js"]) {
+  for (const file of ["app.js", "cameras.js", "session-cards.js", "session-page.js", "theme.js", "events.js", "pwa.js", "secure.js"]) {
     const script = readFileSync(new URL("../wifi_bridge/static/" + file, import.meta.url), "utf8");
     keys.push(...[...script.matchAll(/\bt\("([^"\n]+)"/g)].map(match => match[1]));
   }

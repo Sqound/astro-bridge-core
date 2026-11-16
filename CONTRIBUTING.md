@@ -26,4 +26,8 @@ python3 tools/build-i18n.py --check
 python3 scripts/generate_openapi.py
 ```
 
+Add a line under the unreleased version in [CHANGELOG.md](CHANGELOG.md) for user-visible changes. State hardware claims in the README table's three columns (implemented, tested in simulation, verified on hardware); documented is not verified.
+
+Report security problems privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
+
 Contributions are made under the project's [MIT License](LICENSE). Keep third-party notices and use redistribution-compatible assets.

@@ -1,0 +1,34 @@
+{
+  "name": "disconnect-by-user",
+  "description": "Explicit disconnection differs from releasing a lease.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/disconnect",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "lease_id": "lease-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": "",
+      "real_patterns": {}
+    }
+  ]
+}

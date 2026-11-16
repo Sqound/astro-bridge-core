@@ -14,7 +14,9 @@ let csrf = "", state = null, polling = false, editing = null, preferencesDirty =
 const pendingRadios = new Set();
 const routeDisclosure = new Map();
 let discoveryEpoch=0, discoveryChoices=[], ensureView=null, ensurePolling=false, autoPreferencePending=false, autoPolicyDirty=false, autoPolicyRevision=null;
-let nearbySignature="";
+let nearbySignature="", instrumentSignature="", endpointInventory=null, connectionChoice=null, profileInfoOpener=null;
+let sessionSelection=null,sessionRevision=null,makerSessionKeyState="absent",makerChipRefresh=0;
+let makerKeyEpoch=0,makerKeyRevision=null,makerKeyTimer,makerKeyUnavailable=false;
 let wizardEpoch=0,wifiSnapshot=null,wifiSnapshotAt=0,wifiRequest=null;
 let feedbackTimer, scanning=false, statusRefresh=null, statusEpoch=0;
 let accessReady=false, statusFailures=0, protectionDraft=null;
@@ -35,6 +37,10 @@ const publicLeaves=[...document.querySelectorAll("#dashboard [id], #protection-d
   .filter(element=>!element.children.length&&!element.matches("input,select,textarea,button")&&!element.closest("#pwa-settings"))
   .map(element=>({element,text:element.textContent,href:element.getAttribute("href"),className:element.className}));
 function privateReset(preserveEvents=false,preserveLogin=false){
+  resetSessionCards();resetSessionPage();resetCameras();
+  makerKeyEpoch++;clearTimeout(makerKeyTimer);makerKeyRevision=null;sessionSelection=null;sessionRevision=null;makerSessionKeyState="absent";makerChipRefresh=0;$("maker-key-file").value="";
+  pairedAppsSignature="";$("paired-apps-list").replaceChildren();
+  interfaceRoleDraft=null;interfaceRoleRevision=null;interfaceRoleSignature="";$("radios").replaceChildren();$("interface-role-result").textContent="";$("interface-role-warning").hidden=true;
   loggedOut=false;$("user-menu").open=false;
   for(const id of dynamicMessages)delete $(id).dataset.i18n;dynamicMessages.clear();
   autoPolicyDirty=false;autoPolicyRevision=null;$("pause-notice").hidden=true;clearProtectionDialog();$("protection-list").replaceChildren();$("protection-summary").hidden=true;
@@ -42,7 +48,8 @@ function privateReset(preserveEvents=false,preserveLogin=false){
   wizardEpoch++;$("discovery-results").replaceChildren();$("discovery-status").textContent="";
   discoveryEpoch++;discoveryChoices=[];ensureView=null;ensurePolling=false;$("ensure-notice").hidden=true;$("scan-results").replaceChildren();
   nearbySignature="";$("nearby-list").replaceChildren();$("nearby-telescopes").hidden=true;
-  $("simple-connections").replaceChildren();
+  $("simple-connections").replaceChildren();$("connections-list").replaceChildren();$("connection-choices").replaceChildren();
+  instrumentSignature="";endpointInventory=null;connectionChoice=null;profileInfoOpener=null;
   BridgeSecure.reset();BridgePush.reset();if(preserveEvents)BridgeEvents.suspend();else BridgeEvents.reset();csrf="";state=null;editing=null;requestedMove=null;updateState=null;preferencesDirty=false;
   pendingRadios.clear();routeDisclosure.clear();clearTimeout(feedbackTimer);
   modeDirty=false;modePending=false;hotspotNameDirty=false;hotspotNamePending=false;hotspotAdapterDirty=false;$("hotspot-name").value="";$("hotspot-interface").replaceChildren();delete $("hotspot-interface").dataset.options;$("hotspot-name-result").textContent="";
@@ -71,7 +78,7 @@ async function validateConnection(){
   return refresh();
 }
 const mainTabs = ["telescopes", "networks", "configuration"];
-const configurationTabs = ["general", "pwa", "plugins", "telescopes", "radios"];
+const configurationTabs = ["general", "pwa", "plugins", "telescopes", "radios", "sessions", "cameras"];
 const routeScroll = new Map();
 let lastConfiguration = "general";
 let notificationFocusedHash="";
@@ -91,16 +98,17 @@ function applyNavigation(event) {
     else if(parts[0]==="configuration"&&parts[1]==="general"&&section==="updates")target="?section=updates";
     else if(parts[0]==="configuration"&&parts[1]==="telescopes"&&/^[a-f0-9]{32}$/.test(query.get("add")||""))target="?add="+query.get("add");
   }
-  const destination = [...mainTabs,"activity"].includes(parts[0]) ? parts[0] : "telescopes";
+  const destination = parts[0]==="session"&&/^[a-z0-9-]{1,64}$/.test(parts[1]||"") ? "session" : [...mainTabs,"activity"].includes(parts[0]) ? parts[0] : "telescopes";
   const section = configurationTabs.includes(parts[1]) ? parts[1] : "general";
-  const next = destination + (destination === "configuration" ? "/" + section : "");
+  const next = destination + (destination === "configuration" ? "/" + section : destination === "session" ? "/"+parts[1] : "");
   if(destination === "configuration")lastConfiguration=section;
   if(currentRoute && currentRoute !== next) routeScroll.set(currentRoute, window.scrollY);
   for(const name of mainTabs) {
     const selected = name === destination, button = $("nav-" + name);
-    button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected || (destination === "activity" && name === mainTabs[0]) ? 0 : -1;
+    button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected || (["activity","session"].includes(destination) && name === mainTabs[0]) ? 0 : -1;
     $("view-" + name).hidden = !selected;
   }
+  $("view-session").hidden = destination !== "session";
   $("view-activity").hidden = destination !== "activity";
   if(destination === "activity" && currentRoute && currentRoute !== "activity")$("activity-back").href="#"+currentRoute;
   BridgeEvents.closePopover();BridgeEvents.setPage(destination === "activity");
@@ -113,6 +121,7 @@ function applyNavigation(event) {
   if(notificationFocusedHash!==location.hash||event?.type==="hashchange")notificationFocusedHash="";
   if(currentRoute !== next) requestAnimationFrame(() => window.scrollTo(0, routeScroll.get(next) || 0));
   currentRoute = next;
+  syncSessionPage();
   focusNotificationTarget();
 }
 function focusNotificationTarget(){
@@ -167,6 +176,7 @@ function connectionLabel(group) {
 }
 
 function simpleStatus(profile,live,s,available){
+  if(live.reason?.startsWith("ISOLATION_"))return t("Isolated connection unavailable. Check namespace support, Wi-Fi driver and host tools.");
   if(live.retry_blocked)return t("Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.");
   if(!available)return t("Connection unavailable");
   if(live.state==="conflict")return t("Routing conflict · forwarding suspended");
@@ -229,6 +239,7 @@ function renderSimple(s){
   const notice=!s.config.home.ssid?t("No private network is configured. You can use telescopes through the hotspot, or add private-network access in Networks & hotspot."):s.last_error?t("A connection needs attention. Check profiles and network settings."):"";
   $("simple-notice").textContent=notice;$("simple-notice").hidden=!notice;
   const focused=$("simple-connections").contains(document.activeElement)?document.activeElement.id:null;
+  const focusedProfile=focused?document.activeElement.closest("[data-profile-id]")?.dataset.profileId:null;
   const groups=connectionGroups(s);
   const telescopeGroups=[...groups].filter(([,group])=>!group.reserved);
   const occupied=telescopeGroups.filter(([mac,group])=>profiles.some(p=>(p.enabled&&p.mac===mac)||(live.get(p.id)?.connected&&live.get(p.id)?.interface===group.device?.name))).length;
@@ -236,63 +247,129 @@ function renderSimple(s){
   $("saved-count").textContent=profiles.length;
   $("home-count").textContent=s.home_ip?t("Connected"):t("Unavailable");
   $("initial-network-link").hidden=!!s.config.home.ssid;
-  const cards=[];
-  for(const [mac,group] of telescopeGroups){
-    const card=node("section",undefined,"card simple-card");card.dataset.connection=String(group.number);
-    const active=profiles.find(p=>live.get(p.id)?.connected&&live.get(p.id)?.interface===group.device?.name);
-    const enabled=profiles.find(p=>p.enabled&&p.mac===mac);
-    const head=node("div",undefined,"simple-card-heading");
-    const title=node("h3",connectionLabel(group));head.replaceChildren(title,node("span",enabled&&live.get(enabled.id)?.retry_blocked?t("Check Wi-Fi password"):!group.available?t("Unavailable"):active?t("Connected to {name}",{name:active.name}):enabled?t("Connecting to {name}",{name:enabled.name}):t("Available"),"badge"+(active?" online":"")));
-    card.append(head);
-    if(!group.available)card.append(node("p",t("Reconnect this adapter to use this connection."),"small"));
-    const table=node("table",undefined,"connection-table"),caption=node("caption",t("Telescopes · {connection}",{connection:connectionLabel(group)}),"sr-only");
-    const header=node("thead"),heading=node("tr");heading.append(node("th",t("Telescope")),node("th",t("Action")));header.append(heading);
-    const list=node("tbody");table.append(caption,header,list);
-    for(const p of profiles){
-      const status=live.get(p.id)||{},here=p.mac===mac;
-      const connectedHere=!!status.connected&&status.interface===group.device?.name;
-      const other=groups.get(p.mac);
-      const row=node("tr",undefined,"simple-instrument"+(connectedHere?" is-connected":""));row.dataset.profileId=p.id;
-      const text=node("td",undefined,"simple-instrument-text");
-      const name=node("span",p.name,"simple-instrument-name");name.id="simple-name-"+group.number+"-"+p.id;
-      const message=status.retry_blocked?simpleStatus(p,status,s,group.available):pendingRadios.has(mac)?t("Switch in progress…"):connectedHere&&!status.relay_ready?simpleStatus(p,status,s,group.available):connectedHere?(status.state==="waiting_service"?t("Connected · telescope service starting…"):t("Connected here")):here?simpleStatus(p,{...status,connected:false},s,group.available):p.enabled||status.connected?t("Assigned to {connection}",{connection:other?connectionLabel(other):t("Unavailable connection")}):t("Available");
-      const detail=node("span",message,"simple-instrument-status");detail.id="simple-status-"+group.number+"-"+p.id;
-      text.append(name,detail);
-      if(connectedHere){
-        const guard=connectionGuard(p,s),summary=node("span",undefined,"connection-guard");
-        summary.id="simple-guard-"+group.number+"-"+p.id;summary.dataset.guardState=guard.state;
-        summary.append(node("span",guard.activity,"guard-activity"),node("span",guard.label,"guard-status"));text.append(summary);
+  renderConnectionsStrip(s,groups);
+  const selected=profiles.filter(p=>p.enabled||live.get(p.id)?.connected);
+  const switching=$("auto-switch-card"),container=$("simple-connections");
+  const switchingFocus=switching.contains(document.activeElement)?document.activeElement:null;
+  if(connected){if(container.nextElementSibling!==switching)container.after(switching);}
+  else if(switching.nextElementSibling!==$("simple-notice"))$("simple-notice").before(switching);
+  if(switchingFocus&&document.activeElement!==switchingFocus)switchingFocus.focus({preventScroll:true});
+  const signature=JSON.stringify([BridgeI18n.locale,profiles,s.telescopes,s.devices,s.management,endpointInventory,cardTelemetry,makerSessionKeyState,[...pendingRadios],profiles.map(p=>connectionGuard(p,s))]);
+  if(signature!==instrumentSignature){
+    instrumentSignature=signature;
+    const cards=selected.map(p=>renderInstrumentCard(p,live.get(p.id)||{},s,groups));
+    const saved=profiles.filter(p=>!selected.includes(p));
+    if(saved.length){
+      const card=node("section",undefined,"card simple-card saved-instruments");card.append(node("h3",t("Saved, not connected")));
+      for(const p of saved){
+        const row=node("div",undefined,"saved-instrument");row.dataset.profileId=p.id;
+        const text=node("div");text.append(node("strong",p.name),node("span",instrumentKind(p.kind),"small"));
+        const button=node("button",t("Connect"),"secondary connection-action");button.type="button";button.id="simple-connect-0-"+p.id;
+        button.setAttribute("aria-label",t("Connect {name}",{name:p.name}));
+        button.disabled=!s.management?.paths?.length||!telescopeGroups.some(([mac,g])=>g.available&&!pendingRadios.has(mac));
+        button.addEventListener("click",()=>openConnectionChoice(p,button));row.append(text,button);card.append(row,renderRecentNights(p));
       }
-      const selected=here&&p.enabled;
-      const button=node("button",status.retry_blocked?t("Edit password"):selected?t("Disconnect"):p.enabled&&!here?t("Switch here"):t("Connect"),selected?"secondary connection-action":"connection-action");
-      button.type="button";button.id="simple-connect-"+group.number+"-"+p.id;
-      button.setAttribute("aria-label",status.retry_blocked?t("Edit Wi-Fi password for {name}",{name:p.name}):t(selected?"Disconnect {name} · {connection}":"Connect {name} · {connection}",{name:p.name,connection:connectionLabel(group)}));
-      button.setAttribute("aria-describedby",detail.id);
-      button.disabled=pendingRadios.has(mac)||pendingRadios.has(p.mac)||(!status.retry_blocked&&!selected&&(!group.available||group.reserved||!s.management?.paths?.length));
-      button.addEventListener("click",()=>{if(status.retry_blocked){openEditor(p);$("network-password").focus();}else requestConnection(p,mac,button);});
-      const action=node("td",undefined,"connection-table-action");action.append(button);
-      if(status.retry_blocked&&selected){
-        const disconnect=node("button",t("Disconnect"),"text-button");disconnect.type="button";disconnect.id="simple-disconnect-"+group.number+"-"+p.id;
-        disconnect.setAttribute("aria-label",t("Disconnect {name} · {connection}",{name:p.name,connection:connectionLabel(group)}));
-        disconnect.disabled=pendingRadios.has(mac);disconnect.addEventListener("click",()=>scopeAction(p.id,"disconnect",disconnect));
-        const actions=node("div",undefined,"auth-actions");actions.append(button,disconnect);action.replaceChildren(actions);
-      }
-      row.append(text,action);list.append(row);
+      cards.push(card);
     }
-    card.append(table);
-    cards.push(card);
+    container.replaceChildren(...cards);
   }
-  $("simple-connections").replaceChildren(...cards);
   renderOtherInterfaces(s);
-  if(focused)$(focused)?.focus({preventScroll:true});
+  if(focused)($(focused)||$("simple-connect-0-"+focusedProfile)||$("instrument-"+focusedProfile)?.querySelector(".connection-action"))?.focus({preventScroll:true});
 }
+
+function wiredHomePath(s){return s.management?.paths?.find(path=>path.role==="home"&&path.kind==="ethernet");}
+function renderConnectionsStrip(s,groups){
+  const rows=s.devices.map(device=>{
+    const profile=s.config.telescopes.find(p=>(p.enabled&&p.mac===device.mac)||(s.telescopes.find(row=>row.id===p.id)?.connected&&s.telescopes.find(row=>row.id===p.id)?.interface===device.name));
+    const role=profile?profile.name:device.mac===s.config.home.mac?t("Private Wi-Fi"):s.hotspot?.active&&s.hotspot.mac===device.mac?t("Hotspot"):t({home:"Private Wi-Fi",hotspot:"Hotspot",telescope:"Telescopes and mounts",auto:"Available"}[configuredRadioRole(s,device.mac)]||"Available");
+    const label=device.usb?t("USB {letter}",{letter:String.fromCharCode(65+s.devices.filter(d=>d.usb).findIndex(d=>d.mac===device.mac))}):t("Built-in");
+    const row=node("span",label+" → "+role,"connection-role");if(profile||device.mac===s.config.home.mac||s.hotspot?.active&&s.hotspot.mac===device.mac)row.classList.add("in-use");return row;
+  });
+  for(const [,group]of groups)if(!group.device)rows.push(node("span",connectionLabel(group)+" → "+t("Connection unavailable"),"connection-role"));
+  if(wiredHomePath(s))rows.unshift(node("span",t("Ethernet")+" → "+t("Private network"),"connection-role in-use"));
+  $("connections-list").replaceChildren(...rows);
+}
+function renderInstrumentCard(profile,live,s,groups){
+  const group=(live.connected?[...groups.values()].find(g=>g.device?.name===live.interface):null)||groups.get(profile.mac)||{available:false,number:0},mac=profile.mac;
+  const card=node("section",undefined,"card simple-card instrument-card");card.dataset.profileId=profile.id;card.dataset.connection=String(group.number);card.id="instrument-"+profile.id;
+  const heading=node("div",undefined,"simple-card-heading"),identity=node("div",undefined,"instrument-identity"),icon=node("span",undefined,"symbol");icon.setAttribute("aria-hidden","true");icon.append(document.querySelector("#nav-telescopes .nav-icon").cloneNode(true));
+  const text=node("div"),title=node("h3",profile.name),connection=connectionLabel(group);
+  title.id="instrument-"+profile.id+"-title";card.setAttribute("aria-labelledby",title.id);
+  text.append(title,node("p",instrumentKind(profile.kind)+" · "+connection+" · "+t("Target: {ip}",{ip:live.target_ip||profile.target_ip||"—"}),"small"));identity.append(icon,text);
+  const badge=node("span",t(live.retry_blocked?"Check Wi-Fi password":live.connected?live.service?.state==="not_answering"?"No answer":"Connected":"Connecting"),"badge"+(live.connected?" online":""));
+  const info=node("button","i","info-button");info.type="button";info.id="instrument-"+profile.id+"-info";info.setAttribute("aria-label",t("More information")+" · "+profile.name);info.setAttribute("aria-haspopup","dialog");info.setAttribute("aria-controls","profile-info");
+  info.addEventListener("click",()=>{profileInfoOpener=info.id;profileInfoId=profile.id;profileInfoSignature="";renderProfileInfo();$("profile-info").showModal();});heading.append(identity,badge,info);card.append(heading);
+  const paths=instrumentPaths(profile.id),primary=paths.find(path=>path.host===location.hostname&&!path.requires_client_route)||paths.find(path=>!path.requires_client_route)||paths[0];
+  if(paths.length){
+    const addresses=node("div",undefined,"instrument-endpoints");addresses.append(node("span",t("For your apps"),"small"));
+    const list=node("div",undefined,"endpoint-list");
+    for(const [index,path]of [primary].entries()){
+      const row=node("div",undefined,"instrument-endpoint"),address=path.host+":"+path.port;
+      row.append(node("span",t(path.path==="hotspot"?"Hotspot":"Private network")+" · "+path.transport.toUpperCase(),"small"),node("code",address));
+      const copy=node("button",t("Copy"),"text-button endpoint-copy");copy.type="button";copy.id="endpoint-copy-"+profile.id+"-"+index;copy.setAttribute("aria-label",t("Copy address {address}",{address}));
+      copy.addEventListener("click",()=>copyEndpoint(address,copy));row.append(copy);
+      if(path.requires_client_route)row.append(node("span",t("Requires a route from your app’s network."),"small endpoint-route"));list.append(row);
+    }
+    addresses.append(list);card.append(addresses);
+  }else card.append(node("p",t(endpointInventory?"No confirmed app endpoint.":"App addresses are unavailable. They update automatically."),"small endpoint-unavailable"));
+  const message=live.connected&&live.service?.state==="not_answering"?t("Wi-Fi connected · not answering"):live.retry_blocked||!group.available||!live.connected||!live.relay_ready?simpleStatus(profile,live,s,group.available):live.service?.state==="ready"?t("Instrument service answers."):live.service?.state==="not_probed"?t("Instrument service is not checked for this family."):t("Instrument service has not been verified.");
+  const detail=node("p",message,"small instrument-service");detail.id="simple-status-"+group.number+"-"+profile.id;card.append(detail);
+  if(live.connected&&!live.relay_ready&&live.service?.state==="not_answering")card.append(node("p",simpleStatus(profile,live,s,group.available),"small"));
+  const hasSession=live.connected&&!live.retry_blocked&&!!cardTelemetry?.card_data?.[profile.id]?.recent?.[0];
+  card.append(renderSessionBlock(profile,hasSession));
+  const guard=connectionGuard(profile,s);
+  if(!["unknown","off","eligible"].includes(guard.state)){
+    const summary=node("p",undefined,"connection-guard");summary.dataset.guardState=guard.state;
+    if(guard.activity!==t("Activity not verified"))summary.append(node("span",guard.activity,"guard-activity"));summary.append(node("span",guard.label,"guard-status"));card.append(summary);
+  }
+  const actions=node("div",undefined,"actions instrument-actions"),button=node("button",t(live.retry_blocked?"Edit password":"Disconnect"),(hasSession?"secondary":"primary")+" connection-action");button.type="button";button.id="simple-connect-"+group.number+"-"+profile.id;
+  button.disabled=pendingRadios.has(mac);button.setAttribute("aria-label",live.retry_blocked?t("Edit Wi-Fi password for {name}",{name:profile.name}):t("Disconnect {name} · {connection}",{name:profile.name,connection}));button.setAttribute("aria-describedby",detail.id);
+  button.addEventListener("click",()=>{if(live.retry_blocked){openEditor(profile);$("network-password").focus();}else scopeAction(profile.id,"disconnect",button);});actions.append(button);
+  if(live.retry_blocked){const disconnect=node("button",t("Disconnect"),"text-button");disconnect.type="button";disconnect.id="simple-disconnect-"+group.number+"-"+profile.id;disconnect.disabled=pendingRadios.has(mac);disconnect.addEventListener("click",()=>scopeAction(profile.id,"disconnect",disconnect));actions.append(disconnect);}
+  const move=node("button",t("Move to another connection"),"text-button");move.type="button";move.id="instrument-"+profile.id+"-move";move.disabled=pendingRadios.has(mac)||![...groups].some(([destination,g])=>destination!==mac&&g.available&&!g.reserved&&!pendingRadios.has(destination))||!s.management?.paths?.length;move.addEventListener("click",()=>openConnectionChoice(profile,move));actions.append(move);card.append(actions);return card;
+}
+function instrumentPaths(id){return (endpointInventory?.endpoints?.find(row=>row.profile_id===id)?.paths||[]).filter(path=>path.ready);}
+
+async function copyEndpoint(address,button){
+  const epoch=statusEpoch,opener=button.id;
+  let copied=false;
+  try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(address);copied=true;}}catch(_){/* Plain HTTP uses the synchronous selection fallback below. */}
+  if(epoch!==statusEpoch||!accessReady)return;
+  if(!copied){
+    const selection=document.getSelection(),ranges=selection?[...Array(selection.rangeCount)].map((_,index)=>selection.getRangeAt(index).cloneRange()):[];
+    const focused=document.activeElement,start=focused?.selectionStart,end=focused?.selectionEnd;
+    const input=node("textarea",address,"copy-fallback");input.readOnly=true;input.setAttribute("aria-label",t("For your apps"));document.body.append(input);
+    try{input.focus({preventScroll:true});input.select();copied=!!document.execCommand?.("copy");}catch(_){copied=false;}
+    finally{input.remove();if(focused?.isConnected)focused.focus({preventScroll:true});else $(opener)?.focus({preventScroll:true});if(typeof start==="number"&&typeof end==="number")focused?.setSelectionRange?.(start,end);if(selection){selection.removeAllRanges();for(const range of ranges)selection.addRange(range);}}
+  }
+  if(epoch!==statusEpoch||!accessReady)return;
+  $("simple-feedback").textContent=t(copied?"Address copied.":"Could not copy. Select the address to copy it.");$("simple-feedback").hidden=false;
+}
+
+function openConnectionChoice(profile,opener){
+  if(!state||!accessReady)return;
+  const destinations=[...connectionGroups(state)].filter(([,g])=>g.available&&!g.reserved);
+  if(!profile.enabled&&!state.telescopes.some(p=>p.id===profile.id&&p.connected)&&destinations.length===1){requestConnection(profile,destinations[0][0],opener);return;}
+  connectionChoice={id:profile.id,opener:opener.id};renderConnectionChoice();$("connection-choice").showModal();
+}
+function renderConnectionChoice(){
+  const profile=state?.config.telescopes.find(p=>p.id===connectionChoice?.id);if(!profile){$("connection-choice").close();return;}
+  $("connection-choice-name").textContent=profile.name;
+  const moving=profile.enabled||state.telescopes.some(p=>p.id===profile.id&&p.connected);
+  $("connection-choices").replaceChildren(...[...connectionGroups(state)].filter(([mac,g])=>!g.reserved&&(!moving||mac!==profile.mac)).map(([mac,g])=>{
+    const row=node("div",undefined,"connection-choice-row"),occupant=state.config.telescopes.find(p=>p.enabled&&p.mac===mac),label=node("div");label.append(node("strong",connectionLabel(g)),node("p",!g.available?t("Connection unavailable"):occupant?t("Connected to {name}",{name:occupant.name}):t("Available"),"small"));
+    const button=node("button",t(moving?"Move here":"Connect"),"tertiary");button.type="button";button.id="choice-connect-"+g.number+"-"+profile.id;button.disabled=!g.available||pendingRadios.has(mac)||pendingRadios.has(profile.mac)||!state.management?.paths?.length;
+    button.addEventListener("click",()=>{const opener=$(connectionChoice.opener),current=state.config.telescopes.find(p=>p.id===profile.id);$("connection-choice").close();if(opener&&current)requestConnection(current,mac,opener);});row.append(label,button);return row;
+  }));
+}
+$("connection-choice").addEventListener("close",()=>{const opener=connectionChoice?.opener;connectionChoice=null;$("connection-choices").replaceChildren();if(opener)$(opener)?.focus({preventScroll:true});});
 
 function renderOtherInterfaces(s){
   const cards=[];
   for(const device of s.devices){
     const roles=[];
-    if(device.mac===s.config.home.mac)roles.push(["home","Reserved for private Wi-Fi"]);
-    if(s.hotspot?.active&&device.mac===s.hotspot.mac)roles.push(["hotspot","Reserved for hotspot"]);
+    if(configuredRadioRole(s,device.mac)==="home"||device.mac===s.config.home.mac)roles.push(["home","Reserved for private Wi-Fi"]);
+    if(configuredRadioRole(s,device.mac)==="hotspot"||s.hotspot?.active&&device.mac===s.hotspot.mac)roles.push(["hotspot","Reserved for hotspot"]);
     if(!roles.length)continue;
     const card=node("section",undefined,"card simple-card other-interface-card");
     const head=node("div",undefined,"simple-card-heading");head.append(node("h3",connectionLabel({device})));
@@ -305,7 +382,7 @@ function renderOtherInterfaces(s){
 
 function connectionGroups(s){
   const groups=new Map();
-  for(const d of s.devices)if(d.mac!==s.config.home.mac)groups.set(d.mac,{available:true,device:d,reserved:!!s.hotspot?.active&&s.hotspot.mac===d.mac});
+  for(const d of s.devices)if(d.mac!==s.config.home.mac&&radioAllows(s,d.mac,"telescope"))groups.set(d.mac,{available:true,device:d,reserved:!!s.hotspot?.active&&s.hotspot.mac===d.mac});
   for(const p of s.config.telescopes)if(p.enabled&&p.mac&&!groups.has(p.mac))groups.set(p.mac,{available:false});
   let number=0;for(const group of groups.values())group.number=++number;
   return groups;
@@ -344,19 +421,20 @@ function renderManagement(s){
 }
 
 function renderSimpleNetwork(s){
-  const ap=s.hotspot||{},ready=!!s.home_ip;
+  const ap=s.hotspot||{},ready=!!s.home_ip,wired=wiredHomePath(s);
   badge("simple-home-badge",ready?t("Connected"):s.config.home.ssid?t("Unavailable"):t("Set up required"),ready);
-  $("simple-home-name").textContent=s.config.home.ssid||t("No saved network");
+  $("simple-home-name").textContent=wired?t("Ethernet"):s.config.home.ssid||t("No saved network");
   $("simple-home-ip").textContent=s.home_ip||"—";
   const homeDevice=s.devices.find(d=>d.mac===s.config.home.mac);
-  $("simple-home-adapter").textContent=homeDevice?adapterLabel(homeDevice):t("Unavailable");
+  $("simple-home-adapter-label").textContent=t(wired?"Network adapter":"Wi-Fi adapter");
+  $("simple-home-adapter").textContent=wired?wired.interface:homeDevice?adapterLabel(homeDevice):t("Unavailable");
   if(!hotspotNameDirty&&!hotspotNamePending)$("hotspot-name").value=s.config.hotspot.ssid||"";
   const select=$("hotspot-interface"),chosen=hotspotAdapterDirty||hotspotNamePending?select.value:s.config.hotspot.mac||"";
   const options=[{value:"",label:t("Automatic")}];
   for(const d of s.devices){
     const scope=s.config.telescopes.find(p=>p.enabled&&p.mac===d.mac);
     const occupied=d.mac===s.config.home.mac?t("Reserved for private Wi-Fi"):scope?.name;
-    options.push({value:d.mac,label:adapterLabel(d)+(occupied?" · "+occupied:""),disabled:!!occupied||d.ap===false});
+    options.push({value:d.mac,label:adapterLabel(d)+(occupied?" · "+occupied:""),disabled:!!occupied||d.ap===false||!radioAllows(s,d.mac,"hotspot")});
   }
   if(chosen&&!options.some(o=>o.value===chosen))options.push({value:chosen,label:chosen+" · "+t("Unavailable")});
   const signature=JSON.stringify(options);
@@ -370,9 +448,9 @@ function renderSimpleNetwork(s){
   const nativeSeestar=connected.some(p=>p.seestar_proxy);
   $("simple-route-state").textContent=!ready?t("Private network unavailable"):vespera?t("Check required"):nativeSeestar&&!other?t("Not required for Seestar"):t("Depends on the app");
   $("simple-route-help").textContent=vespera?t("Singularity uses a router route for Vespera. The bridge cannot confirm that this route is configured. Other apps may have different requirements."):nativeSeestar&&!other?t("The Seestar relay allows its app to connect without adding a router route."):t("Access requirements depend on the telescope and its app. Router configuration cannot be verified from the bridge.");
-  badge("simple-ap-badge",ap.active?t("Active"):["no_free_radio","connection_protected","protected_no_recovery_radio","selected_adapter_unavailable"].includes(ap.reason)?t("Waiting"):t("Disabled"),!!ap.active);
+  badge("simple-ap-badge",ap.active?t("Active"):["no_free_radio","connection_protected","protected_no_recovery_radio","selected_adapter_unavailable","start_failed"].includes(ap.reason)?t("Waiting"):t("Disabled"),!!ap.active);
   $("simple-ap-name").textContent=ap.active?s.setup_ssid:t("Emergency hotspot");
-  $("simple-ap-detail").textContent=ap.reason==="selected_adapter_unavailable"?t("The selected hotspot adapter is unavailable or in use. Connect it or choose another free adapter. Any existing hotspot remains active."):ap.active?t("Join this Wi-Fi network to reach the device directly. The connection uses your hotspot password."):ap.reason==="connection_protected"?t("Optional hotspot change deferred while a connection is protected."):ap.reason==="protected_no_recovery_radio"?t("No unprotected radio is available for recovery access. The protected connection was not taken."):ap.reason==="no_free_radio"?t("All connections are in use. Telescopes keep priority."):ap.reason==="subnet_conflict"?t("Direct access is waiting for a network settings correction."):t("It starts automatically if the private network becomes unavailable.");
+  $("simple-ap-detail").textContent=ap.reason==="start_failed"?t("Could not start the hotspot. Check its driver and service logs."):ap.reason==="selected_adapter_unavailable"?t("The selected hotspot adapter is unavailable or in use. Connect it or choose another free adapter. Any existing hotspot remains active."):ap.active?t("Join this Wi-Fi network to reach the device directly. The connection uses your hotspot password."):ap.reason==="connection_protected"?t("Optional hotspot change deferred while a connection is protected."):ap.reason==="protected_no_recovery_radio"?t("No unprotected radio is available for recovery access. The protected connection was not taken."):ap.reason==="no_free_radio"?t("All connections are in use. Telescopes keep priority."):ap.reason==="subnet_conflict"?t("Direct access is waiting for a network settings correction."):t("It starts automatically if the private network becomes unavailable.");
   $("simple-ap-url").hidden=!ap.active;
   const clients=ap.clients||[];
   $("simple-client-title").textContent=t("Connected devices")+(ap.active&&ap.clients_available?" · "+clients.length:"");
@@ -389,6 +467,13 @@ function renderConnectionMode(s){
   $("connection-mode-purpose").textContent=t(selected==="private"?"Private Wi-Fi: stay on your usual network with Internet. Vespera may need a route on your router.":selected==="hotspot_shared"?"Connect your phone to the Astro Bridge hotspot for telescope access and Internet. Astro Bridge gets Internet from your private Wi-Fi.":"Hotspot without Internet: join Astro Bridge for telescope access without configuring your router.");
   $("simple-home-purpose").textContent=t(selected==="hotspot_shared"?"Your private Wi-Fi supplies Internet to the Astro Bridge hotspot. Connect your phone to the hotspot to use your telescopes and Internet.":selected==="hotspot_isolated"?"Your phone connects to the Astro Bridge hotspot to use your telescopes. Private Wi-Fi is optional and does not provide Internet to this hotspot.":"Connect Astro Bridge to your usual Wi-Fi to use your telescope apps on that network.");
   $("simple-home-detail").textContent=selected==="hotspot_shared"?t(s.home_ip?"Private Wi-Fi connected. Internet access on the hotspot depends on this network.":"Connect Astro Bridge to a private Wi-Fi network with Internet to share it through the hotspot."):selected==="hotspot_isolated"?"":t(s.home_ip?"Astro Bridge is accessible from your private network.":"Direct access lets you reach the device when the private network is absent.");
+  const wired=wiredHomePath(s);
+  $("connection-mode").querySelector('[value="private"]').textContent=t(wired?"Private network":"Private Wi-Fi bridge");
+  if(wired){
+    $("simple-home-purpose").textContent=t("Ethernet connects Astro Bridge to your private network.");
+    $("simple-home-detail").textContent=t("Astro Bridge is accessible from your private network.");
+    if(selected!=="hotspot_isolated")$("connection-mode-purpose").textContent=t("Ethernet connects Astro Bridge to your private network.");
+  }
   $("simple-home-detail").hidden=!$("simple-home-detail").textContent;
   $("optional-hotspot").hidden=selected!=="private";
   $("hotspot-mode-help").textContent=t(selected==="private"?"Telescopes have priority. The emergency hotspot starts automatically when the private network is unavailable.":"The hotspot stays enabled in this mode. Connect your phone to it to use your telescopes.");
@@ -401,14 +486,14 @@ function profilesFor(s,id){return s.config.telescopes.find(p=>p.id===id);}
 function localMessage(id,message){const element=$(id),key=BridgeI18n.sourceKey(message);if(key){element.dataset.i18n=key;dynamicMessages.add(id);}else{delete element.dataset.i18n;dynamicMessages.delete(id);}element.textContent=key?t(key):message;}
 function error(message=""){localMessage("error",message);$("error").hidden=!message;}
 function node(tag, text, cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
-async function api(path,data){
+async function api(path,data,signal){
   if(data!==undefined&&!["/api/login","/api/logout"].includes(path)){
     // A status read also detects changed/rolled-back UI bytes before any write.
     if(!await refresh()||!accessReady||BridgePWA.changed)throw new Error(t("Fresh authenticated status is required before changing settings."));
   }
   if(path.startsWith("/api/scan")&&!accessReady)throw new Error(t("Fresh authenticated status is required before changing settings."));
   const epoch=statusEpoch;
-  const options={cache:"no-store",credentials:"same-origin"};
+  const options={cache:"no-store",credentials:"same-origin",...(signal?{signal}:{})};
   if(data!==undefined)Object.assign(options,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(data)});
   const response=await fetch(path,options);
   const body=await response.json();
@@ -440,10 +525,16 @@ function renderProfileInfo(){
   const profile=state?.config.telescopes.find(p=>p.id===profileInfoId);
   if(!profile){$("profile-info").close();return;}
   const live=state.telescopes.find(p=>p.id===profile.id)||{},activity=state.connection_activity?.profiles?.[profile.id];
-  const signature=BridgeI18n.locale+JSON.stringify([profile.name,live,activity]);
+  const guard=connectionGuard(profile,state);
+  const endpoints=instrumentPaths(profile.id);
+  const signature=BridgeI18n.locale+JSON.stringify([profile.name,live,activity,guard,endpoints]);
   if(signature===profileInfoSignature)return;profileInfoSignature=signature;
   $("profile-info-name").textContent=profile.name;
-  const paragraphs=[];
+  const paragraphs=[node("p",guard.activity,"small"),node("p",guard.label,"small")];
+  if(endpoints.length){
+    paragraphs.push(node("h3",t("For your apps")));
+    for(const path of endpoints){const row=node("p",t(path.path==="hotspot"?"Hotspot":"Private network")+" · "+path.transport.toUpperCase()+" · ","small");row.append(node("code",path.host+":"+path.port));if(path.requires_client_route)row.append(node("span"," · "+t("Requires a route from your app’s network.")));paragraphs.push(row);}
+  }
   if(live.client_ip)paragraphs.push(node("p",t("Pi: {ip}",{ip:live.client_ip}),"small"));
   const paths=(live.management_paths||[]).filter(path=>path.forwarding_ready);
   for(const path of paths)paragraphs.push(node("p",t("{path}: route {subnet} via {ip}",{path:t(path.role==="ap"?"Hotspot":"Private network"),subnet:live.subnet||"—",ip:path.host}),"small"));
@@ -459,9 +550,26 @@ function renderProfileInfo(){
   if(activity&&activity.packets!==null)paragraphs.push(node("p",t("Path matches: {packets} packets / {bytes} bytes; established TCP: {count}.",{packets:activity.packets,bytes:activity.bytes,count:activity.tcp_established}),"small"));
   $("profile-info-body").replaceChildren(...paragraphs);
 }
-$("profile-info").addEventListener("close",()=>{const id=profileInfoId;profileInfoId=null;profileInfoSignature="";if(id)$("profile-"+id+"-info")?.focus({preventScroll:true});});
+$("profile-info").addEventListener("close",()=>{const id=profileInfoId;profileInfoId=null;profileInfoSignature="";if(id)$(profileInfoOpener||"profile-"+id+"-info")?.focus({preventScroll:true});profileInfoOpener=null;});
 
+let pairedAppsSignature="";
+function renderPairedApps(clients,revision){
+  const signature=BridgeI18n.locale+revision+JSON.stringify(clients);
+  if(pairedAppsSignature===signature)return;pairedAppsSignature=signature;
+  if(!clients.length){$("paired-apps-list").replaceChildren(node("p",t("No paired apps."),"small"));return;}
+  const rows=clients.map(client=>{
+    const row=node("div",undefined,"actions"),name=node("span",client.name),button=node("button",t("Revoke"),"secondary");
+    name.style.overflowWrap="anywhere";button.type="button";
+    button.setAttribute("aria-label",t("Revoke access for {name}",{name:client.name}));
+    button.addEventListener("click",async()=>{
+      button.disabled=true;
+      try{await api("/api/auth/clients/revoke",{client_id:client.client_id,config_revision:revision});await refresh();}
+      catch(failure){error(failure.message);}finally{button.disabled=false;}
+    });row.append(name,button);return row;
+  });$("paired-apps-list").replaceChildren(...rows);
+}
 function render(s){
+  renderPairedApps(s.paired_clients||[],s.config_revision);
   if(s.deployment){
     $("retry-button").hidden=!s.deployment.host_reboot;
     const option=$("credential-target").querySelector('option[value="linux"]');
@@ -470,8 +578,8 @@ function render(s){
   }
   if(s.ui_revision!==BridgePWA.revision){BridgePWA.checkRevision(s.ui_revision||"unknown");return;}
   loggedOut=false;accessReady=true;statusFailures=0;$("dashboard").inert=false;$("login-form").inert=false;BridgePWA.connection("");
-  state=s;csrf=s.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;$("demo").hidden=!s.demo;
-  renderAdapterNotice(s);renderManagement(s);renderSimple(s);renderProtection(s);renderAutomation(s);ensureView=s.connection_operation||null;renderEnsure();
+  state=s;csrf=s.csrf;syncSessionPage();$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;$("demo").hidden=!s.demo;
+  void loadCameras();renderAdapterNotice(s);renderManagement(s);renderSimple(s);renderProtection(s);renderAutomation(s);ensureView=s.connection_operation||null;renderEnsure();
   if(!autoPreferencePending)$("auto-connect").checked=!!s.config.auto_connect;$("auto-connect").disabled=autoPreferencePending||ensureView?.state==="running";BridgeEvents.start(s.event_context);BridgeSecure.start(s.event_context);BridgePush.start();if(!updateState)refreshUpdates();focusNotificationTarget();
   $("local-url").textContent=s.url;$("local-url").href=s.url;
   const defaults=Object.entries(s.default_credentials||{}).filter(([,v])=>v).map(([key])=>({web:t("web interface"),linux:t("Linux bridge account"),hotspot:t("Wi-Fi hotspot")}[key]));
@@ -488,7 +596,7 @@ function render(s){
     const row=node("tr"),instrument=node("td");
     const heading=node("div",undefined,"instrument-heading"),info=node("button","i","info-button");
     info.type="button";info.id="profile-"+p.id+"-info";info.setAttribute("aria-label",t("Connection details for {name}",{name:p.name}));info.setAttribute("aria-haspopup","dialog");info.setAttribute("aria-controls","profile-info");
-    info.addEventListener("click",()=>{profileInfoId=p.id;renderProfileInfo();$("profile-info").showModal();});
+    info.addEventListener("click",()=>{profileInfoOpener=info.id;profileInfoId=p.id;renderProfileInfo();$("profile-info").showModal();});
     heading.append(node("strong",p.name),info);instrument.append(heading,node("small",instrumentKind(p.kind)));
     const address=node("td",p.target_ip||"—");
     const paths=(live.management_paths||[]).filter(path=>path.forwarding_ready);
@@ -531,10 +639,141 @@ function render(s){
   $("telescopes").replaceChildren(...rows);
   if($("profile-info").open)renderProfileInfo();
   if(focused)$(focused)?.focus({preventScroll:true});
-  $("radios").replaceChildren(...s.devices.map(d=>{const row=node("div",undefined,"radio-row");const label=node("div",adapterLabel(d));label.append(node("small",d.mac+" · "+(d.bands||[]).join(" / ")+" GHz"));const roles=[];if(d.mac===s.config.home.mac)roles.push(t("Home"));for(const p of s.config.telescopes)if(p.enabled&&p.mac===d.mac)roles.push(p.name);if(ap.active&&ap.mac===d.mac)roles.push(t("Hotspot"));row.append(label,node("span",roles.join(" · ")||t("Free")));return row;}));
+  renderRadioRoles(s);
+  renderStations(s);
+  renderSerial(s);
   renderPlugins(s);
   if(!preferencesDirty){$("hostname").value=s.config.hostname;$("country").value=s.config.country;}
 }
+// Declared devices (every link nature) and serial mounts. Writes use the same routes as paired apps.
+const LINK_LABEL={wifi:"Wi-Fi",serial_usb:"Serial (USB)",usb:"USB"};
+const linkLabel=type=>t(LINK_LABEL[type]||"Unknown");
+async function serialRequest(method,path,body){
+  const response=await fetch("/api"+path,{method,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,"If-Match":'"'+state.config_revision+'"'},...body===undefined?{}:{body:JSON.stringify(body)}});
+  const value=await response.json();if(!response.ok){if(response.status===401)showLogin();throw new Error(value.error?.message||"Action failed.");}return value;
+}
+function declaredState(row){
+  const parts=[t(row.state==="online"?"Online":row.state==="offline"?"Offline":"Unknown")];
+  if(row.client_connected!==null&&row.client_connected!==undefined)parts.push(t(row.client_connected?"Client connected":"No client"));
+  return parts.join(" · ");
+}
+function renderSerial(s){
+  const cameras=(typeof cameraRows!=="undefined"?cameraRows:[]).map(row=>({id:row.instrument_id||row.id,name:row.name,kind:"camera",link_type:"usb",state:row.alpaca||row.indi?.state==="ready"?"online":"offline",client_connected:null,endpoint:null}));
+  const rows=(s.declared_devices||[]).concat(cameras).map(row=>{
+    const item=node("div",undefined,"radio-row"),label=node("div");
+    const family=row.link_type==="serial_usb"?t("NexStar hand control"):row.kind==="camera"?t("Camera"):instrumentKind(row.family);
+    label.append(node("strong",row.name),node("small",family+" · "+linkLabel(row.link_type)));
+    label.append(node("span",declaredState(row),"badge"+(row.state==="online"?" online":"")));
+    if(row.endpoint?.port)label.append(node("small",t("Enter in the app: {host} · TCP {port}",{host:row.endpoint.host||location.hostname,port:row.endpoint.port})));
+    else if(row.link_type==="wifi"&&row.access==="direct"){const spec=pluginById(row.family),live=(s.telescopes||[]).find(p=>p.id===row.id)||{};
+      for(const path of (live.management_paths||[]).filter(p=>p.forwarding_ready))if(spec?.relay&&spec.category==="mount")label.append(node("small",t("App address: {ip} · {transport} {ports}",{ip:path.host,transport:spec.relay.transport.toUpperCase(),ports:spec.relay.ports.join(", ")})));}
+    if(row.detail?.adapter_present===false)label.append(node("small",t("Adapter unplugged")));
+    if(row.detail?.identity_mismatch)label.append(node("small",t("A different model answers on this adapter than the one declared.")));
+    item.id="declared-"+row.id;item.append(label);return item;});
+  $("declared-list").replaceChildren(...rows);$("declared-empty").hidden=rows.length>0;
+  const found=(s.serial_detected||[]).map(d=>{
+    const item=node("div",undefined,"radio-row"),label=node("div");
+    label.append(node("strong",[d.manufacturer,d.product].filter(Boolean).join(" ")||t("Serial adapter")),node("small",t("Serial (USB)")+(d.serial_number?" · "+t("Adapter serial number {serial}",{serial:d.serial_number}):"")));
+    label.append(node("span",d.identification==="identified"?t("NexStar hand control {model}, version {version}",{model:d.identity.model_name||"",version:d.identity.hand_control_version||"?"}):t(d.identification==="not_identified"?"No answer from a NexStar hand control":"Hand control not read yet"),"badge"+(d.identification==="identified"?" online":"")));
+    if(d.stable_kind==="by-path")label.append(node("small",t("Identified by its USB socket: always plug it into the same socket.")));
+    if(!d.can_add)label.append(node("small",t("Cannot be added: no stable link was found.")));
+    const group=node("div",undefined,"table-actions");
+    const add=node("button",t("Add as mount…"),"secondary");add.type="button";add.id="detected-add-"+d.node.split("/").pop();add.disabled=!d.can_add;add.addEventListener("click",()=>openSerial(null,d));group.append(add);
+    if(d.identification!=="identified"){const read=node("button",t("Identify"),"text-button");read.type="button";read.addEventListener("click",async()=>{read.disabled=true;try{await serialRequest("POST","/serial-devices/identify",{device:d.stable_path});await refresh();}catch(e){error(t(e.message));}finally{read.disabled=false;}});group.append(read);}
+    item.append(label,group);return item;});
+  $("detected-list").replaceChildren(...found);$("detected-devices").hidden=!found.length;
+  const mounts=(s.serial_mounts||[]).map(m=>{
+    const item=node("div",undefined,"radio-row"),label=node("div"),group=node("div",undefined,"table-actions");
+    label.append(node("strong",m.name),node("small",t("Serial (USB)")+" · TCP "+m.tcp_port+" · "+m.baud+" "+m.format),node("span",t(m.adapter_present===false?"Adapter missing":m.client?"Client connected":"Ready"),"badge"+(m.adapter_present!==false?" online":"")));
+    const edit=node("button",t("Edit"),"secondary");edit.type="button";edit.id="serial-"+m.id+"-edit";edit.setAttribute("aria-label",t("Edit {name}",{name:m.name}));edit.addEventListener("click",()=>openSerial(m));
+    const remove=node("button",t("Delete"),"text-button");remove.type="button";remove.id="serial-"+m.id+"-remove";remove.setAttribute("aria-label",t("Delete {name}",{name:m.name}));
+    remove.addEventListener("click",async()=>{if(!confirm(t("Remove the serial mount {name}?",{name:m.name})))return;try{await serialRequest("DELETE","/serial-mounts/"+m.id);error();await refresh();}catch(e){error(t(e.message));}});
+    group.append(edit,remove);item.append(label,group);return item;});
+  $("serial-mounts").replaceChildren(...mounts);$("empty-serial").hidden=mounts.length>0;
+}
+let serialEditing=null;
+function openSerial(mount,detected){
+  serialEditing=mount?{mount}:{detected};const p=mount||detected.proposal;
+  $("serial-editor-title").textContent=t(mount?"Edit serial mount":"Add serial mount");$("serial-error").hidden=true;
+  $("serial-name").value=p.name;$("serial-adapter").textContent=mount?mount.device.split("/").pop():(detected.serial_number||detected.stable_path.split("/").pop());
+  $("serial-settings").textContent=p.baud+" "+p.format;$("serial-port").textContent="TCP "+p.tcp_port;$("serial-idle").value=p.idle_timeout_seconds;
+  $("serial-save").textContent=t(mount?"Save":"Confirm and add");$("serial-editor").showModal();
+}
+for(const id of ["serial-close","serial-cancel"])$(id).addEventListener("click",()=>$("serial-editor").close());
+$("serial-form").addEventListener("submit",async event=>{
+  event.preventDefault();const button=$("serial-save");button.disabled=true;$("serial-error").hidden=true;
+  try{const name=$("serial-name").value.trim(),idle=Number($("serial-idle").value);
+    if(serialEditing.mount){const body={name};if(idle!==serialEditing.mount.idle_timeout_seconds)body.idle_timeout_seconds=idle;await serialRequest("PATCH","/serial-mounts/"+serialEditing.mount.id,body);}
+    else await serialRequest("POST","/serial-mounts",Object.assign({},serialEditing.detected.proposal,{name,idle_timeout_seconds:idle}));
+    $("serial-editor").close();await refresh();}
+  catch(e){localMessage("serial-error",e.message);$("serial-error").hidden=false;}finally{button.disabled=false;}
+});
+let interfaceRoleDraft=null,interfaceRoleRevision=null,interfaceRolePending=false,interfaceRoleSignature="";
+// Station instruments join the bridge network: no adapter, SSID or password.
+let stationEditing=null;
+function renderStations(s){
+  const stations=s.config.stations||[],live=Object.fromEntries((s.stations||[]).map(row=>[row.id,row]));
+  const rows=stations.map(p=>{const row=node("div",undefined,"radio-row"),label=node("div");label.append(node("strong",p.name),node("small",instrumentKind(p.kind)+" · "+p.target_ip));
+    const reachable=live[p.id]?.reachable;label.append(node("span",t(reachable==null?"Not checked yet":reachable?"Answering":"Not answering"),"badge"+(reachable?" online":"")));
+    const group=node("div",undefined,"table-actions");
+    const edit=node("button",t("Edit"),"secondary");edit.type="button";edit.id="station-"+p.id+"-edit";edit.setAttribute("aria-label",t("Edit {name}",{name:p.name}));edit.addEventListener("click",()=>openStation(p));
+    const remove=node("button",t("Delete"),"text-button");remove.type="button";remove.id="station-"+p.id+"-remove";remove.setAttribute("aria-label",t("Delete {name}",{name:p.name}));
+    remove.addEventListener("click",async()=>{if(!confirm(t("Remove the station instrument {name}?",{name:p.name})))return;try{const data=configPayload();data.stations=(data.stations||[]).filter(item=>item.id!==p.id);await save(data);}catch(e){error(e.message);}});
+    group.append(edit,remove);row.append(label,group);return row;});
+  $("stations").replaceChildren(...rows);$("empty-stations").hidden=rows.length>0;
+}
+function openStation(p=null){
+  stationEditing={id:p?.id||"station-"+crypto.getRandomValues(new Uint32Array(1))[0].toString(36)};
+  $("station-editor-title").textContent=t(p?"Edit station instrument":"Add station instrument");$("station-error").hidden=true;
+  $("station-name").value=p?.name||"";$("station-kind").value=p?.kind||"seestar";$("station-address").value=p?.target_ip||"";$("station-client-connect").checked=p?.client_connect!==false;
+  $("station-clients").replaceChildren(...(state?.hotspot?.clients||[]).filter(c=>c.ip).map(c=>{const option=node("option",c.hostname||c.ip);option.value=c.ip;return option;}));
+  $("station-editor").showModal();
+}
+$("add-station").addEventListener("click",()=>openStation());
+for(const id of ["station-close","station-cancel"])$(id).addEventListener("click",()=>$("station-editor").close());
+$("station-form").addEventListener("submit",async event=>{
+  event.preventDefault();const button=$("station-save");button.disabled=true;$("station-error").hidden=true;
+  try{const data=configPayload(),entry={id:stationEditing.id,name:$("station-name").value,kind:$("station-kind").value,access:"station",target_ip:$("station-address").value.trim(),client_connect:$("station-client-connect").checked};
+    const list=data.stations||[],index=list.findIndex(item=>item.id===entry.id);if(index<0)list.push(entry);else list[index]=entry;data.stations=list;await save(data,false,true);$("station-editor").close();}
+  catch(e){localMessage("station-error",e.message);$("station-error").hidden=false;}finally{button.disabled=false;}
+});
+function configuredRadioRole(s,mac){return s.config.interface_roles?.[mac]||((s.config.hotspot.mac===mac)?"hotspot":s.config.home.mac===mac?"home":"auto");}
+function radioAllows(s,mac,purpose){return ["auto",purpose].includes(configuredRadioRole(s,mac));}
+function renderRadioRoles(s){
+  const hotspotMac=Object.keys(s.config.interface_roles||{}).find(mac=>s.config.interface_roles[mac]==="hotspot")||s.config.hotspot.mac;
+  const warning=!hotspotMac?"No adapter is reserved for the hotspot. Choose Hotspot on an available adapter to keep direct access after restart.":!s.devices.some(d=>d.mac===hotspotMac)?"Hotspot adapter missing. Reconnect it or choose another adapter. Its role remains reserved.":"";
+  $("interface-role-warning").hidden=!warning;$("interface-role-warning").textContent=warning?t(warning):"";
+  const devices=new Map(s.devices.map(d=>[d.mac,d]));
+  for(const mac of Object.keys(s.config.interface_roles||{}))if(!devices.has(mac))devices.set(mac,{mac,missing:true});
+  const signature=BridgeI18n.locale+JSON.stringify([...devices])+JSON.stringify(s.config.interface_roles)+JSON.stringify(s.telescopes.map(p=>[p.id,p.connected]))+JSON.stringify(s.hotspot);
+  if(interfaceRoleDraft||signature===interfaceRoleSignature)return;interfaceRoleSignature=signature;
+  const focused=$("radios").contains(document.activeElement)?document.activeElement.id:null;
+  const labels={auto:"Auto",home:"Private Wi-Fi",hotspot:"Hotspot",telescope:"Telescopes and mounts"};
+  $("radios").replaceChildren(...[...devices.values()].map(d=>{
+    const row=node("div",undefined,"radio-row"),label=node("label",d.missing?d.mac:adapterLabel(d));
+    const id="radio-role-"+d.mac.replaceAll(":","");label.htmlFor=id;label.append(node("small",d.mac+" · "+(d.missing?t("Adapter missing"):(d.bands||[]).join(" / ")+" GHz")));
+    const group=node("div",undefined,"radio-role-controls"),select=node("select");select.id=id;select.dataset.roleMac=d.mac;
+    for(const [value,text]of Object.entries(labels)){const option=node("option",t(text));option.value=value;option.disabled=value==="hotspot"&&d.ap===false;select.append(option);}
+    select.value=configuredRadioRole(s,d.mac);select.disabled=interfaceRolePending;
+    select.addEventListener("change",()=>{
+      if(!interfaceRoleDraft){interfaceRoleDraft=Object.fromEntries([...devices.keys()].map(mac=>[mac,configuredRadioRole(state,mac)]));interfaceRoleRevision=state.config_revision;}
+      if(["home","hotspot"].includes(select.value))for(const mac of Object.keys(interfaceRoleDraft))if(mac!==d.mac&&interfaceRoleDraft[mac]===select.value){interfaceRoleDraft[mac]="auto";const other=$("radio-role-"+mac.replaceAll(":",""));if(other)other.value="auto";}
+      interfaceRoleDraft[d.mac]=select.value;$("interface-role-result").textContent=t("Unsaved adapter roles");
+    });
+    const usage=[];if(s.config.home.mac===d.mac)usage.push(t("Private Wi-Fi"));if(s.hotspot?.active&&s.hotspot.mac===d.mac)usage.push(t("Hotspot"));
+    for(const profile of s.config.telescopes)if(profile.enabled&&profile.mac===d.mac)usage.push(profile.name);
+    group.append(select,node("small",d.missing?t("Adapter missing"):usage.length?t("Current use: {name}",{name:usage.join(" · ")}):t("Not in use")));row.append(label,group);return row;
+  }));
+  if(focused)$(focused)?.focus({preventScroll:true});
+}
+$("interface-role-form").addEventListener("submit",async event=>{
+  event.preventDefault();if(interfaceRolePending||!state)return;
+  const data=configPayload();data.interface_roles=interfaceRoleDraft||Object.fromEntries([...$("radios").querySelectorAll("select")].map(select=>[select.dataset.roleMac,select.value]));data.config_revision=interfaceRoleRevision||state.config_revision;
+  interfaceRolePending=true;$("interface-role-save").disabled=true;for(const select of $("radios").querySelectorAll("select"))select.disabled=true;
+  try{await save(data);interfaceRoleDraft=null;interfaceRoleRevision=null;interfaceRoleSignature="";$("interface-role-result").textContent=t("Adapter roles saved. Network connections are being updated.");}
+  catch(e){$("interface-role-result").textContent=t(e.message);}
+  finally{interfaceRolePending=false;$("interface-role-save").disabled=false;for(const select of $("radios").querySelectorAll("select"))select.disabled=false;if(state)renderRadioRoles(state);}
+});
 let pluginCatalog=[],pluginInfoId=null,pluginListSignature="",pluginDetailsSignature="";
 const pluginPolicyId=id=>({seestar:"auto-demand",vespera:"auto-vespera-demand",dwarf:"auto-dwarf-demand",zwo_mount:"auto-zwo-mount-demand",synscan:"auto-synscan-demand"}[id]||"auto-plugin-"+id);
 const pluginById=id=>pluginCatalog.find(p=>p.id===id);
@@ -569,7 +808,8 @@ function renderPluginDetails(){
   $("plugin-info-body").replaceChildren(...body);
 }
 function renderPlugins(s){
-  const signature=BridgeI18n.locale+JSON.stringify(s.config.telescopes.map(p=>[p.kind,p.id]))+JSON.stringify(s.telescopes.map(p=>[p.id,p.connected]));
+  if(Date.now()>makerChipRefresh){makerChipRefresh=Date.now()+5000;const epoch=makerKeyEpoch;makerKeyRequest("GET","").then(value=>{if(epoch===makerKeyEpoch)makerSessionKeyState=value.keys[0].state;}).catch(()=>{});}
+  const signature=makerSessionKeyState+BridgeI18n.locale+JSON.stringify(s.config.telescopes.map(p=>[p.kind,p.id]))+JSON.stringify(s.telescopes.map(p=>[p.id,p.connected]));
   if(signature!==pluginListSignature){
     pluginListSignature=signature;
     const levels={partial_hardware:"Partly tested on hardware",simulation:"Tested in simulation",unverified:"Hardware not yet tested"};
@@ -578,6 +818,7 @@ function renderPlugins(s){
       card.dataset.pluginId=p.id;info.type="button";info.id="plugin-"+p.id+"-info";info.setAttribute("aria-label",t("Plugin details")+" · "+t(p.name));info.setAttribute("aria-haspopup","dialog");info.setAttribute("aria-controls","plugin-info");
       info.addEventListener("click",()=>{pluginInfoId=p.id;renderPluginDetails();$("plugin-info").showModal();});heading.append(name,info);
       card.append(heading,node("p",t(p.description)),node("span",t(levels[p.validation.level]),"badge"));
+      card.append(node("span",t(sessionCapability(p)),"badge"));
       const features=node("ul",undefined,"plugin-features");if(p.discovery.engine==="none")features.append(node("li",t(p.relay?"Connect through the bridge":"Direct IP access")));
       if(p.discovery.engine!=="none")features.append(node("li",t("App-triggered switching available")));
       if(p.category==="mount")features.append(node("li",t("Protects control and guiding")));
@@ -597,7 +838,12 @@ function refresh(){
   if(statusRefresh)return statusRefresh;
   const epoch=statusEpoch;polling=true;
   statusRefresh=(async()=>{
-    try{const result=await api("/api/status");if(epoch!==statusEpoch)return false;if(!pluginCatalog.length){const catalog=await api("/api/plugins");if(epoch!==statusEpoch)return false;installPluginCatalog(catalog);}render(result);return accessReady;}
+    try{const result=await api("/api/status");if(epoch!==statusEpoch)return false;if(!pluginCatalog.length){const catalog=await api("/api/plugins");if(epoch!==statusEpoch)return false;installPluginCatalog(catalog);}
+      const endpointAbort=new AbortController(),endpointTimeout=setTimeout(()=>endpointAbort.abort(),1000);
+      try{const endpoints=await api("/api/endpoints",undefined,endpointAbort.signal);if(epoch!==statusEpoch)return false;endpointInventory=endpoints.config_revision===result.config_revision?endpoints:null;}catch(_){if(epoch!==statusEpoch)return false;endpointInventory=null;}finally{clearTimeout(endpointTimeout);}
+      const telemetryAbort=new AbortController(),telemetryTimeout=setTimeout(()=>telemetryAbort.abort(),1000);
+      try{const snapshot=await api("/api/telemetry",undefined,telemetryAbort.signal);if(epoch!==statusEpoch)return false;cardTelemetry=snapshot.config_revision===result.config_revision?snapshot:null;}catch(_){if(epoch!==statusEpoch)return false;cardTelemetry=null;}finally{clearTimeout(telemetryTimeout);}
+      render(result);return accessReady;}
     catch(e){
       if(epoch===statusEpoch){statusFailures++;accessReady=false;$("dashboard").inert=true;BridgeEvents.suspend();BridgeSecure.suspend();BridgePush.suspend();
         if(!navigator.onLine||statusFailures>=2)invalidateConnection("offline");
@@ -630,11 +876,11 @@ async function scopeAction(id,action,button,assignment={}){
   }catch(e){error(e.code==="CONNECTION_PROTECTED"?protectionError(e.code):e.message);}finally{for(const radio of radios)pendingRadios.delete(radio);button.disabled=false;if(state)renderSimple(state);if(restoreFocus)$(buttonId)?.focus({preventScroll:true});}
 }
 function configPayload(){return structuredClone(state.config);}
-async function save(data, savePreferences=false){
+async function save(data, savePreferences=false, keepEditor=false){
   data.config_revision??=state.config_revision;
   const changedName=data.hostname!==state.config.hostname;
   const changedHome=data.home.ssid!==state.config.home.ssid||data.home.mac!==state.config.home.mac;
-  const result=await api("/api/config",data);$("editor").close();if(savePreferences)preferencesDirty=$("hostname").value!==data.hostname||$("country").value!==data.country;
+  const result=await api("/api/config",data);if(!keepEditor)$("editor").close();if(savePreferences)preferencesDirty=$("hostname").value!==data.hostname||$("country").value!==data.country;
   if(changedName||changedHome){$("apply-notice").hidden=false;$("apply-message").textContent=t("Settings saved. Join the private network if necessary, then open after a few seconds:");$("apply-url").textContent=result.url;$("apply-url").href=result.url;}
   if(changedName){relocated=true;showLogin();$("login").hidden=true;return;}
   if(result.sessions_invalidated){showLogin();error(t("Settings saved. Sign in with your new administrator password."));}
@@ -645,16 +891,16 @@ function openEditor(profile=null,home=false){
   if(!state)return;discoveryEpoch++;discoveryChoices=[];editing={candidate:null,home,presetKind:profile?.kind||"generic",id:profile?.id||"scope-"+crypto.getRandomValues(new Uint32Array(1))[0].toString(36)};
   $("editor-step").hidden=!!profile||home;$("editor-step").dataset.i18n="Step 2 of 2 — check the details, then add your telescope.";$("editor-step").textContent=t($("editor-step").dataset.i18n);$("choose-telescope").hidden=!!profile||home;
   $("profile-advanced").open=false;$("physical-advanced").open=false;$("scan").hidden=false;$("factory-password-help").hidden=true;
-  $("profile-replaceable-row").hidden=home;$("profile-auto-row").hidden=home;$("physical-advanced").hidden=home;
+  $("profile-replaceable-row").hidden=home;$("profile-auto-row").hidden=home;$("profile-client-row").hidden=home;$("physical-advanced").hidden=home;
   $("network-save").dataset.i18n=!profile&&!home?"Add telescope":"Save";$("network-save").textContent=t($("network-save").dataset.i18n);
   const p=home?state.config.home:profile||{};$("editor-title").textContent=home?t("Private network"):profile?t("Edit telescope"):t("Add telescope");$("scope-fields").hidden=home;$("scope-ip").hidden=home;$("first-admin").hidden=state.config.admin_configured;$("initial-admin").required=false;$("initial-admin").value="";
-  $("profile-name").value=p.name||"";$("profile-name").required=!home;$("profile-kind").value=p.kind||"generic";$("profile-auto-eligible").checked=!!p.auto_eligible;$("profile-replaceable").checked=!!p.auto_replaceable;
+  $("profile-name").value=p.name||"";$("profile-name").required=!home;$("profile-kind").value=p.kind||"generic";$("profile-client-connect").checked=p.client_connect!==false;$("profile-auto-eligible").checked=!!p.auto_eligible;$("profile-replaceable").checked=!!p.auto_replaceable;
   const select=$("network-interface");select.replaceChildren();
-  for(const d of state.devices){if(!home&&d.mac===state.config.home.mac)continue;const occupants=state.config.telescopes.filter(p=>p.enabled&&p.mac===d.mac);const option=node("option",adapterLabel(d)+(occupants.length?" · "+occupants.map(p=>p.name).join(", "):""));option.value=d.mac;select.append(option);}
+  for(const d of state.devices){if(!radioAllows(state,d.mac,home?"home":"telescope")||!home&&d.mac===state.config.home.mac)continue;const occupants=state.config.telescopes.filter(p=>p.enabled&&p.mac===d.mac);const option=node("option",adapterLabel(d)+(occupants.length?" · "+occupants.map(p=>p.name).join(", "):""));option.value=d.mac;select.append(option);}
   if(p.mac&&!state.devices.some(d=>d.mac===p.mac)){const o=node("option",t("Missing adapter · {mac}",{mac:p.mac}));o.value=p.mac;select.append(o);}
   select.value=p.mac||[...select.options].find(o=>!state.config.telescopes.some(p=>p.enabled&&p.mac===o.value))?.value||select.options[0]?.value||"";
   $("network-ssid").value=p.ssid||"";$("network-ssid").dataset.bssid=p.bssid||"";$("network-password").required=false;$("network-password").value="";$("network-password").placeholder=p.has_password?t("Saved · leave empty to keep"):t("Network password");$("network-open").checked=!!p.ssid&&!p.has_password;$("network-hidden").checked=!!p.hidden;$("target-ip").value=p.target_ip||"";$("target-ip").required=!home;$("radio-fields").hidden=!home;$("network-interface").required=home;
-  $("profile-preset-help").textContent=t("Choose a type to prefill known values. Select your instrument’s actual Wi-Fi network.");$("editor-error").hidden=true;$("scan-results").replaceChildren();$("physical-fields").hidden=home;$("scan").disabled=false;$("discover-reachable").disabled=false;scanning=false;$("binding-bssid").value="";$("binding-confirm").checked=false;$("bind-after-save").checked=false;$("discovery-info").textContent="";renderBinding(profile);radioHelp();if(!$("editor").open)$("editor").showModal();
+  $("profile-preset-help").textContent=t("Choose a type to prefill known values. Select your instrument’s actual Wi-Fi network.");$("editor-error").hidden=true;$("scan-results").replaceChildren();$("physical-fields").hidden=home;$("scan").disabled=false;$("discover-reachable").disabled=false;scanning=false;$("binding-bssid").value="";$("binding-confirm").checked=false;$("bind-after-save").checked=false;$("discovery-info").textContent="";renderBinding(profile);radioHelp();loadMakerKey();if(!$("editor").open)$("editor").showModal();
 }
 function radioHelp(){const mac=$("network-interface").value;const other=state.config.telescopes.find(p=>p.enabled&&p.mac===mac&&p.id!==editing.id);$("radio-help").textContent=editing.home?t("Changing the home adapter may interrupt access to the interface."):other?t("Adapter used by {name}. Connect this profile to replace it, or save without connecting.",{name:other.name}):t("This adapter will be assigned to the instrument when connected.");}
 $("network-interface").addEventListener("change",radioHelp);
@@ -667,22 +913,26 @@ $("profile-kind").addEventListener("change",()=>{
   for(const [id,key] of [["profile-name","name"],["target-ip","ip"]]){
     const field=$(id);if(!field.value||field.value===previous?.[key])field.value=preset[key];
   }
-  editing.presetKind=kind;
+  editing.presetKind=kind;loadMakerKey();
   $("profile-preset-help").textContent=kind==="dwarf"?t("Name prefilled. The IP address depends on the DWARF model: check its app, then choose its Wi-Fi network."):kind==="generic"?t("Enter your instrument settings and choose its Wi-Fi network."):t("Suggested name and usual IP address. Verify them and choose your instrument’s actual Wi-Fi network. Custom values are preserved.");
 });
-$("editor").addEventListener("close",()=>{localMessage("editor-error","");discoveryEpoch++;});
+$("editor").addEventListener("close",()=>{makerKeyEpoch++;clearTimeout(makerKeyTimer);$("maker-key-file").value="";localMessage("editor-error","");discoveryEpoch++;});
 $("add-scope").addEventListener("click",()=>openDiscovery());$("close-editor").addEventListener("click",()=>{discoveryEpoch++;discoveryChoices=[];$("editor").close();});
 $("network-form").addEventListener("invalid",event=>{const details=event.target.closest("details");if(details)details.open=true;},true);
 $("network-form").addEventListener("submit",async event=>{
-  event.preventDefault();const button=$("network-save");button.disabled=true;$("editor-error").hidden=true;
+  event.preventDefault();const button=$("network-save");button.disabled=true;$("editor-error").hidden=true;let errorSnapshot=null;
   try{const data=configPayload();data.admin_password=$("initial-admin").value;const network={mac:editing.home?$("network-interface").value:(state.config.telescopes.find(p=>p.id===editing.id)?.enabled?state.config.telescopes.find(p=>p.id===editing.id).mac:""),ssid:$("network-ssid").value,password:$("network-password").value,open:$("network-open").checked,hidden:$("network-hidden").checked,bssid:$("network-ssid").dataset.bssid||""};
-    if(editing.home)data.home=network;else{const p={...network,auto_eligible:$("profile-auto-eligible").checked,auto_replaceable:$("profile-replaceable").checked,id:editing.id,name:$("profile-name").value,kind:$("profile-kind").value,target_ip:$("target-ip").value,enabled:!!state.config.telescopes.find(p=>p.id===editing.id)?.enabled};const index=data.telescopes.findIndex(p=>p.id===editing.id);if(p.enabled)for(const other of data.telescopes)if(other.mac===p.mac)other.enabled=false;if(index<0)data.telescopes.push(p);else data.telescopes[index]=p;}
+    if(editing.home)data.home=network;else{const p={...network,client_connect:$("profile-client-connect").checked,auto_eligible:$("profile-auto-eligible").checked,auto_replaceable:$("profile-replaceable").checked,id:editing.id,name:$("profile-name").value,kind:$("profile-kind").value,target_ip:$("target-ip").value,enabled:!!state.config.telescopes.find(p=>p.id===editing.id)?.enabled};const index=data.telescopes.findIndex(p=>p.id===editing.id);if(p.enabled)for(const other of data.telescopes)if(other.mac===p.mac)other.enabled=false;if(index<0)data.telescopes.push(p);else data.telescopes[index]=p;}
     const bindAfter=!editing.home&&$("bind-after-save").checked, savedId=editing.id;
-    const bindingSnapshot=bindAfter?captureBinding():null;
-    await save(data);$("network-password").value="";
-    if(bindAfter&&bindingCurrent(bindingSnapshot,true)){try{await bindIdentity(bindingSnapshot,true);}catch(failure){await refresh();if(bindingCurrent(bindingSnapshot,true)){openEditor(state.config.telescopes.find(p=>p.id===savedId));throw new Error(t("Profile saved, but physical binding failed. Edit this existing profile to retry; do not add it again.")+" "+t(failure.message));}}}
+    const bindingSnapshot=bindAfter?captureBinding():null;errorSnapshot=bindingSnapshot;
+    // Keep this editor generation alive until the explicitly requested binding finishes.
+    // User close/Escape/editor replacement still invalidate it, including while save waits.
+    await save(data,false,bindAfter);if(bindAfter&&!bindingCurrent(bindingSnapshot))return;
+    $("network-password").value="";
+    if(bindAfter){try{await bindIdentity(bindingSnapshot);}catch(failure){await refresh();if(bindingCurrent(bindingSnapshot)){openEditor(state.config.telescopes.find(p=>p.id===savedId));errorSnapshot={editor:editing,generation:discoveryEpoch};throw new Error(t("Profile saved, but physical binding failed. Edit this existing profile to retry; do not add it again.")+" "+t(failure.message));}}
+      if(!bindingCurrent(bindingSnapshot))return;$("editor").close();}
     $("initial-admin").value="";
-  }catch(e){localMessage("editor-error",e.message);$("editor-error").hidden=false;$("editor-error").scrollIntoView({block:"nearest"});}finally{button.disabled=false;}
+  }catch(e){if(errorSnapshot&&!bindingCurrent(errorSnapshot))return;localMessage("editor-error",e.message);$("editor-error").hidden=false;$("editor-error").scrollIntoView({block:"nearest"});}finally{button.disabled=false;}
 });
 function protectionError(code){
   const reasons={CONNECTION_PROTECTED:"This connection is protected. Release reservations and remove its owner lock first.",LEASE_NOT_OWNED:"Only the owning session can renew or release this reservation.",LEASE_VERSION_CHANGED:"This reservation was renewed. Refresh before releasing it.",LEASE_EXPIRED:"Reservation expired or the bridge restarted. Check current protection.",REAUTHENTICATION_FAILED:"Current administrator password is incorrect.",REAUTHENTICATION_LIMITED:"Too many password attempts. Try again later.",CONNECTION_NOT_READY:"Reserve an already ready connection; a reservation does not connect it.",LEASE_LIMITED:"Reservation capacity reached. Wait for expiry or release an existing reservation."};
@@ -728,7 +978,7 @@ $("protection-form").addEventListener("submit",async event=>{event.preventDefaul
   const success=await changeProtection(draft.action,draft.id,body,draft.revision,draft);if(success&&protectionDraft===draft){protectionDraft=null;$("protection-dialog").close();}
 });
 function ensureReason(code){
-  const messages={WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",NO_REPLACEABLE_CONNECTION:"No consenting, unprotected and freshly quiet connection is available.",REPLACEMENT_COOLDOWN:"A replacement cooldown is active. No retry is queued.",TARGET_BACKOFF:"A recent failed request is cooling down. Check the instrument before retrying.",CONNECTION_PAUSED:"This instrument is paused after an unconfirmed restoration. Use an explicit manual Connect or Disconnect.",PHYSICAL_NETWORK_IN_USE:"This physical access point is already in use by another enabled instrument.",PHYSICAL_NETWORK_UNCERTAIN:"Another enabled instrument has an unverified selector for this network. Select exact access points first.",AUTO_CONNECT_DISABLED:"Enable global Auto-connect and this instrument eligibility first.",NO_FREE_RADIO:"No confidently free radio is available; existing connections were preserved.",AMBIGUOUS_NETWORK:"Several access points match. Select and save the exact BSSID first.",NETWORK_UNOBSERVED:"The selected network was not observed. Check that the instrument is switched on.",INCOMPATIBLE_BAND:"No free radio supports the observed network band.",OVERLAPPING_TARGET_NETWORK:"The target overlaps an active network; use these instruments separately.",BINDING_SELECTOR_CONFLICT:"The saved Wi-Fi selector differs from the physical binding. Correct it explicitly.",PHYSICAL_SELECTION_MISMATCH:"The associated access point differs from the selected observation. Forwarding was withheld.",MANUAL_CONNECTION_PENDING:"This enabled instrument already has manual reconnect intent. Wait or disconnect it explicitly.",ROLE_CLEANUP_PENDING:"An old association still needs cleanup before allocation.",TIMED_OUT:"The connection did not become ready before its deadline.",ASSOCIATION_FAILED:"The Wi-Fi association failed; no automatic retry was left enabled.",CONNECTION_OPERATION_PENDING:"A connection operation is already pending.",PRECONDITION_REQUIRED:"Reload the current configuration before requesting a connection.",PRECONDITION_FAILED:"Configuration changed. Reload it before requesting a connection.",MANAGEMENT_UNAVAILABLE:"No confirmed private-network or hotspot management path is available.",ENSURE_LIMITED:"Too many connection operations. Try again later.",OPERATION_EXPIRED:"Operation record expired. Check current connection status.",OPERATION_RUN_CHANGED:"The service restarted. Check current connection status.",SUPERSEDED:"Configuration changed during the operation; the automatic attempt stopped."};
+  const messages={OPERATION_RUNNING:"A running instrument operation prevents automatic replacement.",WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",NO_REPLACEABLE_CONNECTION:"No consenting, unprotected and freshly quiet connection is available.",REPLACEMENT_COOLDOWN:"A replacement cooldown is active. No retry is queued.",TARGET_BACKOFF:"A recent failed request is cooling down. Check the instrument before retrying.",CONNECTION_PAUSED:"This instrument is paused after an unconfirmed restoration. Use an explicit manual Connect or Disconnect.",PHYSICAL_NETWORK_IN_USE:"This physical access point is already in use by another enabled instrument.",PHYSICAL_NETWORK_UNCERTAIN:"Another enabled instrument has an unverified selector for this network. Select exact access points first.",AUTO_CONNECT_DISABLED:"Enable global Auto-connect and this instrument eligibility first.",NO_FREE_RADIO:"No confidently free radio is available; existing connections were preserved.",AMBIGUOUS_NETWORK:"Several access points match. Select and save the exact BSSID first.",NETWORK_UNOBSERVED:"The selected network was not observed. Check that the instrument is switched on.",INCOMPATIBLE_BAND:"No free radio supports the observed network band.",OVERLAPPING_TARGET_NETWORK:"The target overlaps an active network; use these instruments separately.",BINDING_SELECTOR_CONFLICT:"The saved Wi-Fi selector differs from the physical binding. Correct it explicitly.",PHYSICAL_SELECTION_MISMATCH:"The associated access point differs from the selected observation. Forwarding was withheld.",MANUAL_CONNECTION_PENDING:"This enabled instrument already has manual reconnect intent. Wait or disconnect it explicitly.",ROLE_CLEANUP_PENDING:"An old association still needs cleanup before allocation.",TIMED_OUT:"The connection did not become ready before its deadline.",ASSOCIATION_FAILED:"The Wi-Fi association failed; no automatic retry was left enabled.",CONNECTION_OPERATION_PENDING:"A connection operation is already pending.",PRECONDITION_REQUIRED:"Reload the current configuration before requesting a connection.",PRECONDITION_FAILED:"Configuration changed. Reload it before requesting a connection.",MANAGEMENT_UNAVAILABLE:"No confirmed private-network or hotspot management path is available.",ENSURE_LIMITED:"Too many connection operations. Try again later.",OPERATION_EXPIRED:"Operation record expired. Check current connection status.",OPERATION_RUN_CHANGED:"The service restarted. Check current connection status.",SUPERSEDED:"Configuration changed during the operation; the automatic attempt stopped."};
   return t(messages[code]||"Connection readiness could not be confirmed. Check current status.");
 }
 function renderEnsure(){
@@ -765,7 +1015,7 @@ function renderAutomation(s){
   $("auto-switch-summary").textContent=!s.config.auto_connect?t("Automatic switching is off."):enabledApps.length?t("Included telescope types: {types}",{types:enabledApps.join(", ")}):t("Choose at least one telescope type in Advanced switching settings.");
   $("auto-switch-risk").hidden=!s.config.auto_connect||!s.config.auto_policy?.force_first_profile;
   const policy=s.config.auto_policy||{quiet_seconds:120,cooldown_seconds:60,force_first_profile:false,seestar_demand:false,vespera_demand:false,dwarf_demand:false};
-  if(!autoPolicyDirty){$("auto-quiet").value=policy.quiet_seconds;$("auto-cooldown").value=policy.cooldown_seconds;$("auto-force").checked=policy.force_first_profile;for(const p of pluginCatalog)if(p.discovery.engine!=="none")$(pluginPolicyId(p.id)).checked=!!policy[p.id+"_demand"];}
+  if(!autoPolicyDirty){$("auto-quiet").value=policy.quiet_seconds;$("auto-cooldown").value=policy.cooldown_seconds;$("auto-force").checked=policy.force_first_profile;$("auto-protect-operations").checked=!!policy.protect_running_operations;$("auto-night-reservations").checked=policy.night_reservations!==false;for(const p of pluginCatalog)if(p.discovery.engine!=="none")$(pluginPolicyId(p.id)).checked=!!policy[p.id+"_demand"];}
   $("auto-policy-save").disabled=s.connection_operation?.state==="running"||autoPreferencePending;
   const reasons={DISABLED:"Maker discovery trigger is disabled.",SELECTION_REQUIRED:"Several eligible Seestars: select an instrument explicitly.",READY_CONNECTION_PRESERVED:"Existing reachable Seestar preserved.",REQUEST_ACCEPTED:"Seestar discovery requested a connection; readiness is not confirmed.",NO_ELIGIBLE_SEESTAR:"No eligible Seestar is configured."};
   $("maker-demand-status").textContent=t(reasons[s.maker_demand?.reason]||"Maker discovery is bounded by cooldown and current connection safety checks.");
@@ -783,7 +1033,7 @@ $("pause-recover").addEventListener("click",()=>openProtection("recover_pauses",
 $("auto-policy-reload").addEventListener("click",()=>{autoPolicyDirty=false;autoPolicyRevision=null;$("auto-ack").checked=false;$("auto-policy-feedback").textContent="";if(state)renderAutomation(state);});
 $("auto-policy-form").addEventListener("input",()=>{if(!autoPolicyDirty)autoPolicyRevision=state.config_revision;autoPolicyDirty=true;});
 $("auto-policy-form").addEventListener("submit",async event=>{
-  event.preventDefault();const epoch=statusEpoch,data=configPayload();data.config_revision=autoPolicyRevision||state.config_revision;data.auto_policy={quiet_seconds:Number($("auto-quiet").value),cooldown_seconds:Number($("auto-cooldown").value),force_first_profile:$("auto-force").checked,...Object.fromEntries(pluginCatalog.filter(p=>p.discovery.engine!=="none").map(p=>[p.id+"_demand",$(pluginPolicyId(p.id)).checked]))};data.acknowledge_interruption=$("auto-ack").checked;
+  event.preventDefault();const epoch=statusEpoch,data=configPayload();data.config_revision=autoPolicyRevision||state.config_revision;data.auto_policy={quiet_seconds:Number($("auto-quiet").value),cooldown_seconds:Number($("auto-cooldown").value),force_first_profile:$("auto-force").checked,protect_running_operations:$("auto-protect-operations").checked,night_reservations:$("auto-night-reservations").checked,...Object.fromEntries(pluginCatalog.filter(p=>p.discovery.engine!=="none").map(p=>[p.id+"_demand",$(pluginPolicyId(p.id)).checked]))};data.acknowledge_interruption=$("auto-ack").checked;
   $("auto-ack").checked=false;autoPreferencePending=true;$("auto-policy-save").disabled=true;$("auto-policy-feedback").textContent="";
   try{await save(data);if(epoch===statusEpoch&&state){autoPolicyDirty=false;autoPolicyRevision=null;renderAutomation(state);$("auto-policy-feedback").textContent=t("Automatic policy saved.");}}
   catch(failure){if(epoch===statusEpoch&&state)$("auto-policy-feedback").textContent=t(failure.code==="PRECONDITION_FAILED"?"Policy changed elsewhere. Your draft was kept. Reload the current policy before editing again.":"Policy was not saved. Enabling advanced options requires explicit risk acknowledgement and the current configuration.");}
@@ -974,7 +1224,17 @@ $("login-form").addEventListener("submit",async event=>{
 });
 $("logout").addEventListener("click",async()=>{try{await api("/api/logout",{});showLogin(true);}catch(e){error(e.message);}});
 $("retry-button").addEventListener("click",async()=>{try{await api("/api/reboot",{});error(t("Restart requested. Sign in again in a few moments."));}catch(e){error(e.message);}});
-$("demo-hint").hidden=!["localhost","127.0.0.1"].includes(location.hostname);
+async function loadPublicMode(){
+  // Loopback addresses also serve real Linux VMs and native installations.
+  // Keep demo credentials hidden unless this server explicitly confirms them.
+  try{
+    const response=await fetch("/api/ui-info",{cache:"no-store",credentials:"omit"});
+    if(!response.ok)return;
+    const info=await response.json();if(typeof info.demo!=="boolean")return;
+    $("demo-hint").hidden=!info.demo;$("demo").hidden=!info.demo;
+  }catch(_){/* Unknown or offline mode never advertises demo credentials. */}
+}
+loadPublicMode();
 for(const name of mainTabs) {
   $("nav-"+name).addEventListener("click",()=>navigate(name));
   $("nav-"+name).addEventListener("keydown",event=>tabKeyboard(event,mainTabs,name,navigate,"nav-"));
@@ -1033,6 +1293,7 @@ document.addEventListener("bridge:localechange",()=>{
   renderUpdates();if(state)renderAutomation(state);if($("protection-dialog").open)renderProtectionDialog();
   $("scan").textContent=t(scanning?"Scanning…":"↻ Scan");
   if($("move-dialog").open)renderMoveDescription();
+  if($("connection-choice").open)renderConnectionChoice();
   if(editing && $("editor").open){
     $("editor-title").textContent=editing.home?t("Private network"):state.config.telescopes.some(p=>p.id===editing.id)?t("Edit telescope"):t("Add telescope");
     const profile=editing.home?state.config.home:state.config.telescopes.find(p=>p.id===editing.id);
@@ -1045,3 +1306,114 @@ BridgePush.configure({api});
 BridgeSecure.configure({api,httpUrl:()=>state?.url||"/"});
 BridgeEvents.configure({unauthorized:showLogin,resync:resyncForEvents});
 BridgePWA.configure({invalidate:invalidateConnection,validate:validateConnection});
+
+// Key contents are never rendered, cached, put into form drafts or logged.
+const makerKeyLabels={absent:"No key · stacking data unavailable",unverified:"Key ready, not yet confirmed by the Seestar",verified:"Key confirmed by the Seestar",refused:"The Seestar refused this key",storage_unavailable:"Encrypted key storage is unavailable on this bridge."};
+async function makerKeyRequest(method,path,data,revision){
+  if(method!=="GET")await refresh();
+  if(!accessReady||BridgePWA.changed)throw new Error(t("Fresh authenticated status is required before changing settings."));
+  const epoch=statusEpoch;
+  const response=await fetch("/api/maker-keys"+path,{method,cache:"no-store",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...revision?{"If-Match":'"'+revision+'"'}:{}},...data===undefined?{}:{body:JSON.stringify(data)}});
+  const value=await response.json();
+  if(epoch!==statusEpoch)throw new Error(t("Fresh authenticated status is required before changing settings."));
+  if(!response.ok){if(response.status===401)showLogin();throw new Error(t(value.error?.message||"Action failed."));}
+  return value;
+}
+function renderMakerKey(value){
+  makerKeyRevision=value.config_revision;
+  const key=value.keys[0];makerSessionKeyState=key.state;makerKeyUnavailable=key.state==="storage_unavailable";localMessage("maker-key-state",t(makerKeyLabels[key.state]||makerKeyLabels.absent));
+  for(const id of ["fetch","import"])$("maker-key-"+id).disabled=key.state==="storage_unavailable";
+  $("maker-key-remove").hidden=!["unverified","verified"].includes(key.state);
+}
+async function loadMakerKey(){
+  const epoch=++makerKeyEpoch;clearTimeout(makerKeyTimer);makerKeyRevision=null;
+  $("session-settings-feedback").textContent="";
+  sessionSelection=null;sessionRevision=null;$("seestar-session-enabled").disabled=true;$("seestar-session-enabled").checked=false;$("seestar-session-feedback").textContent="";
+  $("maker-key-file").value="";$("maker-key-state").textContent="";$("maker-key-feedback").textContent="";
+  const visible=editing&&!editing.home&&$("profile-kind").value==="seestar";
+  $("maker-key-section").hidden=!visible;$("session-settings").hidden=!editing||editing.home;
+  $("adapter-session-switches").replaceChildren();$("link-session-state").textContent="";$("link-session-enable").hidden=true;
+  if(!visible){if(editing&&!editing.home)await loadSessionSelection(epoch).catch(failure=>localMessage("session-settings-feedback",failure.message));return;}
+  for(const id of ["fetch","import","remove"])$("maker-key-"+id).disabled=true;
+  try{const value=await makerKeyRequest("GET","");if(epoch!==makerKeyEpoch)return;renderMakerKey(value);await loadSessionSelection(epoch);if(epoch!==makerKeyEpoch)return;$("maker-key-remove").disabled=false;if(value.keys[0].state==="unverified")makerKeyTimer=setTimeout(()=>{if(epoch===makerKeyEpoch&&$("editor").open)loadMakerKey();},2500);}
+  catch(failure){if(epoch===makerKeyEpoch)localMessage("maker-key-feedback",failure.message);}
+}
+async function makerKeyAction(method,path,data,revision){
+  const epoch=++makerKeyEpoch;clearTimeout(makerKeyTimer);$("seestar-session-enabled").disabled=true;
+  for(const id of ["fetch","import","remove"])$("maker-key-"+id).disabled=true;
+  try{
+    let value=await makerKeyRequest(method,path,data,revision);
+    if(epoch!==makerKeyEpoch)return;
+    if(value.operation){
+      localMessage("maker-key-feedback",t("Getting the key…"));
+      while(value.operation.state==="running"){
+        await new Promise(resolve=>setTimeout(resolve,750));if(epoch!==makerKeyEpoch)return;
+        value=await makerKeyRequest("GET","/operations/"+encodeURIComponent(value.operation.id));
+      }
+      if(value.operation.state==="failed")throw new Error(t("The key could not be downloaded. Try again later or import a key file."));
+      value=await makerKeyRequest("GET","");
+    }
+    if(epoch!==makerKeyEpoch)return;renderMakerKey(value);await loadSessionSelection(epoch);if(epoch!==makerKeyEpoch)return;
+    localMessage("maker-key-feedback",method==="DELETE"?t("The key was removed."):"");
+    if(method==="PUT")makerKeyTimer=setTimeout(()=>{if(epoch===makerKeyEpoch)loadMakerKey();},1500);
+  }catch(failure){if(epoch===makerKeyEpoch){
+    try{const current=await makerKeyRequest("GET","");if(epoch===makerKeyEpoch){renderMakerKey(current);await loadSessionSelection(epoch);}}catch(_){}
+    if(epoch===makerKeyEpoch)localMessage("maker-key-feedback",failure.message);
+  }}
+  finally{if(epoch===makerKeyEpoch)for(const id of ["fetch","import","remove"])$("maker-key-"+id).disabled=id!=="remove"&&makerKeyUnavailable;}
+}
+$("maker-key-fetch").addEventListener("click",()=>makerKeyAction("POST","/seestar/fetch",{}));
+$("maker-key-import").addEventListener("click",()=>$("maker-key-file").click());
+$("maker-key-file").addEventListener("change",async()=>{
+  const file=$("maker-key-file").files[0],epoch=makerKeyEpoch;$("maker-key-file").value="";if(!file)return;
+  if(file.size>8192){localMessage("maker-key-feedback",t("This key file cannot be used."));return;}
+  let pem=await file.text();if(epoch===makerKeyEpoch)await makerKeyAction("PUT","/seestar",{pem});pem="";
+});
+$("maker-key-remove").addEventListener("click",()=>{if(confirm(t("Remove the shared key for every Seestar profile on this bridge?")))makerKeyAction("DELETE","/seestar",undefined,makerKeyRevision);});
+
+async function sessionRequest(method,path,data,revision){
+  const response=await fetch("/api/telemetry"+path,{method,cache:"no-store",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...revision?{"If-Match":'"'+revision+'"'}:{}},...data===undefined?{}:{body:JSON.stringify(data)}});
+  const value=await response.json();
+  if(!response.ok){if(response.status===401)showLogin();throw new Error(t(value.error?.message||"Action failed."));}
+  return value;
+}
+async function loadSessionSelection(epoch){
+  const value=await sessionRequest("GET","");if(epoch!==makerKeyEpoch)return;
+  sessionSelection=value.profiles[editing.id]||null;sessionRevision=value.config_revision;makerKeyRevision=value.config_revision;
+  $("seestar-session-enabled").checked=!!sessionSelection?.adapters.includes("seestar_events_v1");
+  $("seestar-session-enabled").disabled=!sessionSelection;
+  renderSessionSettings();
+  localMessage("seestar-session-feedback",sessionSelection?"":t("Save this telescope to choose session data."));
+}
+$("seestar-session-enabled").addEventListener("change",async()=>{
+  const epoch=++makerKeyEpoch,checked=$("seestar-session-enabled").checked;clearTimeout(makerKeyTimer);
+  if(!sessionSelection||!editing)return;$("seestar-session-enabled").disabled=true;
+  const adapters=sessionSelection.adapters.filter(id=>id!=="seestar_events_v1");if(checked)adapters.push("seestar_events_v1");
+  try{
+    await sessionRequest("PATCH","/settings",{profiles:{[editing.id]:{...sessionSelection,adapters}}},sessionRevision);
+    if(epoch===makerKeyEpoch){await loadSessionSelection(epoch);if(epoch===makerKeyEpoch)localMessage("seestar-session-feedback",t("Session data settings saved."));}
+  }catch(failure){if(epoch===makerKeyEpoch){await loadSessionSelection(epoch).catch(()=>{});if(epoch===makerKeyEpoch)localMessage("seestar-session-feedback",failure.message);}}
+});
+
+setupSessionCards();setupSessionPage();setupCameras();
+
+function renderSessionSettings(){
+  const plugin=pluginById($("profile-kind").value),enabled=sessionSelection?.adapters||[];
+  $("link-session-state").textContent=t(!sessionSelection?"Save this telescope to choose session data.":enabled.includes("link_v1")?"Link quality · Always on":"Link quality is off in your saved settings. Your choice is preserved.");
+  $("link-session-enable").hidden=!sessionSelection||enabled.includes("link_v1");
+  $("adapter-session-switches").replaceChildren(...sessionAdapters(plugin).filter(id=>!["link_v1","seestar_events_v1"].includes(id)).map(id=>{
+    const label=node("label",undefined,"checkbox"),input=node("input");input.type="checkbox";input.setAttribute("role","switch");input.id="session-adapter-"+id;input.checked=enabled.includes(id);input.disabled=!sessionSelection;
+    input.addEventListener("change",()=>saveSessionAdapter(id,input.checked));label.append(input,node("span",t(id==="alpaca_observer_v1"?"Telescope status · Alpaca":"Telescope status")));return label;
+  }));
+}
+async function saveSessionAdapter(id,checked){
+  if(!editing||!sessionSelection)return;
+  const epoch=++makerKeyEpoch;clearTimeout(makerKeyTimer);
+  for(const input of $("session-settings").querySelectorAll("input,button"))input.disabled=true;
+  const adapters=sessionSelection.adapters.filter(value=>value!==id);if(checked)adapters.push(id);
+  try{await sessionRequest("PATCH","/settings",{profiles:{[editing.id]:{...sessionSelection,adapters}}},sessionRevision);
+    if(epoch===makerKeyEpoch){await loadSessionSelection(epoch);if(epoch===makerKeyEpoch)localMessage("session-settings-feedback",t("Session data settings saved."));}
+  }catch(failure){if(epoch===makerKeyEpoch){await loadSessionSelection(epoch).catch(()=>{});if(epoch===makerKeyEpoch)localMessage("session-settings-feedback",failure.message);}}
+  finally{if(epoch===makerKeyEpoch)$("link-session-enable").disabled=false;}
+}
+$("link-session-enable").addEventListener("click",()=>saveSessionAdapter("link_v1",true));

@@ -1,0 +1,45 @@
+{
+  "name": "events-wait-timeout",
+  "description": "An empty long-poll response advances no cursor and is not an error.",
+  "contract_version": 1,
+  "requires": [
+    "events-wait"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/events?after=4&boot_id=00000000000000000000000000000000&limit=100&wait=25",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "boot_id": "00000000000000000000000000000000",
+          "oldest_sequence": 1,
+          "latest_sequence": 4,
+          "next_cursor": 4,
+          "has_more": false,
+          "gap": false,
+          "reset_reason": null,
+          "persistent": true,
+          "history_available": true,
+          "clock_status": "unverified",
+          "events": [],
+          "api_version": "1"
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    }
+  ]
+}

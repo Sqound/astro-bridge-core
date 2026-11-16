@@ -4,6 +4,8 @@ import json
 import socket
 import time
 
+from .metrics import ForwardingMetrics
+
 
 SEESTAR_PORTS = (4700, 4800, 4801, 4804, 4554, 4555)
 
@@ -26,6 +28,8 @@ def scan_request(data):
 class SeestarDiscovery:
     def __init__(self, controller):
         self.controller = controller
+        self.metrics = {}
+        controller.discovery_metrics = self
 
     def loop(self):
         from .network import NetworkError
@@ -34,7 +38,9 @@ class SeestarDiscovery:
             while not self.controller.stop.is_set():
                 with self.controller.lock:plans=self.controller.management_plans[:2]
                 for plan in list(listeners):
-                    if plan not in plans:listeners.pop(plan).close()
+                    if plan not in plans:
+                        listeners.pop(plan).close()
+                        with self.controller.lock: self.metrics.pop(plan, None)
                 for plan in plans:
                     if plan in listeners:continue
                     listener=None
@@ -43,15 +49,19 @@ class SeestarDiscovery:
                         listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
                         listener.setsockopt(socket.SOL_SOCKET,socket.SO_BINDTODEVICE,plan[0].encode()+b"\0")
                         listener.bind(("",4720));listener.settimeout(.1);listeners[plan]=listener
+                        with self.controller.lock: self.metrics[plan] = ForwardingMetrics()
                     except OSError:
                         if listener:listener.close()
                 if not listeners:self.controller.stop.wait(.5);continue
                 for plan,listener in list(listeners.items()):
+                    received = False
+                    count = self.metrics[plan]
                     try:
-                        data,client=listener.recvfrom(4097);request=scan_request(data)
+                        data,client=listener.recvfrom(4097);started=time.monotonic();received=True;request=scan_request(data)
                         interface=ipaddress.ip_interface(plan[1]);source=ipaddress.ip_address(client[0])
                         if (not request or source not in interface.network or source in (interface.ip,interface.network.network_address,interface.network.broadcast_address)
-                                or time.monotonic()<next_request):continue
+                                or time.monotonic()<next_request):
+                            count.drop();continue
                         next_request=time.monotonic()+.1
                         with self.controller.lock:
                             proxy=next((p for p in self.controller.discovery_plans if p[:2]==plan),None)
@@ -59,13 +69,21 @@ class SeestarDiscovery:
                             self.controller.operations.demand(plan,client[0]);continue
                         with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as upstream:
                             upstream.setsockopt(socket.SOL_SOCKET,socket.SO_BINDTODEVICE,proxy[2].encode()+b"\0")
-                            upstream.settimeout(.75);upstream.sendto(data,(proxy[3],4720));reply,origin=upstream.recvfrom(16385)
+                            upstream.settimeout(.75);size=upstream.sendto(data,(proxy[3],4720))
+                            count.forward(size, True, started, datagram=True)
+                            reply,origin=upstream.recvfrom(16385);started=time.monotonic()
                         response=json.loads(reply)
                         if (origin!=(proxy[3],4720) or len(reply)>16384 or not isinstance(response,dict)
-                                or response.get('method')!='scan_iscope' or response.get('id')!=request.get('id')):continue
+                                or response.get('method')!='scan_iscope' or response.get('id')!=request.get('id')):
+                            count.drop();continue
                         with self.controller.lock:
-                            if plan not in self.controller.management_plans or proxy not in self.controller.discovery_plans:continue
-                        listener.sendto(reply,client)
-                    except (OSError,ValueError,UnicodeError,NetworkError):continue
+                            if plan not in self.controller.management_plans or proxy not in self.controller.discovery_plans:
+                                count.drop();continue
+                        size=listener.sendto(reply,client)
+                        count.forward(size, False, started, datagram=True)
+                    except (OSError,ValueError,UnicodeError,NetworkError):
+                        if received: count.drop()
+                        continue
         finally:
             for listener in listeners.values():listener.close()
+            with self.controller.lock: self.metrics.clear()

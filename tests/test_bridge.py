@@ -8,6 +8,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
+if __package__:
+    from .helpers.clock_fixture import event_clock
+else:
+    from helpers.clock_fixture import event_clock
+
 from wifi_bridge.config import Invalid, Store, password_matches, public_config, validate_config
 from wifi_bridge.controller import Controller
 from wifi_bridge.network import DemoNetwork, LinuxNetwork, NetworkError, keyfile, split_nm, radio_bands
@@ -23,6 +28,7 @@ def payload(devices):
 
 class Fixture(unittest.TestCase):
     def setUp(self):
+        self.enterContext(event_clock(synchronized=False))
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.net = DemoNetwork()
@@ -126,6 +132,8 @@ class StateTests(Fixture):
 
     def test_home_failure_fallback_and_automatic_recovery(self):
         self.configured(lambda d: d["home"].update(ssid="ECHEC"))
+        # Recovery may reuse only a radio explicitly allowed to serve any role.
+        self.store.config["interface_roles"][self.devices[1]["mac"]] = "auto"
         self.controller.cycle(0)
         self.assertEqual(self.controller.status()["mode"], "field")
         self.assertTrue(self.controller.status()["relay_ready"])
@@ -202,7 +210,7 @@ class NetworkTests(unittest.TestCase):
             net = LinuxNetwork(directory)
             device = {"name": "wlan0"}
             password = "test-password-with-#-and-spaces "
-            with patch("wifi_bridge.network.run") as command, patch.object(net, "connected", return_value=True), patch.object(net, "firewall"):
+            with patch("wifi_bridge.network.run") as command, patch.object(net, "connected", return_value=True), patch.object(net, "_wait_nm_unmanaged"), patch.object(net, "firewall"):
                 net.hotspot(device, "astro-bridge-12abcd", password)
             config = Path(directory, "hostapd.conf")
             text = config.read_text()
@@ -255,6 +263,19 @@ class HTTPTests(Fixture):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.cookie, self.csrf = "", ""
+
+    def test_public_ui_mode_uses_server_mode_on_the_same_loopback_host(self):
+        self.configured()
+        self.controller.management_hosts = {"127.0.0.1"}
+        for demo in (True, False):
+            with self.subTest(demo=demo):
+                self.controller.demo = demo
+                status, body, cookie = self.request("GET", "/api/ui-info", origin=False, csrf=False)
+                self.assertEqual(status, 200)
+                self.assertEqual(body, {"demo": demo})
+                self.assertIsNone(cookie)
+                self.assertEqual(self.request("GET", "/api/status")[0], 401)
+        self.assertEqual(self.request("GET", "/api/ui-info", host="evil.example")[0], 421)
 
     def request(self, method, path, body=None, origin=True, csrf=True, host="127.0.0.1"):
         port = self.server.server_address[1]

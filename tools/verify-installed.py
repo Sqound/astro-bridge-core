@@ -31,7 +31,7 @@ def exercise(url,hostname='release-check'):
     try: call('/api/status')
     except urllib.error.HTTPError as error: assert error.code==401
     else: raise AssertionError('Unauthenticated status leaked private configuration')
-    session=call('/api/login',{'password':'demo-telescope-2026'});csrf=session['csrf']
+    session=call('/api/login',{'password':'12345678'});csrf=session['csrf']
     status=call('/api/status');assert status['demo'] and status['deployment']['platform']=='demo'
     config=status['config'];config['hostname']=hostname;config['admin_password']=''
     call('/api/config',config,csrf)
@@ -46,7 +46,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='astro-installed-') as folder:
         base=Path(folder);prefix=base/'venv';state=base/'state'
         subprocess.run([sys.executable,str(root/'scripts/install.py'),'--wheel',str(wheel),'--sha256',hashlib.sha256(wheel.read_bytes()).hexdigest(),'--prefix',str(prefix)],check=True,stdout=subprocess.DEVNULL)
-        check=subprocess.check_output([str(prefix/'bin/python'),'-c','import wifi_bridge; print(wifi_bridge.__file__)'],cwd=base,text=True)
+        check=subprocess.check_output([str(prefix/'bin/python'),'-c','import wifi_bridge, wifi_bridge.telemetry.adapters.seestar_events, wifi_bridge.maker_keys.fetch, wifi_bridge.cameras.indi, wifi_bridge.cameras.zwo_asi; from wifi_bridge.cameras.registry import load_registry; from pathlib import Path; assert len(load_registry(Path(wifi_bridge.__file__).parent / "cameras/tables").descriptors()) >= 3; print(wifi_bridge.__file__)'],cwd=base,text=True)
         assert str(prefix) in check and str(root) not in check,'Test imported the source checkout'
         with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
         for cycle in range(2):

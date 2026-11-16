@@ -13,10 +13,31 @@ import uuid
 
 from .api import ApiError
 from .candidates import scan_candidate
+from .radio_roles import role_allows
 from .config import profiles, role_for, network_intent, auto_policy, reserved_hotspot_mac
 from .network import NetworkError
 from .plugins import relay_plugins, proxy_flag, plugin, demand_plugins
 from .updates import Updates
+
+
+# Switch progress (native contract 1.1): a client-facing projection of the existing
+# phases. Durations are typical budgets for a countdown, never a deadline promise.
+PROGRESS = {'selecting': 'leaving', 'disconnecting_victim': 'leaving', 'associating': 'associating',
+            'checking_services': 'verifying', 'restoring': 'restoring', 'cleaning_up': 'restoring'}
+BUDGET = {'leaving': 5, 'associating': 25, 'verifying': 10}
+TYPICAL_SECONDS = sum(BUDGET.values())
+
+
+def progress(value, elapsed, remaining):
+    """Map one public operation record to {phase, eta_seconds}; no state is changed."""
+    if value['state'] == 'succeeded': return {'phase': 'ready', 'eta_seconds': 0}
+    if value['state'] == 'failed': return {'phase': 'failed', 'eta_seconds': None}
+    phase = PROGRESS.get(value.get('phase'), 'associating')
+    if phase == 'restoring': return {'phase': phase, 'eta_seconds': max(1, min(120, int(remaining)))}
+    order = list(BUDGET)
+    later = sum(BUDGET[key] for key in order[order.index(phase)+1:])
+    estimate = max(later + 1, TYPICAL_SECONDS - int(elapsed))
+    return {'phase': phase, 'eta_seconds': max(1, min(estimate, int(remaining) if remaining > 0 else 1, 120))}
 
 
 def refused(code, message):
@@ -114,6 +135,19 @@ class ConnectionOperations:
             if value is None: raise ApiError(410, 'OPERATION_EXPIRED', 'Operation record expired. Reload current connection status.')
             return value
 
+    def announce(self):
+        # Phase changes publish switch progress immediately, not only at the next cycle.
+        hook = getattr(self.c, '_switch_events', None)
+        if hook:
+            with self.c.lock: hook()
+
+    def progress(self, ident):
+        record = self.records.get(ident)
+        if record is None: return None
+        now = self.clock()
+        remaining = self.deadline - now if ident == self.active else 0
+        return progress(record['public'], now - record['started'], remaining)
+
     def latest(self):
         with self.c.lock: return self.public(self.active or self.last)
 
@@ -139,12 +173,12 @@ class ConnectionOperations:
         preferred=next((path for path in alternatives if path['role']=='home'),next(iter(alternatives),None))
         if protocol and preferred:proxy=preferred['proxy']
         return {'profile_id': profile['id'], 'target_ip': profile['target_ip'], 'subnet': row.get('subnet'),
-                'bridge_instrument_ip': row.get('client_ip'), 'proxy': proxy, 'native_proxy_reason':row.get('native_proxy_reason'), 'management_endpoints':alternatives,
-                'direct_route': {'routability': 'unknown', 'route_may_be_required': True},
+                'bridge_instrument_ip': row.get('client_ip'), **({'client_endpoint': row['client_endpoint']} if row.get('client_endpoint') else {}), 'proxy': proxy, 'native_proxy_reason':row.get('native_proxy_reason'), 'management_endpoints':alternatives,
+                'direct_route': {'routability': 'unavailable' if profile.get('isolated') else 'unknown', 'route_may_be_required': not profile.get('isolated',False)},
                 'manufacturer_identity': 'unknown', 'maker_app_acceptance': 'unverified',
                 'service_readiness': 'checked' if plugin(profile['kind'])['readiness']=='vespera_tcp' else 'not_probed'}
 
-    def ensure(self, ident, expected, revision, client, expires, *, internal=False, origin=None):
+    def ensure(self, ident, expected, revision, client, expires, *, internal=False, origin=None, native_client=None, allow_replace=()):
         c = self.c
         with c.lock:
             self.prune()
@@ -165,13 +199,14 @@ class ConnectionOperations:
                     refused('BINDING_SELECTOR_CONFLICT', 'Saved selector differs from physical binding.')
                 if c.last_cycle_ok and self.current(profile, row, device):
                     return 200, {'state': 'ready', 'profile_id': ident, 'endpoint': self.endpoint(profile, row, c.state['home_ip'])}
-                c.protection.reject(ident)
+                if native_client is not None: c.protection.native_guard(ident, native_client)
+                else: c.protection.reject(ident)
                 if c.pauses.held(ident): refused('CONNECTION_PAUSED', 'Resolve this paused connection explicitly before automatic allocation.')
                 if c.auth_failures.held(profile): refused('WIFI_AUTHENTICATION_FAILED', 'Change the saved Wi-Fi password or reboot the bridge before trying again.')
                 if expected is None or expected in ('*', '"*"'):
                     raise ApiError(428, 'PRECONDITION_REQUIRED', 'Provide the actual current configuration revision.')
                 if expected != '"'+revision()+'"': raise ApiError(412, 'PRECONDITION_FAILED', 'Configuration changed. Reload it before ensuring.')
-                if not c.store.config.get('auto_connect', False) or not profile.get('auto_eligible', False):
+                if native_client is None and (not c.store.config.get('auto_connect', False) or not profile.get('auto_eligible', False)):
                     refused('AUTO_CONNECT_DISABLED', 'Enable global Auto-connect and this profile eligibility before automatic allocation.')
                 if profile['enabled']: refused('MANUAL_CONNECTION_PENDING', 'This enabled profile has existing manual reconnect intent. Wait or disconnect it explicitly.')
                 if any(c.net.connected(role_for(profile), d) for d in c.state['devices']):
@@ -186,7 +221,9 @@ class ConnectionOperations:
                 if not internal:
                     accounting = self.clients.setdefault(client, {'expires': expires, 'times': deque()})
                     while accounting['times'] and self.clock()-accounting['times'][0] >= 60: accounting['times'].popleft()
-                    if len(accounting['times']) >= 5: raise ApiError(429, 'ENSURE_LIMITED', 'Too many connection operations. Try again later.')
+                    if len(accounting['times']) >= 5:
+                        raise ApiError(429, 'ENSURE_LIMITED', 'Too many connection operations. Try again later.',
+                                       retry_after=int(60 - (self.clock() - accounting['times'][0])) + 1)
                     accounting['times'].append(self.clock())
                     while len(self.clients) > 32: self.clients.pop(next(iter(self.clients)))
                 operation = self.epoch+'.'+uuid.uuid4().hex
@@ -195,6 +232,8 @@ class ConnectionOperations:
                     'cause':({'seestar':'SEESTAR_DISCOVERY','vespera':'VESPERA_CONNECTION','dwarf':'DWARF_DISCOVERY','zwo_mount':'ZWO_MOUNT_CONNECTION','synscan':'SYNSCAN_DISCOVERY'}.get(origin,'SEESTAR_DISCOVERY' if origin is None else 'PLUGIN_CONNECTION')) if internal else 'AUTOMATIC',
                     'reason': 'SELECTING_FREE_RADIO', 'endpoint': None, 'physical_selection': None,
                     'restoration': {'state': 'not_needed', 'reason': None}, 'status_url': '/api/v1/operations/'+operation}}
+                self.records[operation]['native_client'] = native_client
+                self.records[operation]['allow_replace'] = tuple(allow_replace)
                 self.active = self.last = operation
                 self.expected, self.revision = revision(), revision
                 self.deadline = self.clock()+120
@@ -207,6 +246,7 @@ class ConnectionOperations:
                     self.records[operation]['public'].update(state='failed', phase='finished', reason='WORKER_UNAVAILABLE')
                     self.records[operation]['finished'] = self.clock()
                     raise ApiError(409, 'WORKER_UNAVAILABLE', 'Connection worker could not start.') from None
+                self.announce()
                 return 202, self.public(operation)
         finally: c.net_lock.release()
 
@@ -244,7 +284,7 @@ class ConnectionOperations:
             saved = profiles(c.store.config)
             original=plugin(kind)['discovery'].get('target_mode')=='original'
             tcp=plugin(kind)['discovery']['engine']=='tcp_syn'
-            matching = [p for p in saved if p['kind']==kind and (not original or p['target_ip']==target)
+            matching = [p for p in saved if not p.get('isolated') and p['kind']==kind and (not original or p['target_ip']==target)
                         and (not tcp or target is None or p['target_ip']==target)]
             if any(p['id'] in ready for p in matching):
                 reason = 'READY_CONNECTION_PRESERVED'
@@ -282,6 +322,7 @@ class ConnectionOperations:
         if self.attempted: self.failure = self.failure or 'ASSOCIATION_LOST'; return False
         self.attempted = True
         self.records[self.active]['public'].update(phase='associating', reason='AWAITING_ASSOCIATION')
+        self.announce()
         return True
 
     def fail_association(self, profile, reason='ASSOCIATION_FAILED'):
@@ -336,36 +377,38 @@ class ConnectionOperations:
                                  restoration={'state':'not_needed','reason':'VICTIM_INTENT_REPLACED' if self.victim else None})
                     return
             row.update(relay_ready=False, state='error')
-        else: value.update(phase='checking_services' if row.get('connected') else 'associating', reason='SERVICE_UNAVAILABLE' if row.get('connected') else 'AWAITING_ASSOCIATION')
+        else: value.update(phase='checking_services' if row.get('connected') else 'associating', reason='SERVICE_UNAVAILABLE' if row.get('connected') else 'AWAITING_ASSOCIATION'); self.announce()
 
     def choose(self, profile):
         c = self.c; devices = c.net.devices()
         protected = {c.store.config['home'].get('mac'), c.state['hotspot'].get('mac'), reserved_hotspot_mac(c.store.config)}
-        protected |= {p['mac'] for p in profiles(c.store.config) if p['enabled'] or c.protection.protected(p['id']) or c.pauses.held(p['id'])}
+        native = self.records[self.active].get('native_client') if self.active else None
+        protected |= {p['mac'] for p in profiles(c.store.config) if p['enabled'] or c.pauses.held(p['id'])
+                      or c.protection.protected(p['id']) and not (native is not None and p['id'] == profile['id'])}
         target = ipaddress.IPv4Address(profile['target_ip'])
         management_networks=c.occupied_management_networks(devices)
-        occupied=list(management_networks)
+        occupied=[] if profile.get('isolated') else list(management_networks)
         paths=c.current_management(devices)
         if not paths:refused('MANAGEMENT_UNAVAILABLE','No advertised management path is currently confirmed.')
         home=paths[0]['device']
-        occupied += [ipaddress.ip_interface(path['address']).network for path in paths]
-        occupied += [ipaddress.ip_network(row['subnet']) for row in c.state['telescopes'] if row.get('connected') and row.get('subnet')]
-        if any(target in subnet for subnet in management_networks):
+        occupied += [] if profile.get('isolated') else [ipaddress.ip_interface(path['address']).network for path in paths]
+        occupied += [] if profile.get('isolated') else [ipaddress.ip_network(row['subnet']) for row in c.state['telescopes'] if row.get('connected') and row.get('subnet') and not next((p.get('isolated') for p in profiles(c.store.config) if p['id']==row['id']),False)]
+        if not profile.get('isolated') and any(target in subnet for subnet in management_networks):
             refused('OVERLAPPING_TARGET_NETWORK','Target overlaps management or emergency AP.')
         # A displaced victim's actual subnet may be removed; every other network stays protected.
         aliases = (profile.get('physical_binding') or {}).get('aliases', [])
         if aliases and profile['bssid'] and not any(a['ssid'] == profile['ssid'] and a['bssid'] == profile['bssid'] for a in aliases):
             refused('BINDING_SELECTOR_CONFLICT', 'Saved selector differs from physical binding. Correct it explicitly first.')
-        free = [device for device in devices if device['mac'] not in protected and c.net.radio_idle(device)]
+        free = [device for device in devices if device['mac'] not in protected and role_allows(c.store.config, device['mac'], 'telescope') and c.net.radio_idle(device)]
         eligible_free = [device for device in free if self.clock()-self.cooldowns.get(device['mac'], -1e9) >= auto_policy(c.store.config)['cooldown_seconds']]
         if free and not eligible_free: refused('REPLACEMENT_COOLDOWN', 'The free adapter is cooling down after replacement; no victim was taken.')
         free = eligible_free
         if not free:
             device = self.replace(profile, devices, home)
             # Only this actually displaced network may overlap the requested target.
-            occupied=c.occupied_management_networks(devices)
-            occupied += [ipaddress.ip_network(row['subnet']) for row in c.state['telescopes']
-                         if row['id'] != self.victim_id and row.get('connected') and row.get('subnet')]
+            occupied=[] if profile.get('isolated') else c.occupied_management_networks(devices)
+            occupied += [] if profile.get('isolated') else [ipaddress.ip_network(row['subnet']) for row in c.state['telescopes']
+                         if row['id'] != self.victim_id and row.get('connected') and row.get('subnet') and not next((p.get('isolated') for p in profiles(c.store.config) if p['id']==row['id']),False)]
             free = [device]
         if any(target in network for network in occupied): refused('OVERLAPPING_TARGET_NETWORK', 'Target overlaps an active management or telescope network.')
         hints = [a.get('frequency') for a in aliases if not profile['bssid'] or a['bssid'] == profile['bssid']]
@@ -407,8 +450,23 @@ class ConnectionOperations:
         except TypeError:
             return False
 
+    def operation_activity(self, profile, measured, policy):
+        if not policy['protect_running_operations']: return measured
+        with self.c.lock:
+            state = self.c.operation_state(profile)
+            if state == 'running':
+                self.c.connection_events.emit(profile, 'automatic_switch_deferred', 'OPERATION_RUNNING', 'deferred',
+                    context={'operation_id':self.active, 'cause':self.cause})
+                return dict(measured, state='active', reason='OPERATION_RUNNING')
+            if state == 'unknown':
+                return dict(measured, state='active' if measured.get('state') == 'active' else 'unknown',
+                            reason='OPERATION_UNKNOWN', quiet_seconds=None)
+            return measured
+
     def replace(self, target, devices, home):
         c = self.c; policy = auto_policy(c.store.config)
+        native = self.records[self.active].get('native_client') is not None
+        allowed = self.records[self.active].get('allow_replace', ())
         if self.clock() - max(self.started, self.last_replacement) < policy['cooldown_seconds']:
             refused('REPLACEMENT_COOLDOWN', 'Replacement cooldown has not elapsed since service start.')
         if not c.last_cycle_ok: refused('RECONCILE_UNCERTAIN', 'A fresh successful network reconcile is required.')
@@ -416,15 +474,15 @@ class ConnectionOperations:
         if self.clock() >= self.deadline: refused('TIMED_OUT', 'Fresh measurement exceeded the operation deadline.')
         hints = [a.get('frequency') for a in (target.get('physical_binding') or {}).get('aliases', []) if not target['bssid'] or a['bssid'] == target['bssid']]
         required_bands = {'2.4' if f < 3000 else '5' if f < 5925 else '6' for f in hints if f}
-        choices = []
+        choices = []; running = False
         for index, profile in enumerate(profiles(c.store.config)):
             if self.clock() >= self.deadline: refused('TIMED_OUT', 'Selection exceeded the operation deadline.')
-            if (not profile['enabled'] or not profile.get('auto_eligible') or not profile.get('auto_replaceable')
+            if (not profile['enabled'] or (not native and not profile.get('auto_eligible')) or (native and profile['id'] not in allowed) or not profile.get('auto_replaceable')
                     or c.pauses.held(profile['id']) or c.protection.protected(profile['id'])): continue
             device = next((d for d in devices if d['mac'] == profile['mac']), None)
             row = next((r for r in c.state['telescopes'] if r['id'] == profile['id']), None)
             if device and required_bands and not required_bands.intersection(device.get('bands', [])): continue
-            if (not device or device['mac'] in (home['mac'], c.state['hotspot'].get('mac'), reserved_hotspot_mac(c.store.config))
+            if (not device or not role_allows(c.store.config, device['mac'], 'telescope') or device['mac'] in (home['mac'], c.state['hotspot'].get('mac'), reserved_hotspot_mac(c.store.config))
                     or network_intent(c.applied.get(role_for(profile))) != network_intent(profile)
                     or not self.current(profile, row, device)): continue
             address = ipaddress.ip_interface(c.net.address(device))
@@ -436,6 +494,11 @@ class ConnectionOperations:
             prior = self.force_observed.get(profile['id'])
             if not prior or prior[0] != identity: self.force_observed[profile['id']] = (identity, self.clock())
             measured = c.net.selection_activity(profile, device, home) if hasattr(c.net, 'selection_activity') else {}
+            measured = self.operation_activity(profile, measured, policy)
+            if measured.get('reason') == 'OPERATION_RUNNING':
+                running = True
+                continue
+            if measured.get('reason') == 'OPERATION_UNKNOWN': continue
             cooldown = max(self.cooldowns.get(profile['id'], -1e9), self.cooldowns.get(device['mac'], -1e9))
             if self.clock() - cooldown < policy['cooldown_seconds']: continue
             quiet = self.quiet_eligible(measured, policy)
@@ -444,6 +507,7 @@ class ConnectionOperations:
             if quiet or force:
                 choices.append((not quiet, -measured.get('last_activity_age_seconds', 0) if quiet else index,
                                 profile, device, actual, str(address)))
+        if not choices and running: refused('OPERATION_RUNNING', 'A running instrument operation prevents automatic replacement.')
         if not choices: refused('NO_REPLACEABLE_CONNECTION', 'No consenting, unprotected, freshly quiet compatible connection is available; unknown is not idle.')
         choices.sort(key=lambda item: item[:2])
         forced, _, profile, device, actual, address = choices[0]
@@ -462,6 +526,11 @@ class ConnectionOperations:
                 refused('SUPERSEDED', 'Victim changed during fresh measurement.')
             if c.net.address(device) != address or c.net.link_observation(device, profile) != actual:
                 refused('ASSOCIATION_CHANGED', 'Victim association changed during selection.')
+            fresh = self.operation_activity(profile, fresh or {}, auto_policy(c.store.config))
+            if fresh.get('reason') == 'OPERATION_RUNNING':
+                refused('OPERATION_RUNNING', 'A running instrument operation prevents automatic replacement.')
+            if fresh.get('reason') == 'OPERATION_UNKNOWN':
+                refused('NO_REPLACEABLE_CONNECTION', 'No consenting, unprotected, freshly quiet compatible connection is available; unknown is not idle.')
             if not forced:
                 same_association = not hasattr(c.net, 'association_identity') or c.net.association_identity(device) == token
                 if not same_association or not self.quiet_eligible(fresh, auto_policy(c.store.config), self.clock()-observed):

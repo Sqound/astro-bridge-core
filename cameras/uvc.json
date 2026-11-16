@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "uvc",
+  "driver": "uvc",
+  "usb": [{"class": 14}],
+  "validation": "unverified"
+}

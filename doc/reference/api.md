@@ -37,3 +37,22 @@ Revoke only the temporary token with **`DELETE /api/v1/auth/token`** when a clie
 Browser requests use same-origin cookies and CSRF checks. Do not bypass Host/Origin validation or send access codes to another origin. HTTPS clients must trust the bridge's configured certificate; see [PWA setup](../guides/pwa-notifications.md).
 
 Example clients: [JavaScript client](../../examples/astro-bridge-client.mjs). Secrets, private keys and stored Wi-Fi passwords are not normal API response fields.
+
+## Native clients, observations and attached cameras
+
+The [complete API guide](../../docs/API.md) and
+[native-client contract](../../docs/NATIVE-CLIENT.md) cover scoped pairing,
+endpoint inventory, leases, retained events, telemetry/session queries and
+physically attached cameras. Replay scenarios are in `contracts/native-client/v1/`
+and `python3 tools/contract-mock.py --list` lists the loopback-only fixtures.
+The frozen v1 client contract remains additive.
+
+Instrument telemetry is owner-enabled and read-only. Attached-camera services
+operate only cameras physically attached to the bridge (or the explicitly
+plugged loopback demo simulator). Generic code includes optional Linux reference
+backends; host setup and SDK installation belong to implementations.
+
+The owner-enabled maker-key fetch code is included in Core, alongside import,
+encrypted storage and read-only listening. No authentication key, manufacturer
+package or vendor binary is bundled. Physical acceptance and official ConformU
+validation remain separate from portable fixtures.

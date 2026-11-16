@@ -10,6 +10,185 @@ from wifi_bridge.web import WebServer
 
 
 class APITests(Fixture):
+    def test_wired_home_drives_discovery_authenticated_endpoints_and_failover(self):
+        wired={'name':'enp1s0','mac':'02:00:00:20:00:01','kind':'ethernet','label':'enp1s0',
+               'usb':False,'address':'192.168.20.2/24'}
+        original_address=self.net.address;original_connected=self.net.connected
+        self.net.wired_home=lambda:wired
+        self.net.address=lambda device,**kw:device['address'] if device.get('kind')=='ethernet' else original_address(device,**kw)
+        self.net.connected=lambda role,device,config=None:role=='home' if device and device.get('kind')=='ethernet' else original_connected(role,device,config)
+        saved=json.dumps(self.store.config,sort_keys=True)
+        self.controller.cycle(10)
+        self.assertEqual(self.controller.state['home_ip'],'192.168.20.2')
+        self.assertEqual(self.controller.state['management']['paths'][0]['interface'],'enp1s0')
+        self.assertNotIn('enp1s0',[d['name'] for d in self.controller.state['devices']])
+        self.assertEqual(self.server.api.info('192.168.20.2')['request_path'],'home')
+        host={'Host':'192.168.20.2:'+str(self.server.server_port)}
+        self.assertEqual(self.request('GET','/api/v1/endpoints',headers=host)[0],401)
+        self.login()
+        code,body,_=self.request('GET','/api/v1/endpoints',headers=host)
+        self.assertEqual(code,200)
+        self.assertIn('192.168.20.2',json.dumps(body))
+        self.assertEqual(self.controller.retained_forwarding()['home']['kind'],'ethernet')
+        self.assertEqual(self.controller.current_management()[0]['device']['kind'],'ethernet')
+        self.assertEqual(json.dumps(self.store.config,sort_keys=True),saved)
+        self.net.wired_home=lambda:None
+        self.controller.cycle(20)
+        self.assertEqual(self.controller.state['home_ip'],'192.168.1.42')
+        self.assertEqual(self.request('GET','/api/v1/endpoints',headers=host)[0],421)
+
+    def test_event_wait_bearer_cookie_validation_wakeup_and_shutdown(self):
+        self.login()
+        store=self.controller.event_store
+        for value in ('-1','26','1.2','true','','0&wait=1','1&unexpected=2'):
+            self.assertEqual(self.request('GET','/api/v1/events?wait='+value)[0],400)
+        self.server.sessions[self.token]['scopes']=['read']
+        origin='http://127.0.0.1:'+str(self.server.server_port)
+        _,_,cookie=self.request('POST','/api/login',{'password':'local-admin-test-password'},{'Origin':origin})
+        browser={'Cookie':cookie.split(';')[0],'Authorization':''}
+        self.assertEqual(self.request('GET','/api/events?wait=0',headers=browser)[0],200)
+        pages=[]
+        def waiter(path,headers): pages.append(self.request('GET',path,headers=headers))
+        suffix='?after='+str(store.sequence)+'&boot_id='+store.boot_id+'&wait=25'
+        thread=threading.Thread(target=waiter,args=('/api/events'+suffix,browser));thread.start()
+        import time
+        deadline=time.monotonic()+2
+        while not store.waiters and time.monotonic()<deadline: threading.Event().wait(.005)
+        self.assertEqual(store.waiters,1)
+        store.native('instrument.restored','primary');thread.join(2)
+        self.assertFalse(thread.is_alive());self.assertEqual(pages[0][0],200)
+        self.assertEqual(pages[0][1]['events'][-1]['type'],'instrument.restored')
+        suffix='?after='+str(store.sequence)+'&boot_id='+store.boot_id+'&wait=25'
+        thread=threading.Thread(target=waiter,args=('/api/v1/events'+suffix,{}));thread.start()
+        deadline=time.monotonic()+2
+        while not store.waiters and time.monotonic()<deadline: threading.Event().wait(.005)
+        self.assertEqual(store.waiters,1)
+        self.server.server_close();thread.join(2)
+        self.assertFalse(thread.is_alive());self.assertEqual(pages[-1][1]['events'],[])
+
+    def test_endpoint_change_hydrates_current_ingress_and_never_persists_addresses(self):
+        self.login()
+        snapshot=self.controller.status()
+        profile=snapshot['config']['telescopes'][0];profile.update(kind='synscan',enabled=True,isolated=True)
+        row=snapshot['telescopes'][0]
+        row.update(connected=True,target_ip=profile['target_ip'],client_endpoint={'alternatives':[
+            {'role':role,'host':host,'port':21180,'transport':'udp','ready':True}
+            for role,host in [('home','192.0.2.10'),('ap','192.168.77.1')]]})
+        store=self.controller.event_store;cursor=store.sequence
+        store.native('instrument.endpoint_changed','primary')
+        for role,expected in [('home','192.0.2.10'),('ap','192.168.77.1')]:
+            snapshot['management']['paths']=[{'role':role,'ip':'127.0.0.1'}]
+            self.controller.state['management']['paths']=snapshot['management']['paths']
+            with patch.object(self.controller,'status',return_value=snapshot):
+                code,page,_=self.request('GET','/api/v1/events?after='+str(cursor))
+            self.assertEqual(code,200)
+            endpoint=page['events'][0]['endpoint']
+            self.assertEqual(endpoint['primary']['host'],expected)
+            self.assertEqual(endpoint['request_path'],'hotspot' if role=='ap' else role)
+        row['connected']=False
+        with patch.object(self.controller,'status',return_value=snapshot):
+            self.assertIsNone(self.request('GET','/api/v1/events?after='+str(cursor))[1]['events'][0]['endpoint'])
+        store.last_write=None;store.flush()
+        self.assertNotIn('endpoint',json.dumps(store.events[-1]).replace('instrument.endpoint_changed','marker'))
+        for address in ('192.0.2.10','192.168.77.1'):self.assertNotIn(address,store.path.read_text())
+
+    def test_system_metrics_admin_scope_cached_read_and_no_payloads(self):
+        path = '/api/v1/system/metrics'
+        self.assertEqual(self.request('GET', path)[0], 401)
+        self.login()
+        code, first, _ = self.request('GET', path)
+        self.assertEqual(code, 200)
+        self.assertEqual(first['relay_coverage'], 'userspace_only')
+        self.assertEqual(self.request('GET', path)[1]['sample_sequence'], first['sample_sequence'])
+        self.assertEqual(self.request('POST', path, {})[0], 405)
+        for scope in ('read', 'connect', 'telemetry', 'camera'):
+            self.server.sessions[self.token]['scopes'] = [scope]
+            self.assertEqual(self.request('GET', path)[0], 403)
+        self.assertNotIn('local-admin-test-password', json.dumps(first))
+
+    def test_time_hint_read_scope_validation_rate_limit_and_synchronized_ignore(self):
+        from wifi_bridge.clock import Clock, utc
+        self.controller.event_store.clock = Clock(self.store.path.with_name('clock.json'), sync=lambda: False)
+        path = '/api/v1/system/time-hint'
+        self.assertEqual(self.request('GET', '/api/v1/system/time')[0], 401)
+        self.assertEqual(self.request('POST', path, {})[0], 401)
+        self.login()
+        self.server.sessions[self.token]['scopes'] = ['read']
+        code, initial, _ = self.request('GET', '/api/v1/system/time')
+        self.assertEqual(code, 200)
+        self.assertEqual(initial['clock_status'], 'unverified')
+        self.assertEqual(self.request('POST', path, {})[0], 400)
+        self.assertEqual(self.request('POST', path, 'null', raw=True)[0], 400)
+        hint = {'utc_iso': utc(self.controller.event_store.clock.now() + 60), 'uncertainty_ms': 500}
+        code, result, _ = self.request('POST', path, hint)
+        self.assertEqual(code, 200)
+        self.assertEqual(result['source'], 'client_hint')
+        self.assertAlmostEqual(result['offset_ms'], 60000, delta=50)
+        self.assertEqual(self.request('POST', path, hint)[0], 429)
+        self.server.sessions[self.token]['client_id'] = 'synthetic-paired-client'
+        self.assertEqual(self.request('POST', path, hint)[0], 200)
+        self.login()
+        self.server.sessions[self.token].update(scopes=['read'], client_id='synthetic-paired-client')
+        self.assertEqual(self.request('POST', path, hint)[0], 429)
+        self.server.sessions[self.token]['scopes'] = ['camera']
+        self.assertEqual(self.request('GET', '/api/v1/system/time')[0], 403)
+        self.assertEqual(self.request('POST', path, hint)[0], 403)
+        self.server.sessions[self.token]['scopes'] = ['read']
+        self.controller.event_store.clock = Clock(self.store.path.with_name('clock.json'), sync=lambda: True)
+        self.assertEqual(self.request('POST', path, hint)[1]['source'], 'ntp')
+        self.assertEqual(self.request('POST', path, hint)[1]['source'], 'ntp')
+        self.server.sessions[self.token]['scopes'] = ['admin']
+        self.assertEqual(self.request('POST', '/api/v1/system/time', {})[0], 405)
+
+    def test_endpoint_inventory_auth_scope_profile_and_cookie_parity(self):
+        path = '/api/v1/endpoints'
+        self.assertEqual(self.request('GET', path)[0], 401)
+        self.assertEqual(self.request('GET', '/api/endpoints')[0], 401)
+        self.login()
+        with patch.object(self.net, 'probe', side_effect=AssertionError('GET must never probe')):
+            code, result, _ = self.request('GET', path)
+        self.assertEqual(code, 200)
+        self.assertEqual(set(result), {'api_version', 'config_revision', 'boot_id', 'endpoints'})
+        self.assertEqual(result['boot_id'], self.controller.event_store.boot_id)
+        self.assertEqual(result['config_revision'], self.server.api.revision())
+        self.assertEqual(self.request('GET', path + '/primary')[1], result)
+        self.assertEqual(self.request('GET', path + '/missing')[0], 404)
+        self.assertEqual(self.request('POST', path, {})[0], 405)
+        self.server.sessions[self.token]['scopes'] = ['read']
+        self.assertEqual(self.request('GET', path)[0], 200)
+        self.server.sessions[self.token]['scopes'] = ['camera']
+        code, error, _ = self.request('GET', path)
+        self.assertEqual(code, 403); self.assertEqual(error['error']['code'], 'INSUFFICIENT_SCOPE')
+        origin = 'http://127.0.0.1:' + str(self.server.server_port)
+        _, _, cookie = self.request('POST', '/api/login', {'password': 'local-admin-test-password'}, {'Origin': origin})
+        browser = {'Cookie': cookie.split(';')[0], 'Authorization': ''}
+        self.assertEqual(self.request('GET', '/api/endpoints', headers=browser)[1], result)
+        self.assertEqual(self.request('GET', '/api/endpoints/primary', headers=browser)[1], result)
+        self.assertEqual(self.request('GET', '/api/endpoints/missing', headers=browser)[0], 404)
+        self.assertEqual(self.request('GET', path, headers=browser)[0], 401)
+
+    def test_endpoint_inventory_preserves_shared_udp_refusals_on_both_paths(self):
+        self.login()
+        snapshot = self.controller.status()
+        profile = snapshot['config']['telescopes'][0]
+        profile.update(kind='synscan', enabled=True, isolated=True)
+        row = next(row for row in snapshot['telescopes'] if row['id'] == profile['id'])
+        row.update(connected=True, target_ip=profile['target_ip'], client_endpoint={'alternatives': [
+            {'role': role, 'host': host, 'port': 21180, 'transport': 'udp', 'ready': True,
+             'owner': {'address': '192.0.2.10:25000', 'since_seq': 2}, 'refused_clients': 9,
+             'private_metadata': 'discard'}
+            for role, host in [('home', '192.0.2.1'), ('ap', '192.168.77.1')]]})
+        with patch.object(self.controller, 'status', return_value=snapshot):
+            for path in ['/api/v1/endpoints', '/api/v1/endpoints/' + profile['id']]:
+                with self.subTest(path=path):
+                    code, body, _ = self.request('GET', path)
+                    self.assertEqual(code, 200)
+                    paths = body['endpoints'][0]['paths']
+                    self.assertEqual([p['path'] for p in paths], ['home', 'hotspot'])
+                    self.assertEqual([p['refused_clients'] for p in paths], [9, 9])
+                    self.assertEqual(paths[0]['owner'], paths[1]['owner'])
+                    self.assertNotIn('private_metadata', json.dumps(body))
+
     def test_retained_discovery_lookup_requires_auth_and_returns_only_onboarding_defaults(self):
         from wifi_bridge.candidates import scan_candidate
         row={'ssid':'DWARF_mini_SYNTHETIC','bssid':'02:00:00:77:88:11','signal':80,'frequency':2412,'security':'WPA2'}
@@ -49,7 +228,7 @@ class APITests(Fixture):
         self.controller.cycle(5)
         changes = self.request('GET', path)[1]['events']
         self.assertIn('disconnected', [event['type'] for event in changes])
-        self.assertEqual({event['operation_id'] for event in changes}, {accepted['operation_id']})
+        self.assertEqual({event['operation_id'] for event in changes if 'operation_id' in event}, {accepted['operation_id']})
         sequence = self.controller.event_store.sequence
         self.request('GET', path); self.request('GET', path)
         self.assertEqual(self.controller.event_store.sequence, sequence)
@@ -151,6 +330,26 @@ class APITests(Fixture):
         self.assertEqual(self.request('PATCH','/api/v1/settings',{'country':'FR'})[0],200)
         self.assertEqual(self.store.config['home']['ssid'],'Maison')
         self.assertEqual(self.request('PATCH','/api/v1/settings',{'admin_hash':'bad'})[0],400)
+
+    def test_operation_protection_http_scope_revision_and_round_trip(self):
+        self.login()
+        body = {'auto_policy':{'protect_running_operations':True}, 'acknowledge_interruption':True}
+        path = '/api/v1/settings'
+        revision = '"'+self.server.api.revision()+'"'
+        for scopes in (['read'], ['connect'], ['telemetry'], ['camera']):
+            self.server.sessions[self.token]['scopes'] = scopes
+            self.assertEqual(self.request('PATCH', path, body, {'If-Match':revision})[0], 403)
+        self.server.sessions[self.token]['scopes'] = ['admin']
+        self.assertEqual(self.request('PATCH', path, body)[0], 428)
+        self.assertEqual(self.request('PATCH', path, body, {'If-Match':'"stale"'})[0], 412)
+        self.assertEqual(self.request('PATCH', path, {'auto_policy':body['auto_policy']}, {'If-Match':revision})[0], 400)
+        status, result, _ = self.request('PATCH', path, body, {'If-Match':revision})
+        self.assertEqual(status, 200)
+        self.assertTrue(result['settings']['auto_policy']['protect_running_operations'])
+        self.assertNotIn('acknowledge_interruption', self.store.config)
+        self.assertEqual(self.request('PATCH', path, {'auto_policy':{'protect_running_operations':False}}, {'If-Match':revision})[0], 412)
+        current = '"'+self.server.api.revision()+'"'
+        self.assertEqual(self.request('PATCH', path, {'auto_policy':{'protect_running_operations':False}}, {'If-Match':current})[0], 200)
 
     def test_tokens_expire_and_logout_is_per_app(self):
         self.login();first=self.token;self.login();second=self.token
@@ -379,8 +578,8 @@ class APITests(Fixture):
         self.assertTrue(dwarf['passive_only']);self.assertTrue(dwarf['replies_disabled'])
         self.assertEqual(dwarf['discovery_relay']['last_result'],'REPLIES_DISABLED')
         self.assertFalse(dwarf['discovery_relay']['supported']);self.assertFalse(dwarf['discovery_relay']['relay_plan_available'])
-        self.assertIn('dwarf_passive_demand',MobileAPI.info()['capabilities'])
-        self.assertNotIn('dwarf_discovery_relay',MobileAPI.info()['capabilities'])
+        self.assertIn('dwarf_passive_demand',self.server.api.info()['legacy_capabilities'])
+        self.assertNotIn('dwarf_discovery_relay',self.server.api.info()['legacy_capabilities'])
         self.assertEqual(dwarf['protocol'],'dwarf-udp-ping');self.assertFalse(dwarf['supported'])
         body=dict(status['config'],auto_policy={'dwarf_demand':False},config_revision=status['config_revision'])
         self.assertEqual(self.request('POST','/api/config',body,browser)[0],403)
@@ -445,7 +644,7 @@ class APITests(Fixture):
     def test_field_management_paths_native_parity_and_ap_is_reserved(self):
         from wifi_bridge.network import NetworkError
         self.login();self.net.radios=3;self.controller.update(devices=self.net.devices())
-        self.assertIn('field_management_paths',self.request('GET','/api/v1/info')[1]['capabilities'])
+        self.assertIn('field_management_paths',self.request('GET','/api/v1/info')[1]['legacy_capabilities'])
         self.assertEqual(self.request('PATCH','/api/v1/hotspot',{'enabled':True})[0],200)
         self.controller.cycle(5)
         status=self.request('GET','/api/v1/status')[1]

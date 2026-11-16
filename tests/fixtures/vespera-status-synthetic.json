@@ -1,0 +1,25 @@
+{
+  "motors": {"tracking": true, "slewing": false, "atPark": false},
+  "battery": {"level": 73, "charging": false},
+  "storage": {"freeMb": 12000},
+  "filter": "dual_band",
+  "network": {"band": "discarded", "ssid": "discarded"},
+  "settings": {"defog": true, "name": "discarded"},
+  "initialized": true,
+  "masterDeviceId": "discarded",
+  "connectedDevices": [{"id": "discarded", "name": "discarded"}],
+  "telescopeId": "discarded",
+  "bootCount": 42,
+  "challenge": "discarded",
+  "name": "discarded",
+  "sensors": {"temperature": 8.5, "humidity": 65, "dewPoint": 2.4},
+  "currentOperation": {
+    "kind": "observation", "state": "running", "currentStep": 1,
+    "steps": [{"kind": "pointing"}, {"kind": "stacking"}],
+    "target": {"name": "Synthetic nebula", "deviceId": "discarded"},
+    "capture": {"acquired": 14},
+    "stacking": {"accepted": 11, "rejected": 3, "rejectReasons": {"astrometry": 2, "blur": 1, "unreviewed": 91}},
+    "astrometry": {"state": "failed"}
+  },
+  "unknown": {"value": "discarded"}
+}

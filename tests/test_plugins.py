@@ -37,6 +37,51 @@ class RegistryTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises((ValueError,TypeError)):
                 validate_manifest(dict(base,**change))
 
+    def test_optional_observation_metadata_and_legacy_defaults(self):
+        base=copy.deepcopy(plugin('generic'));base.pop('telemetry')
+        self.assertEqual(validate_manifest(base)['telemetry'],{'adapters':[],'default_enabled':[]})
+        for telemetry in ({'adapters':[],'default_enabled':[]},
+                          {'adapters':['link_v1'],'default_enabled':['link_v1']}):
+            self.assertEqual(validate_manifest(dict(base,telemetry=telemetry))['telemetry'],telemetry)
+        seestar=validate_manifest(plugin('seestar'))
+        self.assertEqual(seestar['telemetry']['adapters'][-1],{'id':'seestar_events_v1','requires':'maker_key'})
+        self.assertEqual(seestar['maker_key']['sources'],['maker_package','import'])
+        self.assertEqual(plugin('vespera')['telemetry']['default_enabled'],['vespera_status_v1'])
+        for ident in ('generic','dwarf','zwo_mount','synscan'):
+            self.assertEqual({k:v for k,v in plugin(ident)['telemetry'].items() if k!='limitation'},{'adapters':['link_v1'] + ([] if ident == 'dwarf' else ['alpaca_observer_v1']), 'default_enabled':[]})
+            self.assertNotIn('maker_key',plugin(ident))
+
+    def test_rejects_invalid_observation_metadata(self):
+        base=copy.deepcopy(plugin('generic'))
+        invalid=[None, [], {}, {'adapters':['unknown'],'default_enabled':[]},
+                 {'adapters':['link_v1','link_v1'],'default_enabled':[]},
+                 {'adapters':[{}],'default_enabled':[]},
+                 {'adapters':[True],'default_enabled':[]},
+                 {'adapters':['link_v1'],'default_enabled':['vespera_status_v1']},
+                 {'adapters':['link_v1'],'default_enabled':['link_v1','link_v1']},
+                 {'adapters':['link_v1'],'default_enabled':True},
+                 {'adapters':['link_v1'],'default_enabled':[],'exec':'forbidden'},
+                 {'adapters':['seestar_events_v1'],'default_enabled':[]}]
+        for telemetry in invalid:
+            with self.subTest(telemetry=telemetry),self.assertRaises(ValueError):
+                validate_manifest(dict(base,telemetry=telemetry))
+        seestar=copy.deepcopy(plugin('seestar'))
+        for change in ({'telemetry':{'adapters':[{'id':'link_v1','requires':'maker_key'}],'default_enabled':[]}},
+                       {'telemetry':{'adapters':[{'id':'seestar_events_v1','requires':'other'}],'default_enabled':[]}},
+                       {'telemetry':{'adapters':[{'id':'seestar_events_v1','requires':'maker_key'}],'default_enabled':['seestar_events_v1']}}):
+            with self.subTest(change=change),self.assertRaises(ValueError):validate_manifest(dict(seestar,**change))
+        del seestar['maker_key']
+        with self.assertRaises(ValueError):validate_manifest(seestar)
+
+    def test_rejects_invalid_maker_key_metadata(self):
+        base=copy.deepcopy(plugin('seestar'))
+        for key in (None, [], {}, dict(base['maker_key'],algorithm='other'),
+                    dict(base['maker_key'],family='other'),dict(base['maker_key'],sources=['import']),
+                    dict(base['maker_key'],sources=['maker_package','import','url']),
+                    dict(base['maker_key'],payload='forbidden')):
+            with self.subTest(key=key),self.assertRaises(ValueError):validate_manifest(dict(base,maker_key=key))
+        with self.assertRaises(ValueError):validate_manifest(dict(plugin('generic'),maker_key=base['maker_key']))
+
     def test_registry_preserves_legacy_ids_and_rejects_conflicting_discovery(self):
         rows=copy.deepcopy(list(all_plugins()))
         with self.assertRaises(ValueError):validate_registry(rows+rows[:1])
@@ -44,8 +89,26 @@ class RegistryTests(unittest.TestCase):
         extra=copy.deepcopy(plugin('zwo_mount'));extra.update(id='another_mount',name='Another mount',wifi=[{'prefix':'Other_','suffix':'any','min_suffix':1}])
         with self.assertRaises(ValueError):validate_registry(rows+[extra])
         extra['relay']['ports']=[12345];extra['wifi'][0]['prefix']='SynScan_special_'
+        # Declared roles must name relayed ports; move the declaration with the port.
+        with self.assertRaises(ValueError):validate_registry(rows+[dict(extra,wifi=[{'prefix':'Other_','suffix':'any','min_suffix':1}])])
+        extra['port_roles']=[{'port':12345,'role':'control','protocol':'lx200'}]
         with self.assertRaises(ValueError):validate_registry(rows+[extra])
         extra['wifi'][0]['prefix']='Other_';self.assertIn('another_mount',validate_registry(rows+[extra]))
+
+    def test_port_roles_are_bounded_declarations_of_relayed_ports(self):
+        from wifi_bridge.plugins import port_role
+        self.assertEqual(port_role('seestar',4700),('control','json_rpc'))
+        self.assertEqual(port_role('seestar',4554),('preview','rtsp'))
+        self.assertEqual(port_role('dwarf',554),('preview','rtsp'))
+        self.assertEqual(port_role('vespera',8083),('stream','socketio'))
+        self.assertEqual(port_role('generic',80),('other','unknown'))
+        base=copy.deepcopy(plugin('vespera'))
+        for roles in ([], [{'port':9,'role':'control','protocol':'http'}], [{'port':8082,'role':'admin','protocol':'http'}],
+                      [{'port':8082,'role':'rest','protocol':'ftp'}], [{'port':8082,'role':'rest','protocol':'http','extra':1}],
+                      [{'port':8082,'role':'rest','protocol':'http'}]*2, 'rest'):
+            with self.subTest(roles=roles), self.assertRaises(ValueError):
+                validate_manifest(dict(base,port_roles=roles))
+        with self.assertRaises(ValueError):validate_manifest(dict(copy.deepcopy(plugin('generic')),port_roles=[{'port':80,'role':'rest','protocol':'http'}]))
 
     def test_saved_profile_or_policy_cannot_be_orphaned_by_plugin_removal(self):
         require_config_plugins({'telescopes':[{'kind':'synscan'}]})
@@ -75,10 +138,13 @@ class RegistryTests(unittest.TestCase):
             extra.update(id='community_mount',name='Community mount',description='Synthetic community fixture.',
                          default_address='192.168.5.1',identification='none',
                          relay={'transport':'tcp','ports':[12345]},wifi=[{'prefix':'Community_','min_suffix':1,'suffix':'any'}],
+                         port_roles=[{'port':12345,'role':'control','protocol':'lx200'}],
                          validation={'level':'simulation','models':[],'checks':[],'limitations':['physical_pending']})
             validate_registry(rows+[extra]);rows.append(extra)
             (root/'wifi_bridge/static/plugins.json').write_text(json.dumps({'schema_version':1,'plugins':rows}))
-            (root/'scripts').mkdir();shutil.copyfile(ROOT/'scripts/generate_openapi.py',root/'scripts/generate_openapi.py')
+            (root/'scripts').mkdir()
+            for name in ('generate_openapi.py', 'native_client_openapi.py'):
+                shutil.copyfile(ROOT/'scripts'/name, root/'scripts'/name)
             subprocess.run([sys.executable,str(root/'scripts/generate_openapi.py')],cwd=root,check=True,capture_output=True)
             contract=json.loads((root/'wifi_bridge/static/openapi.json').read_text())['components']['schemas']
             self.assertIn('community_mount',contract['TelescopeCreate']['properties']['kind']['enum'])

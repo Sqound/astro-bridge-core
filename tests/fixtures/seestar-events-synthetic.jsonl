@@ -1,0 +1,5 @@
+{"Event":"PiStatus","temp":24.5,"battery_capacity":78,"battery_temp":28,"charger_status":1,"is_overtemp":false}
+{"Event":"Stack","stacked_frame":12,"dropped_frame":3,"frame_errcode":4,"state":"running"}
+{"Event":"Exposure","state":"running","duration":10}
+{"Event":"AutoGoto","state":"failed","code":7}
+{"Event":"AutoFocus","state":"completed"}

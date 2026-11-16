@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
   "id": "vespera",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Vespera",
   "description": "Use Singularity through Astro Bridge.",
   "category": "telescope",
+  "protocol": "vespera",
   "wifi": [
     {
       "prefix": "vespera",
@@ -20,6 +21,18 @@
       8083
     ]
   },
+  "port_roles": [
+    {
+      "port": 8082,
+      "role": "rest",
+      "protocol": "http"
+    },
+    {
+      "port": 8083,
+      "role": "stream",
+      "protocol": "socketio"
+    }
+  ],
   "identification": "none",
   "discovery": {
     "engine": "tcp_syn",
@@ -47,5 +60,16 @@
       "title": "Astro Bridge discovery evidence",
       "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/DEVICE-DISCOVERY-STUDY.md"
     }
-  ]
+  ],
+  "telemetry": {
+    "adapters": [
+      "link_v1",
+      "vespera_status_v1",
+      "alpaca_observer_v1"
+    ],
+    "default_enabled": [
+      "vespera_status_v1"
+    ],
+    "limitation": "Read-only observations. Available values depend on the instrument and enabled adapters."
+  }
 }

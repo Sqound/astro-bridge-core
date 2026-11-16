@@ -4,6 +4,9 @@ from pathlib import Path
 
 ASSETS = {
     '/': ('index.html', 'text/html; charset=utf-8'),
+    '/cameras.js': ('cameras.js', 'text/javascript; charset=utf-8'),
+    '/session-page.js': ('session-page.js', 'text/javascript; charset=utf-8'),
+    '/session-cards.js': ('session-cards.js', 'text/javascript; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/events.js': ('events.js', 'text/javascript; charset=utf-8'),
     '/i18n.js': ('i18n.js', 'text/javascript; charset=utf-8'),

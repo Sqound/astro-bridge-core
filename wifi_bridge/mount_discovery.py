@@ -20,7 +20,7 @@ class TcpPluginDemand(VesperaDemand):
         with self.c.lock:
             if plan not in self.plans(): return
             management_ip = str(ipaddress.IPv4Interface(plan[1]).ip)
-            candidates = [p for p in profiles(self.c.store.config) if p['kind'] == self.kind]
+            candidates = [p for p in profiles(self.c.store.config) if p['kind'] == self.kind and not p.get('isolated')]
             if target==management_ip and plugin(self.kind)['discovery']['target_mode']=='original':return
             if target != management_ip and not any(p['target_ip'] == target for p in candidates): return
             if not candidates: return
@@ -53,7 +53,7 @@ class SynscanDiscovery(VesperaDemand):
         with self.c.lock:
             if self.c.demo: return ()
             enabled = (self.c.store.config.get('auto_connect') and auto_policy(self.c.store.config)[demand_flag(self.kind)]
-                       and any(p['kind'] == self.kind for p in profiles(self.c.store.config)))
+                       and any(p['kind'] == self.kind and not p.get('isolated') for p in profiles(self.c.store.config)))
             selected = any(row.get(proxy_flag(self.kind)) for row in self.c.state['telescopes'])
             return tuple(self.c.management_plans[:2]) if enabled or selected else ()
 
@@ -87,7 +87,7 @@ class SynscanDiscovery(VesperaDemand):
         if source is None or self.clock() < self.next_request: return
         with self.c.lock:
             if plan not in self.plans(): return
-            if not any(p['kind'] == self.kind for p in profiles(self.c.store.config)): return
+            if not any(p['kind'] == self.kind and not p.get('isolated') for p in profiles(self.c.store.config)): return
             row = next((r for r in self.c.state['telescopes'] if r.get(proxy_flag(self.kind)) and r.get('relay_ready')), None)
             profile = next((p for p in profiles(self.c.store.config) if row and p['id'] == row['id'] and p['kind'] == self.kind), None)
             device = next((d for d in self.c.state['devices'] if profile and d['mac'] == profile['mac']), None)

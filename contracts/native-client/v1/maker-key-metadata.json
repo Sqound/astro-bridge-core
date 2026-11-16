@@ -1,0 +1,100 @@
+{
+  "name": "maker-key-metadata",
+  "description": "Administrator-only key metadata and unusable-file rejection; no maker package, key or instrument is needed.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/token",
+        "headers": {},
+        "body": {
+          "password": "test-password-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "access_token": "test-token-1",
+          "token_type": "Bearer",
+          "expires_in": 43200,
+          "api_version": "1"
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/access_token": "^[A-Za-z0-9_-]{20,128}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/maker-keys",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "keys": [
+            {
+              "family": "seestar",
+              "state": "absent",
+              "source": null,
+              "updated_seq": 0,
+              "unlocks": [
+                "stacking",
+                "exposures",
+                "goto",
+                "temperature",
+                "battery"
+              ]
+            }
+          ],
+          "config_revision": "maker-revision-1"
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$"
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/api/v1/maker-keys/seestar",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "pem": "deliberately unusable input"
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "KEY_UNUSABLE",
+            "message": "This key file cannot be used."
+          }
+        }
+      },
+      "note": ""
+    }
+  ]
+}

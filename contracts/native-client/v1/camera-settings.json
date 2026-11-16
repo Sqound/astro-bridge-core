@@ -1,0 +1,262 @@
+{
+  "name": "camera-settings",
+  "description": "List actual registered cameras, then change and restore owner serving with current revisions; no synthetic USB devices are created.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/token",
+        "headers": {},
+        "body": {
+          "password": "test-password-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "access_token": "test-token-1",
+          "token_type": "Bearer",
+          "expires_in": 43200,
+          "api_version": "1"
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/access_token": "^[A-Za-z0-9_-]{20,128}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/cameras",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": []
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/cameras/settings",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "settings": {
+            "serve": true,
+            "port": 11111,
+            "allowed_subnets": [],
+            "discover": true,
+            "indi": false
+          },
+          "config_revision": "camera-revision-1",
+          "indi": {
+            "port": 7624,
+            "state": "off"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$"
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v1/cameras/settings",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"camera-revision-1\""
+        },
+        "body": {
+          "serve": false,
+          "indi": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "settings": {
+            "serve": false,
+            "port": 11111,
+            "allowed_subnets": [],
+            "discover": true,
+            "indi": true
+          },
+          "config_revision": "camera-revision-2",
+          "indi": {
+            "port": 7624,
+            "state": "off"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/cameras",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": []
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v1/cameras/settings",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"camera-revision-2\""
+        },
+        "body": {
+          "serve": true,
+          "indi": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "settings": {
+            "serve": true,
+            "port": 11111,
+            "allowed_subnets": [],
+            "discover": true,
+            "indi": false
+          },
+          "config_revision": "camera-revision-3",
+          "indi": {
+            "port": 7624,
+            "state": "off"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/cameras/demo",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"camera-revision-3\""
+        },
+        "body": {
+          "plugged": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": "Explicit simulator only; native camera reservations remain independent of Alpaca ownership."
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/cameras/demo-camera/release-owner",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"camera-revision-3\""
+        },
+        "body": {
+          "confirm_release": true,
+          "owner_generation": "00000000000000000000000000000000"
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "CAMERA_OWNER_CHANGED",
+            "message": "Camera owner changed. Review the current owner before trying again."
+          }
+        }
+      },
+      "note": "No Alpaca owner was acquired. Bridge reservation actions cannot stand in for owner consent."
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/cameras/demo",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"camera-revision-3\""
+        },
+        "body": {
+          "plugged": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "ok": true
+        }
+      },
+      "note": "Explicit simulator only; native camera reservations remain independent of Alpaca ownership."
+    }
+  ]
+}

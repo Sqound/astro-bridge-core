@@ -1,5 +1,6 @@
 """Counter/catalog/clock processing; Linux packet proof is in the namespace runner."""
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -42,6 +43,31 @@ class ActivityTests(unittest.TestCase):
     def sample(self,seconds=5):self.now[0]+=seconds;self.a.sample();return self.a.status()['profiles']['one']
     def session(self,mark=None,src='192.168.42.2',dst='192.168.42.1'):
         return 'ipv4 2 tcp 6 431999 ESTABLISHED src='+src+' dst='+dst+' sport=45678 dport=8082 src=10.0.0.1 dst=10.0.0.2 sport=8082 dport=45678 [ASSURED] mark='+str(mark or self.mark)+' use=1\n'
+
+    def test_observer_output_input_traffic_cannot_change_forward_activity(self):
+        scripts = []
+        with patch.object(self.a, 'counter_snapshot', side_effect=ValueError('Synthetic absent table')):
+            self.a.configure([], scripts.append)
+        script = ''.join(scripts)
+        self.assertIn('type filter hook forward priority', script)
+        self.assertNotIn('hook output', script); self.assertNotIn('hook input', script)
+        self.assertTrue(all(' wifi_bridge_activity forward ' in line for line in script.splitlines() if line.startswith('add rule ')))
+        # Unit-level hook/counter fixture: bridge-local observer requests and
+        # replies traverse OUTPUT/INPUT, never this classifier's FORWARD hook.
+        hooks = set(re.findall(r'type filter hook (\w+)', script))
+        def packets(hook, count):
+            if hook in hooks: self.packets += count
+        for _ in range(30):
+            packets('output', 12); packets('input', 2500)
+            value = self.sample()
+        self.assertEqual(value['state'], 'quiet')
+        self.assertEqual(value['packets'], 0); self.assertEqual(value['bytes'], 0)
+        packets('forward', 100)
+        self.assertEqual(self.sample()['state'], 'active')
+        for _ in range(24):
+            packets('input', 2500)
+            value = self.sample()
+        self.assertEqual(value['state'], 'quiet')
 
     def test_silent_established_session_does_not_prevent_monotonic_quiet(self):
         self.sample();self.raw=self.session();value=self.sample();self.assertEqual(value['state'],'unknown');self.assertEqual(value['tcp_established'],1)

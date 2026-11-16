@@ -1,0 +1,435 @@
+{
+  "name": "instruments-list",
+  "description": "Independent link, service and owner permission states; The instrument facade maps service from live connection.service.state, never from relay_ready.",
+  "contract_version": 1,
+  "requires": [
+    "instruments"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "connected",
+              "service": "ready",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=connected, service=ready.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "connecting",
+              "service": "unknown",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=connecting, service=not_probed.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "available",
+              "service": "not_probed",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=available, service=not_probed.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "saved",
+              "service": "unknown",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=saved, service=unknown.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "connected",
+              "service": "not_answering",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": true,
+              "blockers": [],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=connected, service=not_answering. Source: connection.service.state; Wi-Fi and legacy forwarding may both remain ready.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "instruments": [
+            {
+              "id": "tel-seestar-1",
+              "kind": "smart_telescope",
+              "family": "seestar",
+              "name": "Test telescope",
+              "link": "disabled",
+              "service": "unknown",
+              "protocol": "seestar",
+              "model": null,
+              "verified_identity": null,
+              "identity_source": "unverified",
+              "access": "direct",
+              "simultaneous": true,
+              "current_operation": null,
+              "since_seq": 4,
+              "reason": null,
+              "client_connect": false,
+              "blockers": [
+                "CLIENT_CONNECT_DISABLED"
+              ],
+              "lease": {
+                "held": false,
+                "mine": false,
+                "expires_in": null,
+                "reservation_expires_in": null
+              },
+              "capabilities": {
+                "telemetry": [
+                  "link_v1"
+                ],
+                "maker_key": "absent"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "config_revision": "revision-1",
+          "boot_id": "00000000000000000000000000000000",
+          "latest_event_seq": 4
+        }
+      },
+      "note": "Snapshot: link=disabled, service=unknown.",
+      "real_patterns": {
+        "/config_revision": "^[0-9a-f]{64}$",
+        "/boot_id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/instruments/tel-seestar-1",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "tel-seestar-1",
+          "kind": "smart_telescope",
+          "family": "seestar",
+          "name": "Test telescope",
+          "link": "disabled",
+          "service": "unknown",
+          "protocol": "seestar",
+          "model": null,
+          "verified_identity": null,
+          "identity_source": "unverified",
+          "access": "direct",
+          "simultaneous": true,
+          "current_operation": null,
+          "since_seq": 4,
+          "reason": null,
+          "client_connect": false,
+          "blockers": [
+            "CLIENT_CONNECT_DISABLED"
+          ],
+          "lease": {
+            "held": false,
+            "mine": false,
+            "expires_in": null,
+            "reservation_expires_in": null
+          },
+          "capabilities": {
+            "telemetry": [
+              "link_v1"
+            ],
+            "maker_key": "absent"
+          }
+        }
+      },
+      "note": ""
+    }
+  ]
+}

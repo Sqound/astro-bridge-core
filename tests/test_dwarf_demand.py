@@ -112,6 +112,7 @@ class DwarfPacketTests(Fixture):
             stack.enter_context(patch.object(entry.Path,'exists',return_value=True))
             stack.enter_context(patch.object(entry.Path,'is_file',return_value=False))
             stack.enter_context(patch.object(entry.Path,'read_text',return_value='{"password":"synthetic-bootstrap"}'))
+            stack.enter_context(patch.object(entry,'load_registry',return_value=Mock()))
             stack.enter_context(patch.object(entry.signal,'signal'))
             stack.enter_context(patch('sys.argv',['wifi_bridge','--state-dir',self.tmp.name]))
             threads=stack.enter_context(patch.object(entry.threading,'Thread'))
@@ -119,7 +120,7 @@ class DwarfPacketTests(Fixture):
             stack.enter_context(patch('builtins.print'))
             entry.main()
             self.assertEqual([call.kwargs['target'] for call in threads.call_args_list],
-                             [self.controller.loop,discovery.loop,self.controller.vespera_demand.loop,self.observer.loop,self.controller.zwo_mount_demand.loop,self.controller.synscan_demand.loop,self.controller.candidates.loop])
+                             [self.controller.loop,self.controller.link_collector.loop,self.controller.vespera_collector.loop,self.controller.alpaca_collector.loop,self.controller.seestar_collector.loop,self.controller.camera_runtime._run,self.controller.camera_discovery._run,discovery.loop,self.controller.vespera_demand.loop,self.observer.loop,self.controller.zwo_mount_demand.loop,self.controller.synscan_demand.loop,self.controller.candidates.loop])
             sockets.assert_not_called()
 
     def test_enabled_passive_observer_never_replies_or_queries_instrument_then_closes(self):
@@ -173,7 +174,7 @@ class DwarfOperationTests(Fixture):
             sockets.assert_not_called()
         self.assertEqual(result['state'],'succeeded');self.assertEqual(result['cause'],'DWARF_DISCOVERY');self.assertEqual(result['endpoint']['proxy']['protocol'],'dwarf')
         self.assertEqual(result['endpoint']['maker_app_acceptance'],'unverified')
-        events=[e for e in self.controller.event_store.events if e['operation_id']==result['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==result['id']]
         self.assertIn('connected',[e['type'] for e in events]);self.assertEqual({e['cause'] for e in events},{'DWARF_DISCOVERY'})
         self.assertTrue(self.controller.status()['maker_demands']['dwarf']['discovery_relay']['maker_app_acceptance']=='unverified')
 
@@ -214,7 +215,7 @@ class DwarfOperationTests(Fixture):
         self.assertEqual(self.trigger(),'REQUEST_ACCEPTED');result=self.finish()
         self.assertEqual(result['state'],'succeeded');self.assertEqual(result['displaced']['profile_id'],'primary')
         self.assertEqual(result['cause'],'DWARF_DISCOVERY');self.assertEqual(result['endpoint']['proxy']['protocol'],'dwarf')
-        events=[e for e in self.controller.event_store.events if e['operation_id']==result['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==result['id']]
         self.assertIn(('primary','disconnected'),[(e['profile_id'],e['type']) for e in events]);self.assertIn(('auto-one','connected'),[(e['profile_id'],e['type']) for e in events])
         self.assertEqual({e['cause'] for e in events},{'DWARF_DISCOVERY'})
 
@@ -244,5 +245,5 @@ class DwarfOperationTests(Fixture):
             self.assertEqual(self.trigger(),'REQUEST_ACCEPTED');result=self.finish()
         self.assertEqual(result['state'],'failed');self.assertEqual(result['restoration']['state'],'restored')
         self.assertTrue(self.net.connected('telescope',self.devices[0]))
-        events=[e for e in self.controller.event_store.events if e['operation_id']==result['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==result['id']]
         self.assertEqual({e['cause'] for e in events},{'DWARF_DISCOVERY'});self.assertIn('restored',[e['type'] for e in events])

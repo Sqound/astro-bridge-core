@@ -1,0 +1,182 @@
+{
+  "name": "connect-needs-replacement",
+  "description": "Only explicit user consent names a replaceable instrument.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": {
+            "code": "NO_FREE_RADIO",
+            "message": "No confidently free radio is available; existing connections were preserved.",
+            "replaceable": [
+              {
+                "instrument_id": "tel-vespera-1",
+                "name": "Test telescope two"
+              }
+            ],
+            "free_radios": 0,
+            "simultaneous": false
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {}
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "allow_replace": [
+            "tel-vespera-1"
+          ],
+          "wait_seconds": 2
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-seestar-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "tel-seestar-1",
+            "request_path": "home",
+            "mode": "proxy",
+            "primary": {
+              "host": "192.0.2.10",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [
+              {
+                "host": "192.168.77.1",
+                "ports": [
+                  {
+                    "port": 4700,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "control",
+                    "protocol": "json_rpc"
+                  },
+                  {
+                    "port": 4800,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "imaging",
+                    "protocol": "binary"
+                  },
+                  {
+                    "port": 4801,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4804,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4554,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  },
+                  {
+                    "port": 4555,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  }
+                ]
+              }
+            ],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.1"
+          }
+        }
+      },
+      "note": "User confirmed replacing exactly tel-vespera-1; all protection checks run again.",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    }
+  ]
+}

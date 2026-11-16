@@ -53,7 +53,7 @@ class OperationTests(Fixture):
         operation=self.finish()
         self.assertEqual(operation['state'],'succeeded');self.assertEqual(operation['cause'],cause)
         self.assertEqual(operation['endpoint']['proxy']['protocol'],kind)
-        events=[e for e in self.controller.event_store.events if e['operation_id']==operation['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==operation['id']]
         self.assertIn('connected',[e['type'] for e in events]);self.assertTrue(all(e['cause']==cause for e in events))
 
     def test_native_zwo_connection_runs_shared_guarded_operation_and_reports_its_cause(self):
@@ -67,7 +67,7 @@ class OperationTests(Fixture):
         result=self.finish();self.assertEqual(result['state'],'succeeded');self.assertEqual(result['reason'],'READY')
         profile=self.store.config['telescopes'][1];self.assertTrue(profile['enabled']);self.assertTrue(profile['bssid']);self.assertEqual(profile['mac'],self.devices[2]['mac'])
         self.assertEqual(result['endpoint']['profile_id'],'auto-one');self.assertIsNone(result['endpoint']['proxy']);self.assertEqual(result['endpoint']['direct_route']['routability'],'unknown')
-        events=[e for e in self.controller.event_store.events if e['operation_id']==accepted['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==accepted['id']]
         self.assertIn('requested',[e['type'] for e in events]);self.assertIn('connected',[e['type'] for e in events]);self.assertTrue(all(e['profile_id']=='auto-one' for e in events))
         self.store.config['auto_connect']=False
         code,ready=self.ops.ensure('auto-one',None,self.api.revision,'opaque-client',time.monotonic()+3600)
@@ -187,7 +187,7 @@ class OperationTests(Fixture):
         self.assertEqual(result['state'],'failed');self.assertEqual(result['reason'],'ASSOCIATION_FAILED');self.assertEqual(result['restoration']['state'],'restored')
         profile=self.store.config['telescopes'][1];self.assertFalse(profile['enabled']);self.assertEqual(profile['mac'],'');self.assertEqual(profile['bssid'],'');self.assertEqual(profile['password'],'newer-private-password')
         self.assertNotIn('PRIVATE',str(result));self.assertNotIn('newer-private-password',str(result))
-        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e['operation_id']==accepted['id']])
+        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e.get('operation_id')==accepted['id']])
 
     def test_wrong_physical_association_never_receives_forwarding_or_proxy(self):
         original=self.net.link_observation
@@ -196,7 +196,7 @@ class OperationTests(Fixture):
             _,accepted=self.request();result=self.finish()
         self.assertEqual(result['reason'],'PHYSICAL_SELECTION_MISMATCH');self.assertEqual(result['state'],'failed')
         self.assertFalse(any(route.get('target')=='10.2.0.1' for call in firewall.call_args_list for route in call.kwargs.get('telescopes',[])))
-        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e['operation_id']==accepted['id']])
+        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e.get('operation_id')==accepted['id']])
 
     def test_service_deadline_failure_cleanup_and_no_late_ready(self):
         self.api.update('telescopes',{'kind':'vespera'},ident='auto-one')
@@ -205,7 +205,7 @@ class OperationTests(Fixture):
         with patch.object(self.net,'probe',side_effect=unavailable):
             _,accepted=self.request();result=self.finish()
         self.assertEqual(result['reason'],'TIMED_OUT');self.assertEqual(result['restoration']['state'],'restored');self.assertFalse(self.store.config['telescopes'][1]['enabled'])
-        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e['operation_id']==accepted['id']])
+        self.assertNotIn('connected',[e['type'] for e in self.controller.event_store.events if e.get('operation_id')==accepted['id']])
         self.assertTrue(self.controller.update_safe())
 
     def test_band_ambiguity_selector_conflict_external_radio_and_subnet_reasons(self):
@@ -345,7 +345,7 @@ class OperationTests(Fixture):
 
     def test_replacement_policy_consent_strict_revision_and_metadata_preservation(self):
         from wifi_bridge.config import auto_policy
-        self.assertEqual(auto_policy(self.store.config),{'quiet_seconds':120,'cooldown_seconds':60,'force_first_profile':False,'seestar_demand':False,'vespera_demand':False,'dwarf_demand':False,'zwo_mount_demand':False,'synscan_demand':False})
+        self.assertEqual(auto_policy(self.store.config),{'quiet_seconds':120,'cooldown_seconds':60,'force_first_profile':False,'protect_running_operations':False,'night_reservations':True,'seestar_demand':False,'vespera_demand':False,'dwarf_demand':False,'zwo_mount_demand':False,'synscan_demand':False})
         self.assertFalse(self.api.read('telescopes','primary')['telescope']['auto_replaceable'])
         for value in (None,[],{'unexpected':True},{'quiet_seconds':True},{'cooldown_seconds':0},{'quiet_seconds':3601},{'force_first_profile':1}):
             with self.assertRaises(Invalid):self.api.update('settings',{'auto_policy':value},expected='"'+self.api.revision()+'"')
@@ -375,13 +375,51 @@ class OperationTests(Fixture):
         self.net.sample_activity = lambda **kwargs: None
         if force:self.api.update('settings',{'auto_policy':{'force_first_profile':True},'acknowledge_interruption':True},expected='"'+self.api.revision()+'"')
 
+    def test_operation_protection_consent_revision_and_strict_boolean(self):
+        for value in (None, 1, 'true', []):
+            with self.assertRaises(Invalid):
+                self.api.update('settings', {'auto_policy':{'protect_running_operations':value}}, expected='"'+self.api.revision()+'"')
+        with self.assertRaises(Invalid):
+            self.api.update('settings', {'auto_policy':{'protect_running_operations':True}}, expected='"'+self.api.revision()+'"')
+        for revision in (None, '*', '"stale"'):
+            with self.assertRaises(ApiError):
+                self.api.update('settings', {'auto_policy':{'protect_running_operations':True}, 'acknowledge_interruption':True}, expected=revision)
+        self.api.update('settings', {'auto_policy':{'protect_running_operations':True}, 'acknowledge_interruption':True}, expected='"'+self.api.revision()+'"')
+        self.api.update('settings', {'country':'JP'})
+        self.assertTrue(self.api.read('settings')['settings']['auto_policy']['protect_running_operations'])
+        self.assertNotIn('acknowledge_interruption', self.store.config)
+
+    def test_idle_telemetry_never_erases_active_traffic_or_owner_lease(self):
+        self.replacement(state='active')
+        self.store.config['auto_policy']['protect_running_operations'] = True
+        with patch.object(self.controller, 'operation_state', return_value='idle'):
+            self.request(); self.assertEqual(self.finish()['reason'], 'NO_REPLACEABLE_CONNECTION')
+            self.ops.negative.clear(); self.measured['state'] = 'quiet'
+            self.controller.protection.create('primary', {}, 'other-app', '"'+self.api.revision()+'"', self.api.revision)
+            self.request(); self.assertEqual(self.finish()['reason'], 'NO_REPLACEABLE_CONNECTION')
+
+    def test_fresh_idle_keeps_explicit_force_behavior_for_active_traffic(self):
+        self.replacement(force=True, state='active')
+        self.store.config['auto_policy']['protect_running_operations'] = True
+        with patch.object(self.controller, 'operation_state', return_value='idle'):
+            self.request(); value = self.finish()
+        self.assertEqual(value['state'], 'succeeded')
+        self.assertEqual(value['displaced']['reason'], 'FORCED_INTERRUPTION')
+
+    def test_operation_protection_rechecked_before_disconnect(self):
+        self.replacement(force=True)
+        self.store.config['auto_policy']['protect_running_operations'] = True
+        with patch.object(self.controller, 'operation_state', side_effect=['idle', 'running']):
+            self.request(); self.assertEqual(self.finish()['reason'], 'OPERATION_RUNNING')
+        self.assertTrue(self.net.connected('telescope', self.devices[0]))
+
     def test_quiet_replacement_commits_only_affected_intent_and_correlates_disconnect(self):
         self.replacement()
         _, accepted = self.request(); value = self.finish()
         self.assertEqual(value['state'],'succeeded');self.assertEqual(value['displaced'],{'profile_id':'primary','reason':'QUIET_REPLACEMENT'})
         self.assertFalse(self.store.config['telescopes'][0]['enabled']);self.assertTrue(self.store.config['telescopes'][1]['enabled'])
         self.assertEqual(value['endpoint']['profile_id'],'auto-one');self.assertFalse(self.controller.pauses.records)
-        events=[e for e in self.controller.event_store.events if e['operation_id']==accepted['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==accepted['id']]
         self.assertIn(('primary','disconnected'),[(e['profile_id'],e['type']) for e in events])
         self.assertIn(('auto-one','connected'),[(e['profile_id'],e['type']) for e in events])
 
@@ -398,7 +436,7 @@ class OperationTests(Fixture):
         self.assertEqual(value['state'],'failed');self.assertEqual(value['restoration'],{'state':'restored','reason':'PREVIOUS_CONNECTION_READY'})
         self.assertTrue(self.net.connected('telescope',self.devices[0]));self.assertTrue(self.store.config['telescopes'][0]['enabled'])
         self.assertFalse(self.store.config['telescopes'][1]['enabled']);self.assertFalse(self.controller.pauses.records)
-        self.assertIn('restored',[e['type'] for e in self.controller.event_store.events if e['operation_id']==accepted['id'] and e['profile_id']=='primary'])
+        self.assertIn('restored',[e['type'] for e in self.controller.event_store.events if e.get('operation_id')==accepted['id'] and e['profile_id']=='primary'])
         with self.assertRaises(ApiError) as error:self.request()
         self.assertEqual(error.exception.code,'TARGET_BACKOFF')
 
@@ -488,7 +526,7 @@ class OperationTests(Fixture):
         self.vespera_policy()
         self.assertEqual(self.ops.demand(plan,'192.168.1.9',kind='vespera',target='10.2.0.1'),'REQUEST_ACCEPTED')
         result=self.finish();self.assertEqual(result['state'],'succeeded');self.assertEqual(result['cause'],'VESPERA_CONNECTION')
-        events=[e for e in self.controller.event_store.events if e['operation_id']==result['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==result['id']]
         self.assertEqual({e['cause'] for e in events},{'VESPERA_CONNECTION'});self.assertIn('connected',[e['type'] for e in events])
         self.api.update('settings',{'auto_policy':{'seestar_demand':True},'acknowledge_interruption':True},expected='"'+self.api.revision()+'"')
         self.ops.retain_clients(set());self.assertEqual(self.ops.clients,{})
@@ -600,7 +638,7 @@ class OperationTests(Fixture):
         with patch.object(self.net,'connect',side_effect=connect):
             self.assertEqual(self.ops.demand(self.controller.management_plan,'192.168.1.9'),'REQUEST_ACCEPTED');value=self.finish()
         self.assertEqual(value['restoration']['state'],'restored');self.assertEqual(value['cause'],'SEESTAR_DISCOVERY')
-        events=[e for e in self.controller.event_store.events if e['operation_id']==value['id']]
+        events=[e for e in self.controller.event_store.events if e.get('operation_id')==value['id']]
         self.assertEqual({e['profile_id'] for e in events},{'primary','auto-one'})
         self.assertEqual({e['cause'] for e in events},{'SEESTAR_DISCOVERY'})
         self.assertIn('restored',[e['type'] for e in events])
@@ -652,3 +690,87 @@ class OperationTests(Fixture):
             self.request();value=self.finish()
         self.assertEqual(value['reason'],'QUIET_ELIGIBILITY_CHANGED');self.assertNotIn('displaced',value)
         self.assertTrue(self.net.connected('telescope',self.devices[0]));self.assertFalse(any(call.args[0]=='telescope' for call in disconnect.call_args_list))
+
+
+def operation_policy_case(enabled, source, force):
+    def test(self):
+        self.replacement(force=force)
+        self.store.config['auto_policy']['protect_running_operations'] = enabled
+        with patch.object(self.controller, 'operation_state', return_value=source):
+            self.request(); value = self.finish()
+        blocked = enabled and source in ('running', 'unknown')
+        self.assertEqual(value['state'], 'failed' if blocked else 'succeeded')
+        if blocked:
+            self.assertEqual(value['reason'], 'OPERATION_RUNNING' if source == 'running' else 'NO_REPLACEABLE_CONNECTION')
+            self.assertTrue(self.net.connected('telescope', self.devices[0]))
+            events = [e for e in self.controller.event_store.events if e.get('operation_id') == value['id']]
+            if source == 'running':
+                self.assertTrue(any(e['type'] == 'automatic_switch_deferred' and e['reason'] == 'OPERATION_RUNNING' for e in events))
+    return test
+
+
+for _enabled in (False, True):
+    for _source in ('running', 'unknown', 'idle', None):
+        for _force in (False, True):
+            setattr(OperationTests, f'test_operation_policy_{_enabled}_{_source}_{_force}', operation_policy_case(_enabled, _source, _force))
+
+
+def operation_source_transition_case(force):
+    def test(self):
+        from types import SimpleNamespace
+        from wifi_bridge.telemetry.adapters.vespera_status import VesperaCollector, Observer
+        self.replacement(force=force)
+        self.store.config['auto_policy']['protect_running_operations'] = True
+        source = SimpleNamespace(**dict(vars(self.controller), demo=False))
+        collector = self.controller.vespera_collector = VesperaCollector(source)
+        now = [1.0]; collector.clock = lambda: now[0]
+        profile = self.store.config['telescopes'][0]
+        row = next(r for r in self.controller.state['telescopes'] if r['id'] == profile['id'])
+        worker = Observer(collector, profile, row['interface']); collector.workers[profile['id']] = worker
+        worker.receive({'currentOperation':{'state':'running','kind':'stacking'}})
+        for age, reason in ((1.0, 'OPERATION_RUNNING'), (5.501, 'NO_REPLACEABLE_CONNECTION')):
+            now[0] = age
+            self.ops.negative.clear()
+            self.request(); self.assertEqual(self.finish()['reason'], reason)
+            self.assertTrue(self.net.connected('telescope', self.devices[0]))
+        worker.receive({'currentOperation':{'state':'idle'}})
+        self.ops.negative.clear()
+        self.request(); self.assertEqual(self.finish()['state'], 'succeeded')
+    return test
+
+
+for _force in (False, True):
+    setattr(OperationTests, f'test_source_running_stale_idle_force_{_force}', operation_source_transition_case(_force))
+
+
+def seestar_interleaved_operation_case(force):
+    def test(self):
+        from types import SimpleNamespace
+        from helpers.maker_keys import pem
+        from wifi_bridge.telemetry.adapters.seestar_events import SeestarCollector, Observer
+        self.api.update('telescopes',{'kind':'seestar'},ident='primary')
+        self.replacement(force=force)
+        self.store.config['auto_policy']['protect_running_operations']=True
+        self.controller.maker_keys.store.put('seestar',pem(),'import')
+        self.controller.maker_keys.enable_session_defaults()
+        source=SimpleNamespace(**dict(vars(self.controller),demo=False))
+        collector=self.controller.seestar_collector=SeestarCollector(source)
+        self.addCleanup(collector.close)
+        now=[1.];collector.clock=lambda:now[0]
+        profile=self.store.config['telescopes'][0]
+        row=next(r for r in self.controller.state['telescopes'] if r['id']==profile['id'])
+        worker=Observer(collector,profile,row);collector.workers[profile['id']]=worker
+        worker.authenticated();worker.receive({'Event':'Stack','state':'running','stacked_frame':2})
+        worker.receive({'Event':'AutoFocus','state':'completed'})
+        worker.receive({'Event':'AutoGoto','state':'idle'})
+        for age,reason in ((1.,'OPERATION_RUNNING'),(61.001,'NO_REPLACEABLE_CONNECTION')):
+            now[0]=age;worker.receive({'Event':'PiStatus','temp':20})
+            self.ops.negative.clear();self.request();self.assertEqual(self.finish()['reason'],reason)
+            self.assertTrue(self.net.connected('telescope',self.devices[0]))
+        for event in ('Stack','AutoFocus','AutoGoto'):worker.receive({'Event':event,'state':'idle'})
+        self.ops.negative.clear();self.request();self.assertEqual(self.finish()['state'],'succeeded')
+    return test
+
+
+for _force in (False,True):
+    setattr(OperationTests,f'test_seestar_interleaved_operations_force_{_force}',seestar_interleaved_operation_case(_force))

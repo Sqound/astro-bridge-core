@@ -31,10 +31,15 @@
     try {sessionStorage.setItem(key,JSON.stringify({context:authContext,boot_id:boot,sequence:cursor,read_sequence:readSequence,notified:[...toastEvents].slice(-512)}));} catch (_) { /* In-memory replay still works. */ }
   }
   function message(event) {
+    if(event.type==="announcement_updated")return t("Bridge discovery updated.");
+    if(event.type==="hotspot_restored")return t("Hotspot access restored.");
+    if(event.type==="hotspot_unavailable")return t("Hotspot unavailable.");
     const values={name:event.profile_name};
     if(event.type==="connected" && event.ready)return t("{name} connected.",values);
     if(event.type==="restored" && event.ready)return t("{name} connection restored.",values);
     const messages={
+      camera_detected:"{name}: camera detected.", camera_removed:"{name}: camera removed.",
+      camera_power_unstable:"{name}: USB power may be unstable.",
       requested:"{name}: connection change requested.", disconnecting:"{name}: disconnecting…",
       disconnected:"{name} disconnected.", connecting:"{name}: connecting…",
       associated:"{name}: Wi-Fi associated; checking services.",
@@ -47,7 +52,7 @@
     return t(messages[event.type]||"{name}: connection status changed.",values);
   }
   function reasonText(reason) {
-    const descriptions={RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",CONFIGURATION_CONFLICT:"Network subnet conflict.",
+    const descriptions={OPERATION_RUNNING:"A running instrument operation prevents automatic replacement.",HOTSPOT_RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",HOTSPOT_START_FAILED:"Could not start the hotspot. Check its driver and service logs.",RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",CONFIGURATION_CONFLICT:"Network subnet conflict.",
       WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",INVALID_TARGET:"Check the telescope IP address.",ASSOCIATION_FAILED:"Wi-Fi association failed; enabled profiles retry automatically.",
       RECONCILE_FAILED:"Network reconciliation failed. Check device status."};
     return descriptions[reason]?t(descriptions[reason]):"";
@@ -100,7 +105,7 @@
     historyLoading=true;const generation=epoch,selectedBoot=boot,target=cursor,request=new AbortController();historyController=request;
     try {
       let after=Math.max(0,oldestSequence-1);const events=[];
-      for(let page=0;page<3;page++) {
+      for(let page=0;page<11;page++) {
         const result=await read("/api/events?after="+after+"&boot_id="+encodeURIComponent(selectedBoot)+"&limit=100",generation,request.signal);
         if(!active||epoch!==generation)return;
         if(result.gap||result.boot_id!==selectedBoot){warning=result.reset_reason||"BOOT_CHANGED";return;}
@@ -122,7 +127,7 @@
   $("activity-menu").addEventListener("focusout",event=>{if(event.relatedTarget&&!$("activity-menu").contains(event.relatedTarget))closePopover();});
   function merge(events, reset=false) {
     const known=new Map((reset?[]:history).map(event=>[event.boot_id+":"+event.sequence,event]));
-    for(const event of events)known.set(event.boot_id+":"+event.sequence,event);
+    for(const event of events.filter(event=>!event.type.includes(".")))known.set(event.boot_id+":"+event.sequence,event);
     history=[...known.values()].sort((a,b)=>a.sequence-b.sequence).slice(-256);
   }
   function renderNotices() {
@@ -149,8 +154,8 @@
     // Limit deduplication memory independently of the retained recent panel.
     while(toastEvents.size>512)toastEvents.delete(toastEvents.values().next().value);
     for(const [operation,changes] of groups) {
-      const ready=changes.filter(e=>["connected","restored"].includes(e.type)&&e.ready);
-      const failed=changes.filter(e=>e.type==="failed");
+      const ready=changes.filter(e=>["connected","restored","hotspot_restored"].includes(e.type)&&e.ready);
+      const failed=changes.filter(e=>["failed","hotspot_unavailable"].includes(e.type));
       const disconnected=changes.filter(e=>e.type==="disconnected");
       const waiting=changes.filter(e=>e.type==="waiting");
       const selected=ready.length?[...history.filter(e=>e.operation_id===operation&&e.type==="disconnected"),...ready]:failed.length?failed:disconnected.length?disconnected:waiting;
@@ -178,8 +183,8 @@
         else if(saved){toastEvents.clear();warning=saved.boot_id!==boot?"BOOT_CHANGED":"CURSOR_AHEAD";}
         initialized=true;render();
       }
-      // Each request is short and bounded. Three pages cover the 256-event journal.
-      for(let page=0;page<3;page++) {
+      // Each request is short and bounded. Eleven pages cover the 1,024-event journal.
+      for(let page=0;page<11;page++) {
         const result=await read("/api/events?after="+cursor+"&boot_id="+encodeURIComponent(boot)+"&limit=100",generation,request.signal);
         if(!active||epoch!==generation)return;
         const reset=result.gap||result.boot_id!==boot;

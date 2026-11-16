@@ -1,0 +1,88 @@
+{
+  "name": "connect-operation-running",
+  "description": "Opt-in fresh running-operation protection defers explicit replacement, including force, and reports the reason through the existing operation contract.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {
+          "allow_replace": [
+            "tel-vespera-1"
+          ],
+          "wait_seconds": 2
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "connecting",
+          "operation": {
+            "id": "00000000000000000000000000000000.11111111111111111111111111111111",
+            "status_url": "/api/v1/operations/00000000000000000000000000000000.11111111111111111111111111111111"
+          },
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/operation/id": "^[0-9a-f]{32}\\.[0-9a-f]{32}$",
+        "/operation/status_url": "^/api/v1/operations/[0-9a-f]{32}\\.[0-9a-f]{32}$",
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/operations/00000000000000000000000000000000.11111111111111111111111111111111",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "id": "00000000000000000000000000000000.11111111111111111111111111111111",
+          "boot_id": "00000000000000000000000000000000",
+          "profile_id": "tel-seestar-1",
+          "state": "failed",
+          "phase": "finished",
+          "reason": "OPERATION_RUNNING",
+          "status_url": "/api/v1/operations/00000000000000000000000000000000.11111111111111111111111111111111",
+          "endpoint": null,
+          "endpoint_current": false,
+          "progress": {
+            "phase": "failed",
+            "eta_seconds": null
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/id": "^[0-9a-f]{32}\\.[0-9a-f]{32}$",
+        "/boot_id": "^[0-9a-f]{32}$",
+        "/status_url": "^/api/v1/operations/[0-9a-f]{32}\\.[0-9a-f]{32}$"
+      }
+    }
+  ]
+}

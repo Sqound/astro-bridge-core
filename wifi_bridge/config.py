@@ -9,6 +9,7 @@ import re
 import secrets
 from .mounts import PROFILE_KINDS
 from .plugins import demand_plugins, demand_flag
+from .radio_roles import interface_roles
 
 
 class Invalid(ValueError):
@@ -46,11 +47,45 @@ def password_matches(password, encoded):
     return hmac.compare_digest(password_hash(password, encoded.split(":")[0]), encoded)
 
 
+def install_key(directory, label):
+    """Derive a purpose-bound key from the installation secret created by device_identity."""
+    device_identity(directory)
+    secret = (Path(directory) / 'install-secret').read_bytes()
+    return hmac.new(secret, label, 'sha256').digest()
+
+
+def device_identity(directory):
+    """Stable local identity; never derive it from a network address or password."""
+    path = Path(directory) / 'install-secret'
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(secrets.token_bytes(32))
+            stream.flush()
+            os.fsync(stream.fileno())
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    secret = path.read_bytes()
+    if len(secret) != 32:
+        raise Invalid('Invalid installation identity.')
+    os.chmod(path, 0o600)
+    return hmac.new(secret, b'astro-bridge-id', 'sha256').hexdigest()[:16]
+
+
 CONNECTION_MODES = ('private', 'hotspot_isolated', 'hotspot_shared')
 
 
 DEMAND_FLAGS = tuple(demand_flag(p['id']) for p in demand_plugins())
-AUTO_POLICY_DEFAULTS = {'quiet_seconds':120, 'cooldown_seconds':60,'force_first_profile':False,
+AUTO_POLICY_DEFAULTS = {'quiet_seconds':120, 'cooldown_seconds':60,'force_first_profile':False, 'protect_running_operations':False,
+                        # Owner switch: paired apps may hold night reservations (contract 1.1 reserve_seconds).
+                        'night_reservations':True,
                         **dict.fromkeys(DEMAND_FLAGS,True)}
 LEGACY_AUTO_POLICY_DEFAULTS = dict(AUTO_POLICY_DEFAULTS, **dict.fromkeys(DEMAND_FLAGS,False))
 
@@ -67,11 +102,11 @@ def validated_auto_policy(data, old):
     policy=auto_policy(old);policy.update(value)
     for field in ('quiet_seconds','cooldown_seconds'):
         if type(policy[field]) is not int or not 30<=policy[field]<=3600:raise Invalid('Quiet/cooldown must be integer seconds from30 to3600.')
-    for field in ('force_first_profile',*DEMAND_FLAGS):
-        if type(policy[field]) is not bool:raise Invalid('Force and manufacturer demand policies must be booleans.')
+    for field in ('force_first_profile','protect_running_operations','night_reservations',*DEMAND_FLAGS):
+        if type(policy[field]) is not bool:raise Invalid('Automatic connection policy flags must be booleans.')
     if 'acknowledge_interruption' in data and type(data['acknowledge_interruption']) is not bool:raise Invalid('Interruption acknowledgement must be a boolean.')
-    if any(policy[field] and not auto_policy(old)[field] for field in ('force_first_profile',*DEMAND_FLAGS)) and data.get('acknowledge_interruption') is not True:
-        raise Invalid('Explicitly acknowledge possible automatic connection interruption before enabling force or manufacturer demand.')
+    if any(policy[field] and not auto_policy(old)[field] for field in ('force_first_profile','protect_running_operations',*DEMAND_FLAGS)) and data.get('acknowledge_interruption') is not True:
+        raise Invalid('Explicitly acknowledge this advanced automatic connection policy before enabling it.')
     return policy
 
 
@@ -84,7 +119,8 @@ def default_config(mac):
 
 def reserved_hotspot_mac(config):
     hotspot = config.get('hotspot', {})
-    return hotspot.get('mac', '') if hotspot.get('enabled', False) or config.get('connection_mode', 'private') != 'private' else ''
+    from .radio_roles import interface_roles
+    return next((mac for mac, purpose in interface_roles(config).items() if purpose == 'hotspot'), '')
 
 
 def hotspot_ssid(config, mac):
@@ -114,7 +150,7 @@ def profiles(config):
 
 def network_intent(profile):
     if profile is None: return None
-    return {key: profile.get(key) for key in ('id', 'name', 'ssid', 'password', 'mac', 'bssid', 'hidden', 'target_ip', 'kind', 'enabled')}
+    return {key: profile.get(key) for key in ('id', 'name', 'ssid', 'password', 'mac', 'bssid', 'hidden', 'target_ip', 'kind', 'enabled', 'isolated', 'client_port', 'client_ports')}
 
 
 def role_for(profile):
@@ -130,9 +166,12 @@ def public_config(config):
             "configured": bool(config["home"]),
             "admin_configured": bool(config["admin_hash"]),
             "home": redact(config["home"]) if config["home"] else {}, "telescope": redact(config.get("telescope", {})),
-            "telescopes": [redact(p) | {"auto_eligible": p.get("auto_eligible", False), "owner_locked": p.get("owner_locked", False), "auto_replaceable":p.get("auto_replaceable",False)} for p in profiles(config)],
+            "telescopes": [redact(p) | {"client_connect": p.get("client_connect", True), "auto_eligible": p.get("auto_eligible", False), "owner_locked": p.get("owner_locked", False), "auto_replaceable":p.get("auto_replaceable",False)} for p in profiles(config)],
             "connection_mode": config.get("connection_mode", "private"), "hotspot_private_lan": config.get("hotspot_private_lan", False),
-            "hotspot": config.get("hotspot", {"enabled": False}), "auto_connect": config.get("auto_connect", False), "auto_policy":auto_policy(config)}
+            "interface_roles": interface_roles(config),
+            "hotspot": config.get("hotspot", {"enabled": False}), "auto_connect": config.get("auto_connect", False), "auto_policy":auto_policy(config),
+            "stations": [dict(p) for p in config.get("stations", [])],
+            "serial_mounts": [dict(p) for p in config.get("serial_mounts", [])]}
 
 
 def text(value, maximum=128):
@@ -215,6 +254,11 @@ def validate_config(data, old, devices):
             raise Invalid("This Wi-Fi adapter does not support hotspot mode.")
         if home and hotspot_mac == home['mac']:
             raise Invalid("The hotspot and private network require separate adapters.")
+    from .radio_roles import normalize_roles, role_allows
+    roles, home, hotspot = normalize_roles(data, old, devices, home, dict(hotspot, mac=hotspot_mac))
+    hotspot_mac = hotspot.get('mac', '')
+    if home and hotspot_mac == home['mac']:
+        raise Invalid('The hotspot and private network require separate adapters.')
     mode = data.get('connection_mode', old.get('connection_mode', 'private'))
     private_lan = data.get('hotspot_private_lan', old.get('hotspot_private_lan', False))
     if not isinstance(mode, str) or mode not in CONNECTION_MODES or type(private_lan) is not bool:
@@ -238,13 +282,15 @@ def validate_config(data, old, devices):
         if entry.get("enabled", False) is False:
             allowed.add("")
         network = validate_network(entry, prior, allowed)
-        if home and network["mac"] == home["mac"]:
+        if home and network["mac"] == home["mac"] and entry.get("enabled", False):
             raise Invalid("The telescope and private network require separate adapters.")
         enabled = entry.get("enabled", False)
         if type(enabled) is not bool:
             raise Invalid("Invalid enabled value.")
         if enabled and network["mac"] in active_macs:
             raise Invalid("Only one active connection is allowed per adapter. Use Connect to switch telescopes.")
+        if enabled and not role_allows({'interface_roles': roles}, network['mac'], 'telescope'):
+            raise Invalid('This Wi-Fi adapter is reserved for another role. Change its role in Wi-Fi adapters first.')
         if enabled:
             active_macs.add(network["mac"])
         from .candidates import validate_binding
@@ -255,14 +301,33 @@ def validate_config(data, old, devices):
         owner_locked = entry.get('owner_locked', prior.get('owner_locked', False))
         if type(owner_locked) is not bool or owner_locked != prior.get('owner_locked', False):
             raise Invalid('Change owner protection through its dedicated endpoint.')
+        client_connect = entry.get('client_connect', prior.get('client_connect', True))
+        if type(client_connect) is not bool: raise Invalid('Invalid enabled value.')
         replaceable=entry.get('auto_replaceable',prior.get('auto_replaceable',False))
         if type(replaceable) is not bool:raise Invalid('Automatic replacement consent must be a boolean.')
         eligible = entry.get('auto_eligible', prior.get('auto_eligible', False))
         if type(eligible) is not bool: raise Invalid('Automatic eligibility must be a boolean.')
-        normalized.append(dict(network, auto_replaceable=replaceable, owner_locked=owner_locked, auto_eligible=eligible, id=ident, name=name, kind=kind,
+        isolated = entry.get('isolated', prior.get('isolated', False))
+        from .isolated import KINDS as ISOLATED_KINDS, ASSIGNED
+        if type(isolated) is not bool or isolated and kind not in ISOLATED_KINDS:
+            raise Invalid('Isolated connections currently support ZWO and SynScan mounts and Vespera telescopes only.')
+        extra = {}
+        if kind in ASSIGNED and any(key in entry and entry[key] != prior.get(key) for key in ('client_port', 'client_ports')):
+            # Multi-port instruments get a persistent port block from the bridge.
+            raise Invalid('The bridge assigns the client ports of isolated Vespera telescopes.')
+        if isolated or 'isolated' in entry or 'isolated' in prior:
+            extra = {'isolated': isolated, 'client_port': entry.get('client_port', prior.get('client_port'))}
+            if kind in ASSIGNED and isolated: extra['client_ports'] = prior.get('client_ports')
+            if kind in ASSIGNED and kind != prior.get('kind'): extra.update(client_port=None, client_ports=None)
+        elif 'client_port' in entry:
+            raise Invalid('A dedicated client port requires an isolated connection.')
+        normalized.append(dict(network, **extra, client_connect=client_connect, auto_replaceable=replaceable, owner_locked=owner_locked, auto_eligible=eligible, id=ident, name=name, kind=kind,
                                target_ip=private_ipv4(entry.get("target_ip")), enabled=enabled,
                                **({'physical_binding': binding} if binding is not None else {})))
-    if hotspot_mac and (hotspot.get('enabled', False) or mode != 'private') and hotspot_mac in active_macs:
+    # The opt-in transport has its own ports; old profiles retain routed behavior.
+    from .isolated import allocate_ports
+    allocate_ports(normalized, previous)
+    if hotspot_mac and hotspot_mac in active_macs:
         raise Invalid("The hotspot and active telescopes require separate adapters.")
     encoded = old["admin_hash"]
     admin = data.get("admin_password", "")
@@ -274,9 +339,15 @@ def validate_config(data, old, devices):
         raise Invalid("Choose an administrator password of at least 8 characters.")
     automatic = data.get('auto_connect', old.get('auto_connect', False))
     if type(automatic) is not bool: raise Invalid('Auto-connect must be a boolean.')
+    # Station instruments join the bridge network; they hold no radio or SSID.
+    from .stations import validate_stations
+    stations = validate_stations(data.get('stations', old.get('stations', [])), {p['id'] for p in normalized})
+    from .serial_mounts import validate_serial_mounts
+    serial_mounts = validate_serial_mounts(data.get('serial_mounts', old.get('serial_mounts', [])),
+                                           {p['id'] for p in normalized} | {s['id'] for s in stations}, old.get('serial_mounts', []))
     primary = next((p for p in normalized if p["id"] == "primary"), normalized[0] if normalized else {})
-    return {"schema_version": 2, "connection_mode": mode, "hotspot_private_lan": private_lan, "auto_connect": automatic, "auto_policy":validated_auto_policy(data,old), "hostname": hostname, "country": country, "home": home,
-            "admin_hash": encoded, "telescopes": normalized,
+    return {"schema_version": 2, "interface_roles": roles, "connection_mode": mode, "hotspot_private_lan": private_lan, "auto_connect": automatic, "auto_policy":validated_auto_policy(data,old), "hostname": hostname, "country": country, "home": home,
+            "admin_hash": encoded, "telescopes": normalized, "stations": stations, "serial_mounts": serial_mounts,
             **{key: old[key] for key in ("hotspot_password", "linux_password_default") if key in old},
             "telescope": {k: v for k, v in primary.items() if k in ("ssid", "mac", "password", "bssid", "hidden")},
             "telescope_ip": primary.get("target_ip", "10.0.0.1"),
@@ -289,6 +360,7 @@ class Store:
         self.directory = Path(directory)
         self.path = self.directory / "config.json"
         self.config = json.loads(self.path.read_text()) if self.path.exists() else default_config(mac)
+        for profile in self.config.get("telescopes", []): profile.setdefault("client_connect", True)
 
     def save(self, config):
         if self.path.exists() and self.config.get("schema_version", 1) < 2:

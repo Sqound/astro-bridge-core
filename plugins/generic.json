@@ -27,5 +27,13 @@
       "title": "Astro Bridge hardware support guide",
       "url": "https://github.com/Sqound/astro-bridge-core/blob/main/docs/ADDING-HARDWARE.md"
     }
-  ]
+  ],
+  "telemetry": {
+    "adapters": [
+      "link_v1",
+      "alpaca_observer_v1"
+    ],
+    "default_enabled": [],
+    "limitation": "Position only when Alpaca is enabled; otherwise link only."
+  }
 }

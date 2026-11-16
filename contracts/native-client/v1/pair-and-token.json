@@ -1,0 +1,107 @@
+{
+  "name": "pair-and-token",
+  "description": "Pair once with administrator consent and discard the administrator token.",
+  "contract_version": 1,
+  "requires": [
+    "pairing"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/token",
+        "headers": {},
+        "body": {
+          "password": "test-password-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "access_token": "test-token-1",
+          "token_type": "Bearer",
+          "expires_in": 43200,
+          "api_version": "1"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/clients",
+        "headers": {
+          "Authorization": "Bearer test-token-1"
+        },
+        "body": {
+          "name": "Test client",
+          "scopes": [
+            "read",
+            "connect",
+            "telemetry",
+            "camera"
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "client_id": "client-1",
+          "client_secret": "test-token-2",
+          "scopes": [
+            "read",
+            "connect",
+            "telemetry",
+            "camera"
+          ],
+          "device_id": "0123456789abcdef"
+        }
+      },
+      "note": ""
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/token",
+        "headers": {},
+        "body": {
+          "client_id": "client-1",
+          "client_secret": "test-token-2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "access_token": "test-token-3",
+          "token_type": "Bearer",
+          "expires_in": 43200,
+          "scopes": [
+            "read",
+            "connect",
+            "telemetry",
+            "camera"
+          ]
+        }
+      },
+      "note": ""
+    }
+  ],
+  "real_patterns": {
+    "/access_token": "^[A-Za-z0-9_-]{43}$",
+    "/client_id": "^client-[a-f0-9]{24}$",
+    "/client_secret": "^[A-Za-z0-9_-]{43}$",
+    "/device_id": "^[a-f0-9]{16}$"
+  }
+}

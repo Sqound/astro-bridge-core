@@ -9,6 +9,7 @@ import socket
 import time
 
 from .api import ApiError
+from .radio_roles import role_allows
 from .config import Invalid, profiles, text, reserved_hotspot_mac, atomic_json, role_for
 from .plugins import ssid_plugin, plugin, onboarding_defaults
 
@@ -63,7 +64,9 @@ def seestar_probe(device, address, target):
     if (remote not in interface.network or remote in (interface.ip, interface.network.network_address,
             interface.network.broadcast_address) or not remote.is_private or remote.is_loopback or remote.is_link_local): return None
     ident = secrets.randbelow(2**30)
-    payload = json.dumps({'id': ident, 'method': 'scan_iscope', 'params': ''}).encode()
+    # Observed on hardware (2026-11-13): the device ignores this request unless it ends with CRLF.
+    # Compact JSON plus CRLF matches what the manufacturer's app sends.
+    payload = json.dumps({'id': ident, 'method': 'scan_iscope', 'params': ''}, separators=(',', ':')).encode() + b'\r\n'
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, device['name'].encode() + b'\0')
         sock.bind((str(interface.ip), 0)); sock.settimeout(0.75)
@@ -74,7 +77,10 @@ def seestar_probe(device, address, target):
     if (not isinstance(value, dict) or value.get('method') != 'scan_iscope'
             or type(value.get('id')) is not int or value['id'] != ident or 'error' in value
             or 'code' in value and (type(value['code']) is not int or value['code'] != 0)): return None
-    # Response schema for a stable serial/model is not established. Never invent it.
+    # Observed reply fields in `result`: sn, product_model, can_star_mode_sel_cam, ssid, serc, bssid,
+    # is_verified, tcp_client_num, password, connect_lock. sn, ssid, bssid and password are sensitive:
+    # `result` is never copied, logged or returned. No stable identity is reported (reported_identity
+    # must stay None for the stored candidate schema), so nothing from `result` is used.
     return {'address': str(remote), 'source': 'seestar-scan-iscope', 'reported_identity': None,
             'identity_reason': 'IDENTITY_FIELDS_UNSUPPORTED'}
 
@@ -136,7 +142,7 @@ class CandidateDiscovery:
                 protected |= {p['mac'] for p in profiles(config) if p['enabled'] or c.protection.protected(p['id'])}
             if data['mode'] == 'wifi':
                 selected = next((d for d in sorted(devices, key=lambda d:-len(d.get('bands', [])))
-                                 if d['mac'] not in protected and c.net.radio_idle(d)), None) if not cached else None
+                                 if d['mac'] not in protected and role_allows(config, d['mac'], 'telescope') and c.net.radio_idle(d)), None) if not cached else None
                 source='fresh'
                 if not selected and not cached and not background:
                     selected=next((d for d in devices if d['mac']==config.get('home',{}).get('mac') and c.net.scan_station(d,config['home'])),None)
@@ -186,6 +192,9 @@ class CandidateDiscovery:
                 if not c.net.discovery_associated(device, profile): continue
                 try: observation = c.net.discover_seestar(device, profile) if identity=='seestar_scan_iscope' else c.net.discover_mount(device, profile)
                 except (OSError, ValueError, UnicodeError, RecursionError): observation = None
+                identity_reply = (observation or {}).get('protocol_identity')
+                if identity_reply and identity in ('zwo_model', 'synscan_version'):
+                    with c.lock: c.identities.record(profile, identity, identity_reply.get('model'))
                 if observation:
                     candidates.append(dict(observation, mode='reachable', profile_id=profile['id'],
                         observed_at=max(0, min(int(self.wall()), 4102444800)), clock_reliable=False))

@@ -1,0 +1,109 @@
+{
+  "name": "info-public",
+  "description": "Identify the discovered bridge without authentication. Contract 1.2: management_endpoints gives the bridge web interface on each confirmed management path (url, path home or hotspot, tls); open the url as given, never build one. Empty when the bridge does not know.",
+  "contract_version": 1,
+  "requires": [],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/info",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "product": "astro-bridge",
+          "version": "1.1.0",
+          "api_version": "1",
+          "authentication": "bearer",
+          "token_expires_in": 43200,
+          "capabilities": [
+            "pairing",
+            "instruments",
+            "connect",
+            "events-wait",
+            "telemetry",
+            "maker-keys"
+          ],
+          "openapi_url": "/api/v1/openapi.json",
+          "legacy_capabilities": [
+            "telescope_profiles",
+            "radio_switching",
+            "home_wifi",
+            "wifi_scan",
+            "interface_inventory",
+            "hotspot",
+            "settings",
+            "passwords",
+            "reboot",
+            "connection_events",
+            "safe_discovery",
+            "physical_binding",
+            "profile_ensure",
+            "connection_operations",
+            "explicit_auto_policy",
+            "connection_activity",
+            "client_reservations",
+            "owner_locks",
+            "quiet_replacement",
+            "advanced_interruption_policy",
+            "seestar_demand",
+            "vespera_connection_demand",
+            "dwarf_discovery_demand",
+            "dwarf_native_proxy",
+            "dwarf_passive_demand",
+            "durable_connection_pauses",
+            "field_management_paths",
+            "hotspot_internet_sharing",
+            "consultation_metadata",
+            "wifi_mount_profiles",
+            "zwo_mount_native_proxy",
+            "synscan_udp_proxy",
+            "declarative_plugins",
+            "mount_read_only_identification",
+            "zwo_mount_connection_demand",
+            "synscan_discovery_demand",
+            "isolated_mount_endpoints",
+            "udp_endpoint_ownership",
+            "hotspot_recovery_events",
+            "pairing"
+          ],
+          "contract_version": 1,
+          "device_id": "0123456789abcdef",
+          "name": "Test bridge",
+          "request_path": "other",
+          "pairing": {
+            "available": true,
+            "method": "admin_password"
+          },
+          "contract_minor": 2,
+          "free_radios": 1,
+          "hotspot": true,
+          "tls_fingerprint": null,
+          "management_endpoints": [
+            {
+              "url": "http://192.168.77.1/",
+              "path": "hotspot",
+              "tls": false
+            }
+          ]
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/management_endpoints/0/url": "^http://[0-9.]+(:[0-9]+)?/$"
+      }
+    }
+  ],
+  "real_patterns": {
+    "/version": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+    "/device_id": "^[0-9a-f]{16}$",
+    "/name": "^astro-bridge-[a-z0-9-]+$"
+  }
+}

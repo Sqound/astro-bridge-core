@@ -19,6 +19,15 @@ def unb64(value):
     return base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
 
 
+# RFC 8292: the VAPID `sub` claim is a contact for the push service, a
+# `mailto:` address or an `https:` origin without a path. The owner may set
+# ASTRO_BRIDGE_PUSH_SUBJECT; the default is the project's pages origin.
+def push_subject():
+    import os
+    value = os.environ.get('ASTRO_BRIDGE_PUSH_SUBJECT', '').strip()
+    return value or 'https://sqound.github.io'
+
+
 def encrypt(private, subscription, payload):
     import http_ece
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -26,7 +35,7 @@ def encrypt(private, subscription, payload):
     target = urlsplit(subscription['endpoint'])
     signer = Vapid02.from_pem(private.encode())
     headers = signer.sign({'aud': 'https://' + target.hostname, 'exp': int(time.time()) + 3600,
-                           'sub': 'https://planastro.space'})
+                           'sub': push_subject()})
     content = http_ece.encrypt(json.dumps(payload, ensure_ascii=False).encode(),
                               private_key=ec.generate_private_key(ec.SECP256R1()),
                               dh=unb64(subscription['keys']['p256dh']),

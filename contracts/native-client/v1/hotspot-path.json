@@ -1,0 +1,246 @@
+{
+  "name": "hotspot-path",
+  "description": "After joining astro-bridge-test, probe the fixed hotspot origin and use primary as given.",
+  "contract_version": 1,
+  "requires": [
+    "connect"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/info",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "product": "astro-bridge",
+          "version": "1.1.0",
+          "api_version": "1",
+          "authentication": "bearer",
+          "token_expires_in": 43200,
+          "contract_version": 1,
+          "device_id": "0123456789abcdef",
+          "name": "astro-bridge-test",
+          "capabilities": [
+            "pairing",
+            "instruments",
+            "connect",
+            "events-wait",
+            "telemetry",
+            "maker-keys"
+          ],
+          "request_path": "hotspot",
+          "pairing": {
+            "available": true,
+            "method": "admin_password"
+          },
+          "legacy_capabilities": [
+            "telescope_profiles",
+            "radio_switching",
+            "home_wifi",
+            "wifi_scan",
+            "interface_inventory",
+            "hotspot",
+            "settings",
+            "passwords",
+            "reboot",
+            "connection_events",
+            "safe_discovery",
+            "physical_binding",
+            "profile_ensure",
+            "connection_operations",
+            "explicit_auto_policy",
+            "connection_activity",
+            "client_reservations",
+            "owner_locks",
+            "quiet_replacement",
+            "advanced_interruption_policy",
+            "seestar_demand",
+            "vespera_connection_demand",
+            "dwarf_discovery_demand",
+            "dwarf_native_proxy",
+            "dwarf_passive_demand",
+            "durable_connection_pauses",
+            "field_management_paths",
+            "hotspot_internet_sharing",
+            "consultation_metadata",
+            "wifi_mount_profiles",
+            "zwo_mount_native_proxy",
+            "synscan_udp_proxy",
+            "declarative_plugins",
+            "mount_read_only_identification",
+            "zwo_mount_connection_demand",
+            "synscan_discovery_demand",
+            "isolated_mount_endpoints",
+            "udp_endpoint_ownership",
+            "hotspot_recovery_events",
+            "pairing"
+          ],
+          "openapi_url": "/api/v1/openapi.json",
+          "contract_minor": 2,
+          "free_radios": 1,
+          "hotspot": true,
+          "tls_fingerprint": null,
+          "management_endpoints": [
+            {
+              "url": "http://192.0.2.10/",
+              "path": "home",
+              "tls": false
+            },
+            {
+              "url": "http://192.168.77.1/",
+              "path": "hotspot",
+              "tls": false
+            }
+          ]
+        }
+      },
+      "note": "Client origin is http://192.168.77.1; never construct an instrument address.",
+      "real_patterns": {
+        "/device_id": "^[0-9a-f]{16}$",
+        "/management_endpoints/0/url": "^http://[0-9.]+(:[0-9]+)?/$",
+        "/management_endpoints/1/url": "^http://[0-9.]+(:[0-9]+)?/$"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/instruments/tel-seestar-1/connect",
+        "headers": {
+          "Authorization": "Bearer test-token-1",
+          "If-Match": "\"revision-1\""
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "state": "ready",
+          "instrument_id": "tel-seestar-1",
+          "lease": {
+            "id": "lease-1",
+            "expires_in": 900
+          },
+          "endpoint": {
+            "instrument_id": "tel-seestar-1",
+            "request_path": "hotspot",
+            "mode": "proxy",
+            "primary": {
+              "host": "192.168.77.1",
+              "ports": [
+                {
+                  "port": 4700,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "control",
+                  "protocol": "json_rpc"
+                },
+                {
+                  "port": 4800,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "imaging",
+                  "protocol": "binary"
+                },
+                {
+                  "port": 4801,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4804,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "other",
+                  "protocol": "unknown"
+                },
+                {
+                  "port": 4554,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                },
+                {
+                  "port": 4555,
+                  "transport": "tcp",
+                  "service": "seestar_native",
+                  "role": "preview",
+                  "protocol": "rtsp"
+                }
+              ]
+            },
+            "alternatives": [
+              {
+                "host": "192.0.2.10",
+                "ports": [
+                  {
+                    "port": 4700,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "control",
+                    "protocol": "json_rpc"
+                  },
+                  {
+                    "port": 4800,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "imaging",
+                    "protocol": "binary"
+                  },
+                  {
+                    "port": 4801,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4804,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "other",
+                    "protocol": "unknown"
+                  },
+                  {
+                    "port": 4554,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  },
+                  {
+                    "port": 4555,
+                    "transport": "tcp",
+                    "service": "seestar_native",
+                    "role": "preview",
+                    "protocol": "rtsp"
+                  }
+                ]
+              }
+            ],
+            "requires_client_route": false,
+            "target_ip": "198.51.100.1"
+          }
+        }
+      },
+      "note": "",
+      "real_patterns": {
+        "/lease/id": "^[0-9a-f]{32}$"
+      }
+    }
+  ]
+}

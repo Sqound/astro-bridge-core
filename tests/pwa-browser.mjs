@@ -37,7 +37,7 @@ try{
   const url=`http://127.0.0.1:${port}`;
   const wait=async predicate=>{const end=Date.now()+15000;while(!await predicate()){if(Date.now()>end)throw new Error("Condition timeout");await new Promise(resolve=>setTimeout(resolve,100));}};
   const check=async(name,fn)=>{await fn();results.push(name);console.log("PASS",name);};
-  const login=async()=>{await page.locator("#login-password").fill("demo-telescope-2026");await page.locator("#login-form button").click();await page.locator("#dashboard").waitFor({state:"visible"});};
+  const login=async()=>{await page.locator("#login-password").fill("12345678");await page.locator("#login-form button").click();await page.locator("#dashboard").waitFor({state:"visible"});};
   let releaseInitial,initialEntered=false;
   await page.route('**/api/status',async route=>{
     const response=await route.fetch();assert.equal(response.status(),401);
@@ -82,7 +82,7 @@ try{
       loginEntered=true;await new Promise(resolve=>releaseLogin=resolve);await route.continue();
     });
     await page.evaluate(()=>{refresh();});await wait(()=>statusEntered);
-    await page.locator('#login-password').fill('demo-telescope-2026');await page.locator('#login-form button').click();
+    await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();
     await wait(()=>loginEntered);releaseStatus();await page.waitForFunction(()=>!polling);
     await page.unroute('**/api/status');releaseLogin();await page.locator('#dashboard').waitFor({state:'visible'});
     assert.equal(await page.locator('#error').isVisible(),false);
@@ -142,7 +142,8 @@ try{
   await check("secure loopback lifecycle caches only fixed public bytes",async()=>{
     await page.evaluate(()=>navigator.serviceWorker.ready);await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
     const cached=await page.evaluate(async()=>{const names=await caches.keys();return Promise.all(names.map(async name=>({name,keys:(await(await caches.open(name)).keys()).map(r=>new URL(r.url).pathname)})));});
-    assert.equal(cached.length,1);assert.equal(cached[0].keys.length,13);assert.ok(cached[0].keys.includes("/manifest.webmanifest"));
+    assert.equal(cached.length,1);
+    assert.deepEqual([...cached[0].keys].sort(),["/","/app.js","/apple-touch-icon.png","/cameras.js","/events.js","/i18n.js","/icon-192.png","/icon-512.png","/manifest.webmanifest","/push.js","/pwa.js","/secure.js","/session-cards.js","/session-page.js","/style.css","/theme.js"].sort());
     assert.ok(cached[0].keys.every(path=>!path.startsWith("/api")&&!path.includes("login")));
     assert.equal(await page.evaluate(()=>isSecureContext),true);
     for(const [scheme,color] of [["dark","#0a0d0b"],["light","#f7f4ee"]]){
@@ -153,7 +154,7 @@ try{
   const hostname=await page.evaluate(async()=>(await(await fetch("/api/status")).json()).config.hostname);
   await check("ordinary LAN HTTP remains usable without SW registration",async()=>{
     const lan=await browser.newContext(),tab=await lan.newPage();await tab.goto(`http://${hostname}.local:${port}/`);
-    await tab.locator("#login-password").fill("demo-telescope-2026");await tab.locator("#login-form button").click();await tab.locator("#dashboard").waitFor({state:"visible"});
+    await tab.locator("#login-password").fill("12345678");await tab.locator("#login-form button").click();await tab.locator("#dashboard").waitFor({state:"visible"});
     assert.equal(await tab.evaluate(()=>isSecureContext),false);
     assert.equal(await tab.evaluate(()=>"serviceWorker"in navigator?navigator.serviceWorker.getRegistrations().then(r=>r.length):0),0);
     await tab.locator("#nav-configuration").click();await tab.locator("#tab-pwa").click();assert.match(await tab.locator("#pwa-context").textContent(),/HTTPS/);await lan.close();
@@ -198,7 +199,7 @@ try{
     await wait(()=>!!release);const response=page.waitForResponse(r=>r.url().endsWith("/api/status")&&r.status()===200);release();await response;await context.unroute("**/api/status");await page.waitForFunction(()=>!document.getElementById("dashboard").inert);
   });
   control=await request.newContext({baseURL:url});
-  const authorization=await(await control.post("/api/v1/auth/token",{data:{password:"demo-telescope-2026"}})).json();
+  const authorization=await(await control.post("/api/v1/auth/token",{data:{password:"12345678"}})).json();
   const rpc=async(method,path,data)=>{
     const response=await control.fetch("/api/v1"+path,{method,data,headers:{Authorization:"Bearer "+authorization.access_token}});
     assert.ok(response.ok(),path+" returned "+response.status());return response.json();
@@ -253,7 +254,8 @@ try{
     const response=page.waitForResponse(r=>r.url().endsWith("/api/status")&&r.status()===200);release();await response;await context.unroute("**/api/status");
     const toast=page.locator('.connection-notice.ready[data-operation-id="'+changed.operation_id+'"]');await toast.waitFor();
     assert.match(await toast.innerText(),/OUTAGE PRIVATE FIRST disconnected.*OUTAGE PRIVATE SECOND connected/s);
-    assert.equal(await page.locator("#simple-status-2-replay-b").textContent(),"Connected here");
+    assert.equal(await page.locator("#instrument-replay-b .simple-card-heading .badge.online").textContent(),"Connected");
+    assert.equal(await page.locator("#instrument-replay-b .instrument-service").textContent(),"Instrument service is not checked for this family.");
     await wait(()=>(counts.get(changed.operation_id)||0)===1);
     await page.locator("#nav-telescopes").click();await page.setViewportSize({width:1280,height:960});
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -295,7 +297,7 @@ try{
     const changed=await rpc("POST","/telescopes/replay-b/connect",{mac:radio});
     await live(state=>state.telescopes.some(profile=>profile.id==="replay-b"&&profile.relay_ready));
     const other=await context.newPage();await other.goto(url);await other.locator("#dashboard").waitFor({state:"visible"});
-    await other.evaluate(()=>api("/api/login",{password:"demo-telescope-2026"}));
+    await other.evaluate(()=>api("/api/login",{password:"12345678"}));
     await page.evaluate(()=>refresh());
     const current=await page.evaluate(async()=>(await(await fetch("/api/status")).json()).event_context);
     assert.notEqual(current,previous);
@@ -337,7 +339,7 @@ try{
   });
   await check("authentication alone cannot enable actions before fresh status",async()=>{
     let release,held=false;await context.route("**/api/status",async route=>{if(!held){held=true;await new Promise(resolve=>release=resolve);}await route.continue();});
-    await page.locator("#login-password").fill("demo-telescope-2026");
+    await page.locator("#login-password").fill("12345678");
     const response=page.waitForResponse(r=>r.url().endsWith("/api/login")&&r.status()===200);await page.locator("#login-form button").click();await response;
     await wait(()=>!!release);assert.equal(await page.locator("#dashboard").isVisible(),false);
     release();await page.locator("#dashboard").waitFor({state:"visible"});await context.unroute("**/api/status");
@@ -345,7 +347,7 @@ try{
   });
   await check("pre-PWA rollback blocks stale UI writes and retires public caches",async()=>{
     await writeFile(resolve(app,"legacy.flag"),"pre-PWA HTTP contract fixture");
-    await page.locator("#login-password").fill("demo-telescope-2026");await page.locator("#login-form button").click();
+    await page.locator("#login-password").fill("12345678");await page.locator("#login-form button").click();
     await page.locator("#shell-reload").waitFor({state:"visible"});assert.equal(await page.locator("#dashboard").isVisible(),false);
     assert.equal(await page.locator('#login-password').inputValue(),'');
     assert.equal(await page.evaluate(async()=>{try{await api("/api/reboot",{});return false;}catch(_){return true;}}),true);

@@ -42,6 +42,7 @@ class FieldTests(Fixture):
 
     def test_same_radio_home_retry_requires_current_vacancy_and_real_access_interval(self):
         c=self.controller;self.net.radios=2;self.controller.update(devices=self.net.devices())
+        c.store.config['interface_roles'][self.devices[1]['mac']]='auto'
         clock=[50.]
         with self.lose_home():c.cycle(50)
         self.assertEqual(c.state['hotspot']['mac'],self.devices[1]['mac'])
@@ -169,6 +170,7 @@ class FieldTests(Fixture):
 
     def test_failed_ap_restore_is_not_management_ready_and_protection_defers_retry(self):
         c=self.controller;self.net.radios=2
+        c.store.config['interface_roles'][self.devices[1]['mac']]='auto'
         with self.lose_home():c.cycle(50)
         c.store.config['telescopes'][0]['owner_locked']=True
         with patch.object(self.net,'ap_vacant',return_value=True),patch.object(self.net,'connect',wraps=self.net.connect) as connect:c.cycle(100)

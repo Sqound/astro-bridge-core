@@ -15,11 +15,20 @@ from urllib.parse import urlsplit
 SCHEMA_VERSION = 1
 CORE_IDS = ('generic', 'vespera', 'dwarf', 'seestar', 'zwo_mount', 'synscan')
 IDENTIFIERS = ('none', 'seestar_scan_iscope', 'zwo_model', 'synscan_version')
+READINESS = ('association', 'vespera_tcp', 'tcp_connect', 'udp_identity')
 DISCOVERY = ('none', 'tcp_syn', 'seestar_scan_iscope', 'dwarf_ping', 'synscan_version')
 ACTIVITY_PORTS = {'protect_all': (), 'vespera_metadata_v1': (8083,),
                   'dwarf_metadata_v1': (9900,), 'seestar_metadata_v1': (4700,4800,4801,4804)}
+TELEMETRY_ADAPTERS = ('link_v1', 'vespera_status_v1', 'alpaca_observer_v1', 'seestar_events_v1')
+MAKER_KEY = {'family':'seestar', 'algorithm':'rsa-pkcs1v15-sha1', 'sources':['maker_package','import']}
 CHECKS = ('wifi', 'identity', 'native_app', 'preview', 'switching', 'private_proxy', 'hotspot_proxy')
 LIMITATIONS = ('physical_pending', 'autonomous_pending', 'guiding_pending', 'first_discovery_unavailable', 'images_pending', 'switching_pending')
+# Declarative purpose and application protocol of each relayed port, for clients
+# that pick a port by role. Metadata only: it never opens, forwards or probes a port.
+# Instrument protocol families a native client can choose a driver from.
+INSTRUMENT_PROTOCOLS = ('seestar', 'vespera', 'dwarf', 'lx200', 'synscan')
+PORT_ROLES = ('control', 'preview', 'imaging', 'rest', 'stream', 'other')
+PORT_PROTOCOLS = ('json_rpc', 'binary', 'http', 'socketio', 'websocket', 'rtsp', 'lx200', 'synscan', 'alpaca', 'indi', 'unknown')
 
 
 def text(value, limit=256):
@@ -35,7 +44,7 @@ def fields(value, required, optional=()):
 
 def validate_manifest(value):
     fields(value, ('schema_version','id','version','name','description','category','wifi','default_address',
-                   'relay','identification','discovery','activity','readiness','validation','references'), ('onboarding',))
+                   'relay','identification','discovery','activity','readiness','validation','references'), ('onboarding','telemetry','maker_key','port_roles','protocol'))
     if type(value['schema_version']) is not int or value['schema_version']!=SCHEMA_VERSION:raise ValueError('Unsupported plugin schema.')
     if not re.fullmatch(r'[a-z][a-z0-9_]{0,31}',text(value['id'],32)):raise ValueError('Invalid plugin ID.')
     if not re.fullmatch(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}',text(value['version'],16)):raise ValueError('Invalid plugin version.')
@@ -64,11 +73,39 @@ def validate_manifest(value):
         if 'password' in rule:
             password=rule['password']
             if not isinstance(password,str) or not 8<=len(password.encode())<=63 or any(ord(c)<32 for c in password):raise ValueError('Invalid factory password.')
+    if 'maker_key' in value:
+        key=value['maker_key'];fields(key,('family','algorithm','sources'))
+        if value['id']!='seestar' or key!=MAKER_KEY:raise ValueError('Unknown plugin adapter.')
+    if 'telemetry' in value:
+        telemetry=value['telemetry'];fields(telemetry,('adapters','default_enabled'),('limitation',))
+        if 'limitation' in telemetry and (not isinstance(telemetry['limitation'],str) or not 1<=len(telemetry['limitation'])<=240 or not telemetry['limitation'].isprintable()):raise ValueError('Invalid telemetry limitation.')
+        adapters=telemetry['adapters'];defaults=telemetry['default_enabled']
+        if not isinstance(adapters,list) or len(adapters)>len(TELEMETRY_ADAPTERS):raise ValueError('Unknown plugin adapter.')
+        ids=[]
+        for adapter in adapters:
+            ident=adapter
+            if isinstance(adapter,dict):
+                fields(adapter,('id','requires'))
+                ident=adapter['id']
+                if ident!='seestar_events_v1' or adapter['requires']!='maker_key' or 'maker_key' not in value:raise ValueError('Unknown plugin adapter.')
+            elif ident=='seestar_events_v1':raise ValueError('Unknown plugin adapter.')
+            if not isinstance(ident,str) or ident not in TELEMETRY_ADAPTERS or ident in ids:raise ValueError('Unknown plugin adapter.')
+            ids.append(ident)
+        if not isinstance(defaults,list) or len(defaults)>len(ids) or any(not isinstance(v,str) or v not in ids for v in defaults) or len(set(defaults))!=len(defaults):raise ValueError('Unknown plugin adapter.')
+        if 'seestar_events_v1' in defaults:raise ValueError('Unknown plugin adapter.')
     relay=value['relay']
     if relay is not None:
         fields(relay,('transport','ports'))
         if relay['transport'] not in ('tcp','udp') or not isinstance(relay['ports'],list) or not 1<=len(relay['ports'])<=16:raise ValueError('Invalid plugin relay.')
         if any(type(p) is not int or not 1<=p<=65535 for p in relay['ports']) or len(set(relay['ports']))!=len(relay['ports']):raise ValueError('Invalid relay ports.')
+    if 'protocol' in value and value['protocol'] not in INSTRUMENT_PROTOCOLS:raise ValueError('Unknown instrument protocol.')
+    if 'port_roles' in value:
+        roles=value['port_roles']
+        if relay is None or not isinstance(roles,list) or not 1<=len(roles)<=len(relay['ports']):raise ValueError('Invalid port roles.')
+        for entry in roles:
+            fields(entry,('port','role','protocol'))
+            if type(entry['port']) is not int or entry['port'] not in relay['ports'] or entry['role'] not in PORT_ROLES or entry['protocol'] not in PORT_PROTOCOLS:raise ValueError('Invalid port roles.')
+        if len({entry['port'] for entry in roles})!=len(roles):raise ValueError('Invalid port roles.')
     if value['identification'] not in IDENTIFIERS or value['activity'] not in ACTIVITY_PORTS:raise ValueError('Unknown plugin adapter.')
     discovery=value['discovery'];fields(discovery,('engine',),('target_mode',))
     if discovery['engine'] not in DISCOVERY:raise ValueError('Unknown discovery adapter.')
@@ -81,7 +118,10 @@ def validate_manifest(value):
         if relay!={'transport':transport,'ports':ports}:raise ValueError('Relay does not match discovery adapter.')
     if value['identification']=='synscan_version' and relay!={'transport':'udp','ports':[11880]}:raise ValueError('Invalid SynScan identification transport.')
     if value['identification']=='zwo_model' and (not relay or relay['transport']!='tcp' or len(relay['ports'])!=1):raise ValueError('Invalid ZWO identification transport.')
-    if value['readiness'] not in ('association','vespera_tcp') or value['readiness']=='vespera_tcp' and (not relay or relay['transport']!='tcp' or 8082 not in relay['ports']):raise ValueError('Unknown readiness adapter.')
+    if value['readiness'] not in READINESS:raise ValueError('Unknown readiness adapter.')
+    if value['readiness']=='vespera_tcp' and (not relay or relay['transport']!='tcp' or 8082 not in relay['ports']):raise ValueError('Invalid readiness transport.')
+    if value['readiness']=='tcp_connect' and (not relay or relay['transport']!='tcp'):raise ValueError('Invalid readiness transport.')
+    if value['readiness']=='udp_identity' and value['identification']!='synscan_version':raise ValueError('Invalid readiness transport.')
     validation=value['validation'];fields(validation,('level','models','checks','limitations'))
     if validation['level'] not in ('unverified','simulation','partial_hardware'):raise ValueError('Invalid validation level.')
     if not isinstance(validation['models'],list) or len(validation['models'])>16:raise ValueError('Invalid validation models.')
@@ -93,7 +133,9 @@ def validate_manifest(value):
     for reference in value['references']:
         fields(reference,('title','url'));text(reference['title'],120);url=urlsplit(text(reference['url'],512))
         if url.scheme!='https' or not url.hostname or url.username or url.password:raise ValueError('Invalid plugin reference.')
-    return copy.deepcopy(value)
+    result=copy.deepcopy(value)
+    result.setdefault('telemetry',{'adapters':[], 'default_enabled':[]})
+    return result
 
 
 def validate_registry(values):
@@ -137,6 +179,10 @@ def all_plugins():return tuple(registry().values())
 def profile_kinds():return tuple(registry())
 def relay_plugins():return tuple(p for p in all_plugins() if p['relay'])
 def demand_plugins():return tuple(p for p in all_plugins() if p['discovery']['engine']!='none')
+def port_role(ident, port):
+    """Declared (role, protocol) of a relayed port; undeclared ports are other/unknown."""
+    entry=next((e for e in plugin(ident).get('port_roles',()) if e['port']==port),None)
+    return (entry['role'],entry['protocol']) if entry else ('other','unknown')
 def proxy_flag(ident):return 'legacy_ports' if ident=='vespera' else ident+'_proxy'
 def demand_flag(ident):return ident+'_demand'
 def public_registry():return {'schema_version':SCHEMA_VERSION,'plugins':copy.deepcopy(list(all_plugins()))}
@@ -171,12 +217,30 @@ def manifest_schema():
         'relay':{'oneOf':[{'type':'null'},obj({'transport':{'enum':['tcp','udp']},'ports':dict(array({'type':'integer','minimum':1,'maximum':65535},16),minItems=1,uniqueItems=True)})]},
         'identification':{'enum':list(IDENTIFIERS)},
         'discovery':{'oneOf':[obj({'engine':{'enum':[e for e in DISCOVERY if e!='tcp_syn']}}),obj({'engine':{'const':'tcp_syn'},'target_mode':{'enum':['original','proxy_or_original']}})]},
-        'activity':{'enum':list(ACTIVITY_PORTS)},'readiness':{'enum':['association','vespera_tcp']},
+        'activity':{'enum':list(ACTIVITY_PORTS)},'readiness':{'enum':list(READINESS)},
         'validation':obj({'level':{'enum':['unverified','simulation','partial_hardware']},'models':array(dict(string,maxLength=64),16),
                           'checks':dict(array({'enum':list(CHECKS)},len(CHECKS)),uniqueItems=True),
                           'limitations':dict(array({'enum':list(LIMITATIONS)},len(LIMITATIONS)),uniqueItems=True)}),
         'references':dict(array(obj({'title':dict(string,maxLength=120),'url':dict(string,maxLength=512,format='uri',pattern='^https://')}),8),minItems=1)})
     result['properties']['onboarding']=array({'type':'object','properties':{'prefix':{'type':'string','maxLength':32},'target_ip':{'type':'string','format':'ipv4'},'password':{'type':'string','minLength':8,'maxLength':63}},'required':['prefix'],'additionalProperties':False},16)
+    adapter={'oneOf':[{'enum':[a for a in TELEMETRY_ADAPTERS if a!='seestar_events_v1']},
+                       obj({'id':{'const':'seestar_events_v1'},'requires':{'const':'maker_key'}})]}
+    result['properties']['telemetry']=obj({'adapters':dict(array(adapter,len(TELEMETRY_ADAPTERS)),uniqueItems=True),
+        'default_enabled':dict(array({'enum':[a for a in TELEMETRY_ADAPTERS if a!='seestar_events_v1']},len(TELEMETRY_ADAPTERS)),uniqueItems=True)})
+    result['properties']['telemetry']['properties']['limitation'] = dict(string, maxLength=240)
+    result['properties']['protocol']={'enum':list(INSTRUMENT_PROTOCOLS)}
+    result['properties']['port_roles']=dict(array(obj({'port':{'type':'integer','minimum':1,'maximum':65535},
+        'role':{'enum':list(PORT_ROLES)},'protocol':{'enum':list(PORT_PROTOCOLS)}}),16),minItems=1)
+    result['properties']['maker_key']=obj({key:{'const':value} for key,value in MAKER_KEY.items()})
+    result['allOf']=[{'if':{'required':['maker_key']},'then':{'properties':{'id':{'const':'seestar'}}}}]
+    for ident in TELEMETRY_ADAPTERS:
+        if ident=='seestar_events_v1':continue
+        result['properties']['telemetry'].setdefault('allOf',[]).append({
+            'if':{'properties':{'default_enabled':{'contains':{'const':ident}}}},
+            'then':{'properties':{'adapters':{'contains':{'const':ident}}}}})
+    result['allOf'].append({'if':{'required':['telemetry'],'properties':{'telemetry':{'properties':{
+        'adapters':{'contains':{'type':'object','properties':{'id':{'const':'seestar_events_v1'}},'required':['id']}}}}}},
+        'then':{'required':['maker_key']}})
     return result
 
 
@@ -189,7 +253,7 @@ def onboarding_defaults(ssid):
 
 
 def require_config_plugins(config):
-    kinds={entry.get('kind','generic') for entry in config.get('telescopes',[])}
+    kinds={entry.get('kind','generic') for entry in config.get('telescopes',[])+config.get('stations',[])}
     if kinds-set(profile_kinds()):raise ValueError('This update is missing a plugin used by a saved profile.')
-    fields={'quiet_seconds','cooldown_seconds','force_first_profile'}|{demand_flag(p['id']) for p in demand_plugins()}
+    fields={'quiet_seconds','cooldown_seconds','force_first_profile','protect_running_operations','night_reservations'}|{demand_flag(p['id']) for p in demand_plugins()}
     if set(config.get('auto_policy',{}))-fields:raise ValueError('This update is missing a saved plugin policy.')

@@ -41,33 +41,55 @@ cd astro-bridge-core
 python3 -m wifi_bridge --demo
 ```
 
-Open **http://127.0.0.1:8787** and sign in with **`demo-telescope-2026`**. Python 3.11+ on a Unix system is sufficient. Demo mode uses simulated adapters and never changes your host's network.
+Open **http://127.0.0.1:8787** and sign in with **`12345678`**. Python 3.11+ on a Unix system is sufficient. Demo mode uses simulated adapters and never changes your host's network.
 
 For a release install, download `install.py` from [Releases](https://github.com/Sqound/astro-bridge-core/releases). It downloads the pinned wheel, verifies its checksum and installs it in an isolated environment without sudo. See the [installation guide](doc/getting-started.md).
+
+New Raspberry, native Linux and Docker installations use **`12345678`** for web access and the hotspot. Demo mode uses the same initial password. Existing installations retain their saved passwords during upgrades.
 
 ## Deploy on hardware
 
 | You have | Start here |
 | --- | --- |
-| Raspberry Pi Zero W | [Raspberry appliance](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/raspberry.md) |
+| Raspberry Pi Zero W or Pi 5 (with Astro Bridge Setup) | [Raspberry appliance](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/raspberry.md) |
 | A dedicated Linux machine | [Native Linux](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/linux.md) |
 | Docker on Linux | [Docker networking](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/docker.md) |
 | Docker Desktop on Windows/macOS | [Docker demo](https://github.com/Sqound/astro-bridge-implementations/blob/main/doc/docker.md#try-the-demo) |
 
 Real networking needs suitable Linux Wi-Fi adapters and host integration. Plan one adapter per simultaneous Wi-Fi role; a private uplink, hotspot and telescope uplink normally need three adapters. Standard Docker Desktop setups do not expose physical Wi-Fi radios to the application. USB forwarding and Linux host integration would require additional setup and hardware validation.
 
-## Equipment catalog
+## Equipment and evidence
 
-| Family | App connection | Current evidence |
+| Family | Implemented | Tested in simulation | Verified on hardware |
+| --- | --- | --- | --- |
+| Raspberry Pi 5 host, hotspot, two USB Wi-Fi adapters | Yes (image in implementations 1.1.0) | Yes | **Yes, partly:** automatic adapter roles in under 6 s, IPv4 forwarding, hotspot DHCP, DNS and Internet, Setup Launch found the bridge. Offline fallback hotspot not yet checked |
+| Raspberry Pi Zero W host | Yes (image in implementations 1.1.0) | Yes | **Partly:** 600 s idle run and a TCP relay test (147/147 replies). Camera hosting is not supported on this board. A full telescope session, hotspot loss/recovery and phone discovery are not yet checked |
+| Raspberry Pi 3 B, Pi 4 | Yes | Yes | No |
+| Vespera (Wi-Fi, routed original address) | Yes | Yes | **Partly:** switching and the manufacturer-app path. Two isolated Vespera, per-tab switching and night reservation: no |
+| Seestar (relays, station profile) | Yes | Yes | **Partly:** automatic switching to and from another telescope (about 40 s) with notifications. Bridge `scan_iscope` probe and station mode: no |
+| DWARF (relays, operation state) | Yes | Yes | **Partly:** manufacturer-app discovery observed. Operation-state reading during a capture: no |
+| ZWO Wi-Fi mounts (TCP 4030) | Yes (read-only identification, relay, protection) | Yes | **Partly:** model read through the relay. Control, guiding, automatic switching: no |
+| SynScan Wi-Fi mounts (UDP 11880) | Yes | Yes | No |
+| Celestron NexStar over USB serial (TCP relay) | Yes | Pseudo-terminal tests | No |
+| USB cameras over Alpaca (ZWO ASI) | Yes | Yes | **Partly:** ASI220MM, two 0.2 s exposures, 16-bit FITS (1920 × 1080 direct, 640 × 480 through a hub); full frame through a hub failed with USB resets |
+| USB cameras (UVC, gPhoto) | Yes | Yes | No |
+| Native client contract 1.2 (pairing, leases, events, telemetry) | Yes | Replay scenarios and loopback mock | No third-party client verified against a physical bridge |
+| Astro Bridge Setup 1.1.0 (macOS, Windows, Linux) | Yes | Unit, Rust and browser tests with mocks | **Partly:** Launch found a Pi 5 bridge on a private network (macOS). Writing a card from the published 1.1.0 images: not yet checked; Windows and Linux builds not checked on a computer |
+| Docker demo | Yes | Yes | Demo verified in a Linux VM on macOS. Physical USB Wi-Fi inside Docker: no |
+
+**Documented is not verified.** Only the last column is hardware evidence; "partly" lists exactly what was observed. A matching Wi-Fi name is a hint, not proof of compatibility. Live USB images and Celestron Origin are not part of this release. A freshly written 1.1.0 image still needs its first-boot check on each board.
+
+See [connection mechanisms and limits](doc/reference/discovery.md). Instruments using the same downstream subnet must be selected one at a time.
+
+## Astro Bridge Setup
+
+Astro Bridge Setup is a desktop assistant that downloads a published Astro Bridge image or installer, verifies its SHA-256, writes and reads back the SD card after an explicit erase confirmation, then finds the running bridge on your network and opens its web interface.
+
+| Choose the device | Write the card | Find the bridge |
 | --- | --- | --- |
-| Seestar | Active discovery and native TCP relays | S50 Pro app, preview and switching checked |
-| Vespera | Routed original address; TCP connection demand | Vespera 2 connection and switching checked |
-| DWARF | Native TCP relays; passive app-search demand | DWARF mini control/preview checked; initial IP entry may be needed |
-| ZWO Wi-Fi mounts | TCP 4030; read-only model identification | AM5N association, identity and relay checked; guiding pending |
-| SynScan Wi-Fi mounts | UDP 11880; scoped version search | Isolated protocol/network tests; physical hardware pending |
-| Generic equipment | Manually configured routed access | Protocol-specific validation required |
+| ![Choose your device](doc/images/setup/setup-2-device.png) | ![Writing](doc/images/setup/setup-7-writing.png) | ![Launch](doc/images/setup/setup-9-launch.png) |
 
-A matching Wi-Fi name is a hint, not proof of compatibility. See [connection mechanisms and limits](doc/reference/discovery.md). Instruments using the same downstream subnet must be selected one at a time.
+Setup is part of the deployment recipes and shares their version. Download it from the [implementations release](https://github.com/Sqound/astro-bridge-implementations/releases/latest) and read the [step-by-step guide](https://github.com/Sqound/astro-bridge-implementations/blob/main/setup/README.md). *Screens use a synthetic backend; names and checksums are demonstration values.*
 
 ## Explore the interface
 

@@ -57,7 +57,7 @@ class PausedRoles:
     @staticmethod
     def fingerprint(profile):
         # This digest is deliberately NOT derived from a password or any credential.
-        fields = ('id', 'mac', 'bssid', 'ssid', 'target_ip', 'kind', 'enabled', 'hidden')
+        fields = ('id', 'mac', 'bssid', 'ssid', 'target_ip', 'kind', 'enabled', 'hidden', 'isolated', 'client_port')
         value = {key: profile.get(key) for key in fields} | {'role': role_for(profile)}
         return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
@@ -69,7 +69,7 @@ class PausedRoles:
 
     @staticmethod
     def changed(before, after):
-        fields = ('id', 'mac', 'bssid', 'ssid', 'target_ip', 'kind', 'enabled', 'hidden', 'password')
+        fields = ('id', 'mac', 'bssid', 'ssid', 'target_ip', 'kind', 'enabled', 'hidden', 'password', 'isolated', 'client_port')
         return {key:before.get(key) for key in fields} != ({key:after.get(key) for key in fields} if after else None)
 
     def held(self, ident):

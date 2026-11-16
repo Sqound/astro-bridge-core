@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "astro-bridge-core"
-version = "1.0.1"
+version = "1.1.0"
 description = "Smart telescope and mount connection manager"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,7 +22,7 @@ wifi-bridge = "wifi_bridge.__main__:main"
 include = ["wifi_bridge*"]
 
 [tool.setuptools.package-data]
-wifi_bridge = ["static/*"]
+wifi_bridge = ["static/*", "cameras/tables/*.json"]
 
 [project.urls]
 Homepage = "https://github.com/Sqound/astro-bridge-core"
