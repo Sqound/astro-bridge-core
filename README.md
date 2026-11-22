@@ -2,6 +2,8 @@
 
 **Your telescope apps. One connected observing setup.**
 
+Astro Bridge Core is part of [PlanAstro](https://www.planastro.space/), a complete astrophotography solution: plan your night, drive your telescope and mount from your smartphone with plate solving, then process and share your images.
+
 [![Core checks](https://github.com/Sqound/astro-bridge-core/actions/workflows/checks.yml/badge.svg)](https://github.com/Sqound/astro-bridge-core/actions/workflows/checks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-d6a253.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](pyproject.toml)
