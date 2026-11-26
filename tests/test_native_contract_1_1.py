@@ -176,6 +176,7 @@ class AnnouncementAndRetryTests(unittest.TestCase):
 
     def test_info_and_retry_after_over_http(self):
         with bridge() as (c, server, _):
+            c.event_store.clock.sync = lambda: None  # The host's chrony must not decide the limit.
             _, _, info = call(server, 'GET', '/api/v1/info')
             self.assertEqual((info['contract_minor'], info['free_radios'], info['tls_fingerprint']), (2, c.free_radios(), None))
             _, client = tokens(server)
