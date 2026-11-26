@@ -109,6 +109,22 @@ class HotspotRouteTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0],['systemctl','restart','wifi-bridge-dhcp'])
             self.assertTrue(path.exists())
 
+    def test_route_update_keeps_active_sharing_and_does_not_restart_dhcp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            net=LinuxNetwork(directory);device={'name':'wlan1'};path=Path(directory,'dnsmasq.conf')
+            uplink={'uplink':'wlan0','dns':['192.0.2.53']}
+            with patch('wifi_bridge.network.run') as run:
+                self.assertTrue(net.hotspot_dhcp(device,['10.0.0.1'],sharing=uplink))
+                net.sharing_active=uplink;run.reset_mock()
+                for _ in range(3):
+                    self.assertFalse(net.hotspot_dhcp(device,['10.0.0.1']))
+                    self.assertFalse(net.hotspot_dhcp(device,['10.0.0.1'],sharing=uplink))
+                run.assert_not_called()
+                self.assertIn('port=53\n',path.read_text());self.assertNotIn('port=0\n',path.read_text())
+                # Withdrawing the sharing stays explicit.
+                self.assertTrue(net.hotspot_dhcp(device,['10.0.0.1'],sharing=None))
+            self.assertIn('port=0\n',path.read_text())
+
 
 class HotspotControllerTests(Fixture):
     def setUp(self):

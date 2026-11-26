@@ -62,6 +62,19 @@ class NetworkAuthenticationTests(unittest.TestCase):
                 self.assertEqual(write.call_args.args[1]['connection']['auth-retries'], 1)
                 cancel.assert_called_once_with('telescope')
 
+    def test_instrument_wait_outlasts_a_slow_instrument_dhcp_server(self):
+        # AZ-GTiX: address 31 s after the link, 35 s after activation began. Home keeps its shorter wait.
+        for role, wait in (('telescope', 65), ('telescope-scope-a', 65), ('home', 35)):
+            with tempfile.TemporaryDirectory() as folder:
+                net = LinuxNetwork(folder); calls = []
+                def command(args, **kwargs):
+                    calls.append((args, kwargs)); return ''
+                with patch.object(net, '_profile', return_value='owned-profile'), patch('wifi_bridge.network.run', side_effect=command):
+                    net.connect(role, {'name': 'wlan1', 'mac': '02:00:00:00:00:01'}, {'ssid': 'Synthetic'})
+                up = [(a, k) for a, k in calls if 'up' in a]
+                self.assertEqual(up[0][0][:3], ['nmcli', '--wait', str(wait)], role)
+                self.assertEqual(up[0][1]['timeout'], wait + 5, role)
+
     def test_absent_network_or_supplicant_timeout_is_not_a_password_rejection(self):
         for reason in ('53 (The Wi-Fi network could not be found)', '11 (Supplicant timeout)', '0 (No reason)'):
             with tempfile.TemporaryDirectory() as folder:
@@ -115,5 +128,8 @@ class ControllerAuthenticationTests(Fixture):
             self.controller.cycle(0); self.controller.cycle(20)
         self.assertEqual(sum(c.args[0]=='telescope' for c in attempts.call_args_list), 2)
         self.assertFalse(self.controller.state['telescopes'][0].get('retry_blocked'))
+        # Two failed attempts in a row: the next one comes 30 s after the last.
         self.controller.cycle(40)
+        self.assertFalse(self.controller.state['telescopes'][0]['connected'])
+        self.controller.cycle(50)
         self.assertTrue(self.controller.state['telescopes'][0]['connected'])

@@ -14,7 +14,11 @@
       "enum": [
         "simulator",
         "uvc",
-        "zwo_asi"
+        "zwo_asi",
+        "qhyccd",
+        "player_one",
+        "atik",
+        "moravian"
       ]
     },
     "usb": {
@@ -56,6 +60,31 @@
               "class"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "vendor_id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "except_product_ids": {
+                "type": "array",
+                "maxItems": 32,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                }
+              }
+            },
+            "required": [
+              "vendor_id",
+              "except_product_ids"
+            ],
+            "additionalProperties": false
           }
         ]
       }
@@ -67,7 +96,9 @@
       ]
     },
     "indi_driver": {
-      "const": "indi_asi_ccd"
+      "enum": [
+        "indi_asi_ccd"
+      ]
     }
   },
   "required": [
@@ -97,9 +128,41 @@
     },
     {
       "if": {
+        "properties": {
+          "driver": {
+            "const": "zwo_asi"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
+            "items": {
+              "required": [
+                "vendor_id"
+              ],
+              "properties": {
+                "vendor_id": {
+                  "enum": [
+                    963
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
         "required": [
           "indi_driver"
-        ]
+        ],
+        "properties": {
+          "indi_driver": {
+            "const": "indi_asi_ccd"
+          }
+        }
       },
       "then": {
         "properties": {
@@ -107,14 +170,112 @@
             "const": "zwo_asi"
           },
           "usb": {
-            "minItems": 1,
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "driver": {
+            "const": "qhyccd"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
             "items": {
               "required": [
                 "vendor_id"
               ],
               "properties": {
                 "vendor_id": {
-                  "const": 963
+                  "enum": [
+                    5656
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "driver": {
+            "const": "player_one"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
+            "items": {
+              "required": [
+                "vendor_id"
+              ],
+              "properties": {
+                "vendor_id": {
+                  "enum": [
+                    41120
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "driver": {
+            "const": "atik"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
+            "items": {
+              "required": [
+                "vendor_id"
+              ],
+              "properties": {
+                "vendor_id": {
+                  "enum": [
+                    8423
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "driver": {
+            "const": "moravian"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usb": {
+            "items": {
+              "required": [
+                "vendor_id"
+              ],
+              "properties": {
+                "vendor_id": {
+                  "enum": [
+                    4935
+                  ]
                 }
               }
             }

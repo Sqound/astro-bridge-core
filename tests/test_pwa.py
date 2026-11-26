@@ -12,11 +12,11 @@ class PublicShellTests(unittest.TestCase):
     def test_every_public_byte_participates_and_order_is_deterministic(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
-            for _,(name,_) in pwa.ASSETS.items():shutil.copy2(pwa.STATIC/name,root/name)
+            for _,(name,_) in pwa.SERVED.items():shutil.copy2(pwa.STATIC/name,root/name)
             shutil.copy2(pwa.STATIC/'sw.js',root/'sw.js')
             before=pwa.load_shell(root)[2]
             self.assertEqual(pwa.load_shell(root)[2],before)
-            for name in [item[0] for item in pwa.ASSETS.values()]+['sw.js']:
+            for name in [item[0] for item in pwa.SERVED.values()]+["sw.js"]:
                 path=root/name;original=path.read_bytes();path.write_bytes(original+b'changed')
                 self.assertNotEqual(pwa.load_shell(root)[2],before,name)
                 path.write_bytes(original)
@@ -26,7 +26,7 @@ class PublicShellTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);(root/'static').mkdir()
             shutil.copy2(Path(pwa.__file__),root/'pwa.py')
-            for _,(name,_) in pwa.ASSETS.items():shutil.copy2(pwa.STATIC/name,root/'static'/name)
+            for _,(name,_) in pwa.SERVED.items():shutil.copy2(pwa.STATIC/name,root/'static'/name)
             shutil.copy2(pwa.STATIC/'sw.js',root/'static/sw.js')
             def load():
                 spec=importlib.util.spec_from_file_location('temporary_pwa',root/'pwa.py')

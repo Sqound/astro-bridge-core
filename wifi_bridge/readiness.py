@@ -34,7 +34,12 @@ def service_probe(device, address, target, kind):
 
 
 class ServiceReadiness:
-    """One synchronous probe per radio; repeated status reads never trigger checks."""
+    """One synchronous probe per radio; repeated status reads never trigger checks.
+
+    A linked SynScan mount answers this read-only check every 30 s (skipped while
+    relayed traffic flows): with its Wi-Fi association, that keeps a client talking
+    to a mount that may stop its Wi-Fi once left alone (see mount_sleep).
+    """
     def __init__(self, network, demo=False):
         self.net, self.demo = network, demo
         self.values = {}

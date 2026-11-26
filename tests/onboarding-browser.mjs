@@ -56,7 +56,7 @@ try{
  });
  await check('already saved observation opens its existing profile rather than creating a duplicate',async()=>{
   const vespera=observed.candidates.find(p=>p.ssid==='vespera-NEW456');await page.goto(origin+'/#configuration/telescopes?add='+vespera.observation_id);await page.locator('#editor').waitFor({state:'visible'});
-  assert.equal(await page.locator('#editor-title').innerText(),'Edit telescope');assert.equal(await page.evaluate(()=>state.config.telescopes.length),2);await page.locator('#close-editor').click();
+  assert.equal(await page.locator('#editor-title').innerText(),'Edit instrument');assert.equal(await page.evaluate(()=>state.config.telescopes.length),2);await page.locator('#close-editor').click();
  });
  await check('scan failure is visible at the first-step top; a late result cannot replace a manual draft',async()=>{
   await page.evaluate(()=>{wifiSnapshot=null;wifiSnapshotAt=0;});

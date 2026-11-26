@@ -183,7 +183,7 @@ class AlpacaHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
             else:
-                self.send(200, envelope(client_transaction, transaction, error=error.number))
+                self.send(200, envelope(client_transaction, transaction, error=error.number, message=str(error)))
         except (ValueError, UnicodeError):
             self.send(400, envelope(client_transaction, transaction, error=0x401))
         except (BrokenPipeError, ConnectionError, TimeoutError):

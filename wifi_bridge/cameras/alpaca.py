@@ -23,9 +23,9 @@ MESSAGES = {
 
 
 class AlpacaError(Exception):
-    def __init__(self, number):
+    def __init__(self, number, message=None):
         self.number = number
-        super().__init__(MESSAGES[number])
+        super().__init__(message or MESSAGES[number])
 
 
 def number(value, minimum=0, maximum=4294967295):
@@ -53,9 +53,9 @@ def duration(value):
     return result
 
 
-def envelope(client, server, value=None, error=0, include_value=True):
+def envelope(client, server, value=None, error=0, include_value=True, message=None):
     result = {'ClientTransactionID': client, 'ServerTransactionID': server,
-              'ErrorNumber': error, 'ErrorMessage': MESSAGES.get(error, '')}
+              'ErrorNumber': error, 'ErrorMessage': message or MESSAGES.get(error, '')}
     if include_value and not error:
         result['Value'] = value
     return result
@@ -115,6 +115,7 @@ class Camera:
         self.frame = None
         self.last_seconds = 0.0
         self.last_start = None
+        self.exposure_started = self.exposure_seconds = None
         heavy = self.info['width'] * self.info['height'] * (2 if self.info['bits'] > 8 else 1) > 3 * 1024 * 1024
         self.default_bin = 2 if heavy and default_bin == 2 and self.info['max_bin'] >= 2 else 1
         self.values = dict(binx=self.default_bin, biny=self.default_bin, startx=0, starty=0,
@@ -133,6 +134,17 @@ class Camera:
         if self.owner and self.idle_since is not None and self.clock() - self.idle_since >= 120:
             self.owner = None
         return state
+
+    def percent_completed(self, state):
+        """0 to 100 while an exposure is in progress; the standard requires InvalidOperation otherwise."""
+        if state not in ('waiting', 'exposing', 'reading', 'download') or self.exposure_started is None:
+            raise AlpacaError(0x40B, 'No exposure is in progress.')
+        if state in ('reading', 'download'):
+            return 100  # the exposure is over; the image is being read or waits to be retrieved
+        if state == 'waiting' or not self.exposure_seconds:
+            return 0
+        # 100 is kept for the end of the exposure itself, reported by the driver, not by this clock.
+        return max(0, min(99, int(100 * (self.clock() - self.exposure_started) / self.exposure_seconds)))
 
     def check_owner(self, client, address):
         self.state()
@@ -189,6 +201,8 @@ class Camera:
                 self.driver.start_exposure(seconds, binning, roi, values['gain'], True)
                 self.frame = None
                 self.last_seconds = seconds
+                # The driver refuses any duration outside its range and reads the applied value back, so the requested one is the effective one.
+                self.exposure_started, self.exposure_seconds = self.clock(), seconds
                 self.last_start = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
                 if not self.owner:
                     self.generation = uuid.uuid4().hex
@@ -226,6 +240,8 @@ class Camera:
             if self.last_start is None or state in ('waiting', 'exposing', 'reading'):
                 raise AlpacaError(0x402)
             return self.last_seconds if member == 'lastexposureduration' else self.last_start
+        if member == 'percentcompleted':
+            return self.percent_completed(state)
         if member in ('bayeroffsetx', 'bayeroffsety') and self.info['sensor_type'] == 0:
             raise AlpacaError(0x400)
         properties = {
@@ -243,6 +259,10 @@ class Camera:
             'readoutmode': 0, 'readoutmodes': ['Default'], 'sensorname': self.info['sensor_name'],
             'sensortype': self.info['sensor_type'], 'hasshutter': False,
         }
+        for key, name in (('exposure_resolution', 'exposureresolution'), ('electrons_per_adu', 'electronsperadu'),
+                          ('full_well_capacity', 'fullwellcapacity')):
+            if self.info.get(key) is not None:
+                properties[name] = self.info[key]
         if member in properties:
             return properties[member]
         raise AlpacaError(0x400)

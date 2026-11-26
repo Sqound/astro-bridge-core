@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "qhyccd",
+  "driver": "qhyccd",
+  "usb": [
+    {
+      "vendor_id": 5656,
+      "except_product_ids": []
+    }
+  ],
+  "validation": "unverified"
+}

@@ -26,6 +26,119 @@ class ClockTests(unittest.TestCase):
     def create(self):
         return Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.synced)
 
+    def test_board_without_clock_takes_a_signed_in_browser_time_once(self):
+        # A Pi without a battery clock starts on 1 January 1970.
+        self.wall = 0
+        calls = []
+        def setter(value):
+            calls.append(value)
+            self.wall = value
+        clock = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.synced, set_system=setter)
+        view = clock.browser_view()
+        self.assertEqual((view['system_plausible'], view['set_from_browser']), (False, False))
+        hinted = 1795000000
+        result = clock.hint({'utc_iso': utc(hinted), 'uncertainty_ms': 5000}, 'browser')
+        self.assertEqual(calls, [hinted])
+        self.assertEqual(result['source'], 'client_hint')
+        view = clock.browser_view()
+        self.assertEqual((view['system_plausible'], view['set_from_browser']), (True, True))
+        # Later hints never set a plausible clock again, nor a synchronized one.
+        self.mono += 61
+        clock.hint({'utc_iso': utc(hinted + 300), 'uncertainty_ms': 5000}, 'other')
+        self.assertEqual(calls, [hinted])
+
+    def test_clock_is_never_set_without_a_platform_setter_or_with_network_time(self):
+        self.wall = 0
+        without = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.synced)
+        # The estimate still follows the browser, ten-year bound measured from this release.
+        self.assertEqual(without.hint({'utc_iso': utc(1795000000), 'uncertainty_ms': 5000}, 'a')['source'], 'client_hint')
+        self.synced = True
+        setter = []
+        synced = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.synced, set_system=setter.append)
+        synced.hint({'utc_iso': utc(1795000000), 'uncertainty_ms': 5000}, 'b')
+        self.assertEqual(setter, [])
+        self.synced = False
+        imprecise = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.synced, set_system=setter.append)
+        imprecise.hint({'utc_iso': utc(1795000000), 'uncertainty_ms': 3600000}, 'c')
+        self.assertEqual(setter, [])
+
+    def test_last_sync_says_never_when_nothing_was_ever_recorded(self):
+        view = self.clock.browser_view()
+        self.assertEqual(view['last_sync'], {'kind': 'never', 'age_seconds': None, 'this_run': False,
+                                             'last_network_sync_utc': None})
+        self.assertFalse(self.path.with_name('clock-sync.json').exists())
+
+    def test_last_sync_counts_monotonic_time_while_synchronized_then_after_losing_it(self):
+        self.synced = True
+        # chrony measured 180 seconds ago.
+        clock = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: self.wall - 180.0)
+        first = clock.read()['last_sync']
+        self.assertEqual((first['kind'], first['age_seconds'], first['this_run']), ('network', 180, True))
+        self.assertEqual(first['last_network_sync_utc'], utc(self.wall - 180))
+        self.assertEqual(json.loads(self.path.with_name('clock-sync.json').read_text()), {'last_network_sync': self.wall - 180.0})
+        # Internet disappears: the age keeps growing on the monotonic clock alone.
+        clock.sync = lambda: None
+        self.mono += 3600
+        self.wall += 3600
+        lost = clock.read()
+        self.assertEqual(lost['clock_status'], 'unverified')
+        self.assertEqual(lost['last_sync']['age_seconds'], 3780)
+        self.assertEqual(lost['last_sync']['kind'], 'network')
+
+    def test_last_sync_after_restart_without_internet_states_only_what_is_certain(self):
+        clock = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: True)
+        clock.read()
+        recorded = self.wall
+        # The bridge restarts with a wrong wall clock and no Internet.
+        self.wall, self.mono = 1793491300, 5
+        restarted = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: False)
+        sync = restarted.read()['last_sync']
+        self.assertEqual(sync, {'kind': 'network', 'age_seconds': None, 'this_run': False,
+                                'last_network_sync_utc': utc(recorded)})
+        # Time passing, even a jumping wall clock, never produces a duration.
+        self.wall += 10 ** 6
+        self.mono += 99
+        self.assertIsNone(restarted.read()['last_sync']['age_seconds'])
+
+    def test_last_sync_with_only_a_client_hint_is_not_called_network_time(self):
+        self.clock.hint({'utc_iso': utc(self.wall), 'uncertainty_ms': 500}, 'phone')
+        self.mono += 125
+        sync = self.clock.read()['last_sync']
+        self.assertEqual((sync['kind'], sync['age_seconds'], sync['this_run'], sync['last_network_sync_utc']),
+                         ('client_hint', 125, True, None))
+        # Network time then takes precedence.
+        self.clock.sync = lambda: True
+        self.clock.sync_checked = None
+        self.assertEqual(self.clock.read()['last_sync']['kind'], 'network')
+
+    def test_last_sync_age_ignores_a_wall_clock_that_goes_backwards(self):
+        clock = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: True)
+        clock.read()
+        clock.sync = lambda: False
+        self.mono += 600
+        self.wall -= 86400
+        sync = clock.read()['last_sync']
+        self.assertEqual(sync['age_seconds'], 600)
+        self.assertEqual(clock.browser_view()['last_sync']['age_seconds'], 600)
+
+    def test_sync_record_is_written_at_most_hourly_and_bad_files_are_ignored(self):
+        writes = []
+        with patch('wifi_bridge.clock.atomic_json', lambda path, value: writes.append(value)):
+            clock = Clock(self.path, now=lambda: self.wall, monotonic=lambda: self.mono, sync=lambda: True)
+            for _ in range(5):
+                clock.read()
+                self.mono += 6
+                self.wall += 6
+            self.assertEqual(len(writes), 1)
+            self.mono += 3600
+            self.wall += 3600
+            clock.read()
+            self.assertEqual(len(writes), 2)
+        record = self.path.with_name('clock-sync.json')
+        for text in ('{', '{"last_network_sync": "x"}', '{"last_network_sync": 1, "extra": 2}', '{"last_network_sync": 1}'):
+            record.write_text(text)
+            self.assertEqual(self.create().read()['last_sync']['kind'], 'never', text)
+
 
     def hint(self, offset, client='test-client', uncertainty=0):
         return self.clock.hint({'utc_iso': utc(self.wall + offset), 'uncertainty_ms': uncertainty}, client)

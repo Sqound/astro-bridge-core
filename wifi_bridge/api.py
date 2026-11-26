@@ -35,6 +35,8 @@ class MobileAPI:
         self.telemetry = TelemetryAPI(self)
         from .cameras.api import CameraAPI
         self.cameras = CameraAPI(self)
+        from .nearby import NearbyDevices
+        self.nearby = NearbyDevices(self)
         from .maker_keys.api import MakerKeyAPI
         self.maker_keys = MakerKeyAPI(self)
         self.revision_key = secrets.token_bytes(32)
@@ -256,8 +258,11 @@ class MobileAPI:
                 self.fields(data, self.NETWORK_FIELDS)
                 value['home'] = self.merge_network(value['home'], data)
             elif resource == 'hotspot':
-                self.fields(data, {'enabled', 'ssid', 'mac'})
+                self.fields(data, {'enabled', 'ssid', 'mac', 'current_password'})
+                # A new name after a personal password needs it to derive the hotspot key.
+                secret = data.pop('current_password', None) if isinstance(data, dict) else None
                 value['hotspot'] = dict(value.get('hotspot', {}), **data)
+                if secret is not None: value['current_password'] = secret
             elif resource == 'settings':
                 # auto_policy includes opt-in protect_running_operations; save enforces
                 # boolean validation, acknowledgement and the actual revision.
@@ -391,6 +396,12 @@ class MobileAPI:
             return 'admin'
         if method == 'GET' and path == '/cameras':
             return 'camera'
+        # Devices heard by the bridge: listing reads, linking needs the bounded link scope.
+        if method == 'GET' and path == '/instruments/nearby':
+            return 'read'
+        if (method == 'POST' and re.fullmatch(r'/instruments/nearby/[^/]+/link', path)
+                or method == 'DELETE' and re.fullmatch(r'/instruments/[^/]+/link', path)):
+            return 'link'
         read_paths = ('/status', '/interfaces', '/telescopes', '/plugins', '/events', '/activity',
                       '/protection', '/endpoints', '/instruments', '/devices', '/serial-devices', '/serial-mounts', '/serial-profiles')
         if method == 'GET' and (path in read_paths or re.fullmatch(

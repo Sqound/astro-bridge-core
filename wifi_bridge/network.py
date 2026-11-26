@@ -1,5 +1,4 @@
 """Linux networking: NetworkManager clients, hostapd setup AP and owned nft table."""
-import hashlib
 import ipaddress
 import os
 import json
@@ -16,8 +15,77 @@ from .mounts import mount_probe
 from .plugins import relay_plugins, proxy_flag, plugin
 
 
+
+# Hubs built into the board itself (Raspberry Pi 4: VL805 USB 2.0 hub; Pi 3: LAN9514 / LAN7515),
+# recognized only next to the root hub. The Pi 5 and the Zero W have none.
+BOARD_HUBS = {('2109', '3431'), ('0424', '9514'), ('0424', '2514')}
+USB_DEVICE = re.compile(r'[0-9]+-[0-9]+(?:\.[0-9]+)*')
+
+
+def behind_usb_hub(path):
+    """True when a USB Wi-Fi adapter is plugged through a hub other than the board's own.
+
+    Reads the USB topology only (sysfs). The adapter is the first USB device above
+    its network interface; any hub above it counts, except a known board hub
+    attached at the first two levels.
+    """
+    path = Path(path)
+    adapter = None
+    for parent in [path, *path.parents]:
+        if not USB_DEVICE.fullmatch(parent.name):
+            continue
+        if adapter is None:
+            adapter = parent
+            continue
+        try:
+            klass = (parent / 'bDeviceClass').read_text().strip()
+            ids = ((parent / 'idVendor').read_text().strip().lower(), (parent / 'idProduct').read_text().strip().lower())
+        except OSError:
+            continue
+        if klass != '09':
+            continue
+        depth = parent.name.split('-', 1)[1].count('.') + 1
+        if ids in BOARD_HUBS and depth <= 2:
+            continue
+        return True
+    return False
+
 class NetworkError(RuntimeError):
-    pass
+    # NetworkManager's activation failure code, when a connection attempt reported one.
+    activation = None
+    # The step of joining an instrument's Wi-Fi that failed (see link_failure_stage).
+    stage = None
+
+
+def link_failure_stage(activation=None, state=None, reason=None):
+    """Name the step that failed when an instrument's Wi-Fi could not be joined.
+
+    activation is the code NetworkManager gave with the failure; state and reason
+    are the interface's own, read while an attempt that outlasted its wait is still
+    pending. Returns NETWORK_NOT_FOUND (the network is not heard), NOT_ASSOCIATED
+    (heard, but the instrument did not accept the link), ADDRESS_NOT_OBTAINED
+    (linked, but the instrument gave no address), or None when nothing says which.
+    """
+    codes = {value for value in (activation, reason) if type(value) is int}
+    if 53 in codes: return 'NETWORK_NOT_FOUND'                       # ssid-not-found
+    if codes & {5, 15, 16, 17}: return 'ADDRESS_NOT_OBTAINED'        # ip-config-unavailable, dhcp-*
+    if state in (70, 80): return 'ADDRESS_NOT_OBTAINED'              # still waiting for its address
+    if codes & {8, 9, 10, 11}: return 'NOT_ASSOCIATED'               # supplicant-*
+    if state in (40, 50, 60): return 'NOT_ASSOCIATED'                # still preparing or associating
+    return None
+
+
+# Instruments whose own access point always uses one address plan: kind -> its address.
+# Only for these may the bridge take an address itself when none is given.
+FIXED_ADDRESS_PLANS = {'synscan': '192.168.4.1'}
+# Hosts tried, in order, far from the low addresses such access points hand out.
+FALLBACK_HOSTS = (250, 249, 248)
+KEEP_SHARING = object()
+
+
+def leading_code(value):
+    match = re.match(r'^(\d{1,3})(?:\s|$)', value or '')
+    return int(match[1]) if match else None
 
 
 class NetworkAuthenticationError(NetworkError):
@@ -45,7 +113,13 @@ def run(args, timeout=20, check=True, input=None):
                 and re.search(r'^Error: Connection activation failed: \(7\)(?:\s|$)',
                               getattr(result, 'stderr', '') or '', re.M)):
             raise NetworkAuthenticationError()
-        raise NetworkError("System command failed: " + args[0])
+        error = NetworkError("System command failed: " + args[0])
+        if args[0] == 'nmcli' and 'connection' in args and 'up' in args:
+            # Only the numeric code is kept: the text may name a network.
+            code = re.search(r'^Error: Connection activation failed: \((\d{1,3})\)(?:\s|$)',
+                             getattr(result, 'stderr', '') or '', re.M)
+            if code: error.activation = int(code[1])
+        raise error
     # Preserve SSID whitespace; trim only the command's final line terminator.
     return result.stdout.rstrip("\n")
 
@@ -180,6 +254,14 @@ class LinuxNetwork:
         self.sharing_active = None
         self.link_cache = {}
         self.isolated = None
+        # Owner switch (auto_policy.address_fallback), and the roles whose address the bridge took itself.
+        self.address_fallback = True
+        self.announce_check = 0
+        self.fallback_roles = set()
+        # What radio_idle last read per interface (NetworkManager state, link), for the service log.
+        self.radio_observations = {}
+        # Set by the controller: true once a restart is requested or the service is stopping.
+        self.halting = lambda: False
 
     def _isolation(self):
         if self.isolated is None:
@@ -206,6 +288,7 @@ class LinuxNetwork:
             if not re.fullmatch(r"(?:[A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}", mac):
                 mac = (entry / "address").read_text().strip()
             usb = "/usb" in str((entry / "device").resolve())
+            hub = usb and behind_usb_hub((entry / "device").resolve())
             bands = ["2.4"]
             capabilities = ""
             phy_path = entry / "phy80211" / "name"
@@ -214,7 +297,8 @@ class LinuxNetwork:
                 bands = radio_bands(capabilities)
             devices.append({"name": name, "mac": mac.lower(), "usb": usb,
                             "bands": bands, "ap": bool(re.search(r"^\s*\* AP\s*$", capabilities, re.M)),
-                            "label": name + (" · USB" if usb else " · built-in")})
+                            "label": name + (" · USB" if usb else " · built-in"),
+                            **({"usb_hub": True} if hub else {})})
         if self.isolated or (self.state_dir/'isolated').exists():
             owned = self._isolation().present_devices()
             devices = [d for d in devices if d['mac'] not in {r['mac'] for r in owned}] + owned
@@ -249,6 +333,9 @@ class LinuxNetwork:
         state = run(["nmcli", "-g", "GENERAL.STATE", "device", "show", device["name"]], timeout=2, check=False)
         link = run(["iw", "dev", device["name"], "link"], timeout=2, check=False)
         info = run(["iw", "dev", device["name"], "info"], timeout=2, check=False)
+        self.radio_observations[device["name"]] = {
+            "state": state.split(" ", 1)[0] if re.fullmatch(r"\d{1,3}", state.split(" ", 1)[0]) else "unknown",
+            "link": "not connected" if link.strip() == "Not connected." else "connected" if link.lstrip().startswith("Connected") else "unknown"}
         return (state.split(" ", 1)[0] == "30" and link.strip() == "Not connected."
                 and re.findall(r"^\s*type\s+(\S+)\s*$", info, re.M) == ['managed']
                 and self._hotspot_device() != device["name"])
@@ -264,6 +351,12 @@ class LinuxNetwork:
 
         No services, links or associations are changed here. Unknown observations,
         a running service or an absent adapter retain ownership for safe recovery.
+        The one exception is the radio the bridge itself released from
+        NetworkManager to start this AP: once both AP services are confirmed
+        stopped and the radio still has the recorded MAC address, it is handed
+        back to NetworkManager exactly as a normal AP stop would. Without this,
+        an AP that stopped on its own left that radio unmanaged and blocked every
+        later hotspot start until a reboot.
         The controller calls this while holding its network lock.
         """
         path = self.state_dir / 'hotspot.json'
@@ -274,6 +367,14 @@ class LinuxNetwork:
         services = run(['systemctl', 'is-active', 'wifi-bridge-ap', 'wifi-bridge-dhcp'], timeout=5, check=False)
         if services.splitlines() != ['inactive', 'inactive']: return False
         state = run(['nmcli', '-g', 'GENERAL.STATE', 'device', 'show', device['name']], timeout=2)
+        recorded = json.loads(before).get('mac')
+        if (state.split(' ', 1)[0] == '10' and isinstance(recorded, str) and recorded
+                and recorded.lower() == str(device.get('mac', '')).lower()):
+            if path.read_bytes() != before: return False
+            run(['ip', 'address', 'del', '192.168.77.1/24', 'dev', device['name']], timeout=3, check=False)
+            run(['nmcli', 'device', 'set', device['name'], 'managed', 'yes'], timeout=5)
+            path.unlink()
+            return True
         link = run(['iw', 'dev', device['name'], 'link'], timeout=2)
         info = run(['iw', 'dev', device['name'], 'info'], timeout=2)
         if (state.split(' ', 1)[0] != '30' or link.strip() != 'Not connected.'
@@ -358,23 +459,72 @@ class LinuxNetwork:
         if role.startswith('telescope'):
             sections['connection']['auth-retries'] = 1
         name = self._profile(role, sections)
+        self.fallback_roles.discard(role)
+        # An instrument's own DHCP server can take 30 s or more after the link (AZ-GTiX: 27 to 31 s
+        # measured), so its wait covers NetworkManager's 45 s address timeout plus the association.
+        wait = 65 if role.startswith('telescope') else 35
         try:
-            run(["nmcli", "--wait", "35", "connection", "up", "id", name,
-                 "ifname", device["name"]], timeout=40)
+            run(["nmcli", "--wait", str(wait), "connection", "up", "id", name,
+                 "ifname", device["name"]], timeout=wait + 5)
         except NetworkError as error:
             rejected = isinstance(error, NetworkAuthenticationError)
             if not rejected:
+                reason = state = ''
                 try:
                     reason = run(['nmcli', '-g', 'GENERAL.REASON', 'device', 'show', device['name']], timeout=2, check=False)
                     rejected = bool(re.match(r'^7(?:\s|$)', reason))
+                    # Read before our own cancellation below: an attempt that outlasted
+                    # its wait is still at the step where it is stuck.
+                    if not rejected:
+                        state = run(['nmcli', '-g', 'GENERAL.STATE', 'device', 'show', device['name']], timeout=2, check=False)
                 except NetworkError:
                     pass
+                if not rejected:
+                    error.stage = link_failure_stage(error.activation, leading_code(state), leading_code(reason))
             # nmcli's wait timeout does not cancel NetworkManager's activation.
             # Cancel only our own role, after retaining its failure reason.
             try: self.disconnect(role)
             except NetworkError: pass
             if rejected: raise NetworkAuthenticationError() from None
+            if error.stage == 'ADDRESS_NOT_OBTAINED' and self._fallback_address(role, device, config, sections):
+                return
             raise
+
+    def _fallback_address(self, role, device, config, sections):
+        """Take an address ourselves on an instrument network whose plan is fixed and known.
+
+        Only after the instrument accepted the link and gave no address, only
+        for a kind listed in FIXED_ADDRESS_PLANS at its usual address, and only
+        while the owner switch is on. NetworkManager probes the address before
+        using it (dad-timeout) and refuses one that answers; the instrument
+        must then answer a ping. Nothing else is sent to the instrument.
+        """
+        target = config.get('target_ip')
+        if (not self.address_fallback or not target or not role.startswith('telescope')
+                or FIXED_ADDRESS_PLANS.get(config.get('kind')) != target): return False
+        network = ipaddress.IPv4Network(target + '/24', strict=False)
+        for host in FALLBACK_HOSTS:
+            # A restart or a stop ends the search before the next blocking command.
+            if self.halting(): return False
+            address = network.network_address + host
+            if address == ipaddress.IPv4Address(target): continue
+            sections['ipv4'] = {'method': 'manual', 'address1': str(address) + '/24', 'dad-timeout': 2000,
+                                'route-metric': 600, 'never-default': 'true', 'ignore-auto-dns': 'true'}
+            name = self._profile(role, sections)
+            try:
+                run(['nmcli', '--wait', '20', 'connection', 'up', 'id', name, 'ifname', device['name']], timeout=25)
+                run(['ping', '-c', '2', '-W', '2', '-I', device['name'], target], timeout=8)
+            except NetworkError as error:
+                try: self.disconnect(role)
+                except NetworkError: pass
+                # An address that answers is refused by the probe (ip-address-duplicate): try the next one.
+                # Anything else, a silent instrument included, ends here.
+                if error.activation != 64: return False
+                continue
+            self.fallback_roles.add(role)
+            print('wifi-bridge: ' + role + ' gave no address; the bridge took a free one of its fixed network', flush=True)
+            return True
+        return False
 
     def known_telescope_roles(self):
         active = run(["nmcli", "-g", "NAME", "connection", "show"])
@@ -384,6 +534,13 @@ class LinuxNetwork:
     def remove_profile(self, role):
         run(["nmcli", "--wait", "5", "connection", "delete", "id", "wifi-bridge-" + role],
             timeout=10, check=False)
+
+    def hotspot_owner(self):
+        """Interface recorded as owning the bridge AP, or '' when none is recorded."""
+        try:
+            return self._hotspot_device()
+        except (OSError, ValueError, KeyError, TypeError):
+            return ''
 
     def _hotspot_device(self):
         path = self.state_dir / "hotspot.json"
@@ -467,8 +624,14 @@ class LinuxNetwork:
             os.fsync(stream.fileno())
         os.replace(temporary, path)
 
-    def hotspot_dhcp(self, device, targets=(), *, restart=True, sharing=None):
-        """Publish checked DHCP-only changes without touching AP or telescope links."""
+    def hotspot_dhcp(self, device, targets=(), *, restart=True, sharing=KEEP_SHARING):
+        """Publish checked DHCP-only changes without touching AP or telescope links.
+
+        A caller that only updates routes keeps the Internet sharing in force: writing
+        it away here would make the next firewall pass restart DHCP again, in a loop.
+        """
+        if sharing is KEEP_SHARING:
+            sharing = self.sharing_active
         name = device['name']
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,15}', name):
             raise NetworkError('Invalid hotspot interface.')
@@ -523,6 +686,25 @@ class LinuxNetwork:
                 time.sleep(.25)
         raise NetworkError('NetworkManager did not release the hotspot interface.')
 
+    def _wait_station_manager_gone(self, name):
+        """Give the station manager a moment to really let go of a released radio.
+
+        NetworkManager reports a radio unmanaged before wpa_supplicant has
+        dropped it, and dropping a radio puts it back in station mode. An
+        access point started in between is refused its keys, or starts and
+        then silently loses its radio. On radios with a separate peer-to-peer
+        device (the onboard Broadcom radio), that device exists exactly as
+        long as wpa_supplicant holds the radio: wait for it to go, a few
+        seconds at most, then start anyway. The checks after the start still
+        decide.
+        """
+        marker = re.compile(r'^\s*Interface\s+p2p-dev-' + re.escape(name) + r'\s*$', re.M)
+        for attempt in range(16):
+            try: listing = run(['iw', 'dev'], timeout=2, check=False)
+            except NetworkError: return
+            if not isinstance(listing, str) or not marker.search(listing): return
+            if attempt < 15: time.sleep(.25)
+
     def _wait_hotspot_ready(self, device):
         for attempt in range(8):
             if self.connected('setup', device):
@@ -531,17 +713,103 @@ class LinuxNetwork:
                 time.sleep(.25)
         raise NetworkError('The hotspot or its DHCP server did not start.')
 
-    def hotspot(self, device, ssid, password, targets=()):
+    # Seconds during which a newly started AP must keep its radio in AP mode.
+    AP_SETTLE_SECONDS = 8
+
+    def _left_ap_mode(self, name):
+        # Only an explicit other interface type counts; an unavailable
+        # observation is left to the reconcile loop.
+        info = run(['iw', 'dev', name, 'info'], timeout=2, check=False)
+        if not isinstance(info, str):
+            return False
+        types = re.findall(r'^\s*type\s+(\S+)\s*$', info, re.M)
+        return bool(types) and types != ['AP']
+
+    def _wait_hotspot_stable(self, device):
+        """Keep the AP only if its radio stays in AP mode after the start.
+
+        Releasing a radio from NetworkManager also makes wpa_supplicant drop it,
+        asynchronously, and dropping a radio restores station mode. When that
+        happens after hostapd started, hostapd keeps running and reports its AP
+        enabled while nothing is broadcast. Watch the radio for a few seconds and
+        restart the AP service once; a second loss is a start failure.
+        """
+        for restart in (True, False):
+            for _ in range(int(self.AP_SETTLE_SECONDS / .25)):
+                time.sleep(.25)
+                if self._left_ap_mode(device['name']):
+                    break
+            else:
+                return
+            if not restart:
+                raise NetworkError('The hotspot radio left access-point mode after starting.')
+            run(['systemctl', 'restart', 'wifi-bridge-ap'])
+            self._wait_hotspot_ready(device)
+
+    AP_LOG = Path('/var/log/wifi-bridge-ap.log')
+
+    def ap_diagnosis(self, name):
+        """Why an access point did not take, in one line without names or passwords.
+
+        Radio type (AP or managed), whether the station manager still holds the radio
+        (its peer-to-peer device exists), NetworkManager's device state, hostapd's own
+        state, what hostapd logged since its last start, and Broadcom driver errors.
+        """
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{1,15}', name or ''):
+            return 'radio unknown'
+        parts = []
+        def read(command):
+            try:
+                value = run(command, timeout=2, check=False)
+                return value if isinstance(value, str) else ''
+            except NetworkError:
+                return ''
+        types = re.findall(r'^\s*type\s+(\S+)\s*$', read(['iw', 'dev', name, 'info']), re.M)
+        parts.append('radio type ' + (types[0] if types else 'unknown'))
+        listing = read(['iw', 'dev'])
+        parts.append('station manager ' + ('still holds it' if re.search(r'^\s*Interface\s+p2p-dev-' + re.escape(name) + r'\s*$', listing, re.M)
+                                            else 'released it' if listing else 'unknown'))
+        state = read(['nmcli', '-g', 'GENERAL.STATE', 'device', 'show', name]).split(' ', 1)[0]
+        parts.append('NetworkManager state ' + (state if state.isdigit() else 'unknown'))
+        hostapd = re.findall(r'^state=([A-Z_]+)$', read(['hostapd_cli', '-p', '/run/wifi-bridge-hostapd', '-i', name, 'status']), re.M)
+        parts.append('hostapd ' + (hostapd[0] if hostapd else 'not answering'))
+        try:
+            with self.AP_LOG.open('rb') as stream:
+                stream.seek(0, 2); stream.seek(max(0, stream.tell() - 16384))
+                text = stream.read().decode('utf-8', 'replace')
+            text = text[text.rfind('Configuration file:'):] if 'Configuration file:' in text else text
+            seen = []
+            for label, pattern in (('AP-ENABLED', r'AP-ENABLED'), ('AP-DISABLED', r'AP-DISABLED'),
+                                   ('keys refused', r'key not allowed'), ('channel refused', r'[Cc]ould not set channel'),
+                                   ('terminated', r'CTRL-EVENT-TERMINATING')):
+                count = len(re.findall(pattern, text))
+                if count: seen.append(label + ' ' + str(count))
+            last = re.findall(r'interface state ([A-Z_]+)->([A-Z_]+)', text)
+            if last: seen.append('last state ' + last[-1][0] + '->' + last[-1][1])
+            parts.append('hostapd log since its start: ' + (', '.join(seen) if seen else 'nothing notable'))
+        except OSError:
+            parts.append('hostapd log unreadable')
+        driver = read(['dmesg'])
+        errors = len(re.findall(r'brcmf_\w+.*fail', driver[-65536:]))
+        if errors: parts.append('driver errors ' + str(errors))
+        return name + ': ' + ', '.join(parts)
+
+    def hotspot(self, device, ssid, psk, targets=()):
+        # psk is the derived 64-hex WPA key (password.py): the bridge stores and passes
+        # only that. A passphrase given by a direct caller is derived here, in memory.
         # NetworkManager/wpa_supplicant AP mode rejected valid WPA2 clients on the
         # physical Zero W. A dedicated hostapd WPA2/CCMP AP completed the handshake.
         # A stale or unverified owner may still have clients. Reconciliation may
         # release it only after independently proving that both services stopped.
+        self.last_ap_diagnosis = None
         owned = self._hotspot_device()
         if owned and not self.connected('setup', {'name': owned}):
             raise NetworkError('The previous hotspot owner is not safely released.')
         self.disconnect("setup")
         name = device["name"]
-        psk = hashlib.pbkdf2_hmac("sha1", password.encode(), ssid.encode(), 4096, 32).hex()
+        if not re.fullmatch(r"[0-9a-f]{64}", psk or ""):
+            from .password import wpa_psk
+            psk = wpa_psk(psk, ssid)
         self._private_text("hostapd.conf", "\n".join([
             "interface=" + name, "driver=nl80211", "ssid2=" + ssid.encode().hex(),
             "country_code=" + self.country_code, "hw_mode=g", "channel=6",
@@ -556,11 +824,15 @@ class LinuxNetwork:
             run(["nmcli", "--wait", "5", "connection", "down", "id", "wifi-bridge-setup"], check=False)
             run(["nmcli", "device", "set", name, "managed", "no"])
             self._wait_nm_unmanaged(name)
+            self._wait_station_manager_gone(name)
             run(["ip", "address", "replace", "192.168.77.1/24", "dev", name])
             run(["ip", "link", "set", name, "up"])
             run(["systemctl", "restart", "wifi-bridge-ap", "wifi-bridge-dhcp"])
             self._wait_hotspot_ready(device)
+            self._wait_hotspot_stable(device)
         except NetworkError:
+            # What the radio looked like when it failed, before the teardown changes it.
+            self.last_ap_diagnosis = self.ap_diagnosis(name)
             # Release our partial AP before the controller tries another radio.
             # If cleanup itself fails, retain ownership and abort safely.
             self.disconnect("setup")
@@ -615,13 +887,33 @@ class LinuxNetwork:
         if deployment not in ("raspberry", "live-usb"):
             if deployment != 'native':
                 return False
-            # The Pi 5 bench image is intentionally still classified native;
-            # its root-owned camera opt-in and device-tree model gate discovery.
-            from .cameras.discovery import pi5_gphoto_enabled
-            if not pi5_gphoto_enabled():
+            # The Pi 5 images are intentionally still classified native; their
+            # root-owned image marker and the device-tree model gate discovery.
+            from .cameras.discovery import pi5_appliance
+            if not pi5_appliance():
                 return False
         from .announce import update
-        return update(Path('/etc/avahi'), hostname, devices, settings, runtime, run)
+        changed = update(Path('/etc/avahi'), hostname, devices, settings, runtime, run)
+        return self.keep_announcing() or changed
+
+    def keep_announcing(self, now=None):
+        """Start the announcement daemon again when it is not running.
+
+        Its files are written only when they change, so a daemon that stopped,
+        or that no runlevel starts, would otherwise stay silent with correct
+        files. Checked twice a minute at most; True when it had to be started.
+        """
+        now = time.monotonic() if now is None else now
+        if now < self.announce_check: return False
+        self.announce_check = now + 30
+        try:
+            run(['avahi-daemon', '--check'], timeout=3)
+            return False
+        except NetworkError:
+            # Never a reason to fail a reconcile: tried again at the next check.
+            try: run(['systemctl', 'restart', 'avahi-daemon'])
+            except NetworkError: return False
+            return True
 
     def country(self, country):
         self.country_code = country
@@ -724,6 +1016,7 @@ class LinuxNetwork:
         paths = self.management_paths(home,setup) if management is None else management
         if len(paths)>2: raise NetworkError('Too many management interfaces.')
         rules, drops, dstnat, srcnat, discovery_output = [], [], [], [], []
+        udp_relays = []
         occupied = []
         for path in paths:
             interface = ipaddress.IPv4Interface(path['address'])
@@ -739,12 +1032,15 @@ class LinuxNetwork:
                 ingress=ipaddress.IPv4Interface(path['address']);h=path['device']['name']
                 source=f'ip saddr {ingress.network} '
                 rules += [f'iifname "{h}" oifname "{t}" {source}ip daddr {address} accept',
-                          f'iifname "{t}" oifname "{h}" ip daddr {ingress.network} ct state established,related accept']
+                          # A reply leaves by the route to the client, which may be another
+                          # interface on the same network (cable and Wi-Fi together).
+                          f'iifname "{t}" ip daddr {ingress.network} ct state established,related accept']
                 selected=next((spec for spec in relay_plugins() if entry.get(proxy_flag(spec['id']))),None)
                 if selected:
                     relay=selected['relay'];ports=relay['ports']
                     port_set='{ '+', '.join(map(str,ports))+' }' if len(ports)>1 else str(ports[0])
                     dstnat.append(f'iifname "{h}" {source}ip daddr {ingress.ip} {relay["transport"]} dport {port_set} dnat ip to {address}')
+                    if relay['transport']=='udp':udp_relays += [(str(ingress.ip),port) for port in ports]
                 if selected and selected['discovery']['engine']=='synscan_version':
                     # A local broadcast reply from Pi:11880 must not create a
                     # reverse conntrack flow that captures this client's later
@@ -807,6 +1103,7 @@ class LinuxNetwork:
                 if self.last_firewall is None:run(['nft','add','table','ip','wifi_bridge'],check=False)
                 run(['nft','-f','-'],input=script);self.last_firewall=script
                 if self.telemetry:self.telemetry.replaced()
+                self.forget_unrelayed_udp(udp_relays)
         # Withdraw old sharing BEFORE DNS/service changes. Telescope plans stay in every transaction.
         if uplink!=self.sharing_active:
             publish(None);self.sharing_active=None
@@ -817,6 +1114,21 @@ class LinuxNetwork:
                 return {'available':False,'reason':'DNS_UNAVAILABLE'}
         publish(uplink);self.sharing_active=uplink
         return {'available':bool(uplink),'reason':reason}
+
+    def forget_unrelayed_udp(self, relays):
+        """Let a client that wrote to a relay port before the relay existed be relayed.
+
+        Address translation is decided once per flow. A datagram that reached a
+        relay port while its rule was absent (the instrument was not linked yet,
+        or its link had dropped) leaves a flow delivered to the bridge itself,
+        and every later datagram from the same client port follows it for as
+        long as the client keeps writing. Only such untranslated flows to the
+        bridge's own address and relay port are forgotten; relayed ones answer
+        from the instrument's address and are left alone.
+        """
+        for address,port in dict.fromkeys(relays):
+            try:run(['conntrack','-D','-p','udp','--orig-dst',address,'--orig-port-dst',str(port),'--reply-src',address],timeout=3,check=False)
+            except NetworkError:pass
 
     def association_identity(self, device):
         """Active-object + NM process identity separates same-IP reconnections."""
@@ -960,6 +1272,12 @@ class LinuxNetwork:
         return result
 
     def linux_password(self, password):
+        """Change the Linux account of this image; return an undo callable or None."""
+        from .runtime import pi5_appliance
+        if pi5_appliance():
+            # Pi 5 image: root, through stdin only; astro-ssh restarts with the new state.
+            from .linux_account import change_root_password
+            return change_root_password(password, lambda args, input=None: run(args, timeout=40, input=input))
         # The one-shot helper can only change bridge; neither account nor command
         # comes from HTTP input. PAM receives the secret through stdin.
         self._private_text("linux-password.pending", password)
@@ -1073,7 +1391,7 @@ class DemoNetwork:
     def release_stale_hotspot(self, devices):
         return False
 
-    def hotspot(self, device, ssid, password, targets=()):
+    def hotspot(self, device, ssid, psk, targets=()):
         self.disconnect("setup")
         self.connect("setup", device, {"ssid": ssid})
         self.ap_ssid = ssid

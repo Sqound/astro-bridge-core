@@ -1,7 +1,8 @@
-/* REVISION and ASSETS are supplied from fixed public bytes by the server. */
+/* REVISION, ASSETS and LAZY are supplied from fixed public bytes by the server. */
 "use strict";
 const PREFIX="astro-bridge-public-", CACHE=PREFIX+REVISION;
-const allowed=new Set(ASSETS);
+// Language catalogs are cached when used, never all at installation.
+const allowed=new Set([...ASSETS,...LAZY]);
 async function publicFetch(url){
   const response=await fetch(new Request(url,{cache:"no-store",credentials:"omit",redirect:"error"}));
   if(!response.ok||response.headers.get("X-Bridge-Shell")!==REVISION)throw new Error("SHELL_CHANGED");
@@ -26,12 +27,13 @@ self.addEventListener("fetch",event=>{
   const request=event.request,url=new URL(request.url);
   // No API, credentials, queries, cross-origin, mutations or arbitrary navigation
   // enters CacheStorage. The browser's normal network path handles them.
-  if(request.method!=="GET"||url.origin!==self.location.origin||url.search||!allowed.has(url.pathname))return;
+  // The only accepted query is this exact shell revision, used for long-lived browser caching.
+  if(request.method!=="GET"||url.origin!==self.location.origin||url.search&&url.search!=="?v="+REVISION||!allowed.has(url.pathname))return;
   event.respondWith((async()=>{
     try{
       // Network-first serves new/rolled-back bytes immediately. Only this exact
       // coherent revision can update this worker's fallback cache.
-      const response=await fetch(new Request(url.href,{cache:"no-store",credentials:"omit",redirect:"error"}));
+      const response=await fetch(new Request(url.href,{cache:url.search?"default":"no-store",credentials:"omit",redirect:"error"}));
       if(response.ok){
         if(!response.headers.has("X-Bridge-Shell")){
           // A rollback to a server predating PWA support must not retain this

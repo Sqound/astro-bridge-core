@@ -89,11 +89,12 @@ Platform 7 / Camera V4 additions are not advertised (`InterfaceVersion=3`).
 | camerastate, cameraxsize, cameraysize, maxadu, maxbinx, maxbiny, gainmin, gainmax, pixelsizex, pixelsizey, sensorname, sensortype | Normalized driver metadata/state |
 | bayeroffsetx, bayeroffsety | 0x400 for monochrome cameras; colour offsets remain relative to the sensor origin, independent of subframe settings |
 | canabortexposure | Driver capability |
+| percentcompleted | Integer 0 to 99 from the requested duration while exposing (0 while waiting), 100 while reading or when the image waits; 0x40B (invalid operation) otherwise, as the standard requires |
 | canasymmetricbin, canfastreadout, cangetcoolerpower, canpulseguide, cansetccdtemperature, canstopexposure, hasshutter, ispulseguiding | False with the current driver contract |
 | exposuremin, exposuremax, lastexposureduration, lastexposurestarttime, imageready, imagearray | Exposure metadata/readiness/image; last exposure fields require a completed exposure |
 | startexposure, abortexposure (PUT) | Driver operations, with ownership and state checks; HasShutter=False means a valid Light=False is ignored and normal incoming light is captured, without synthetic dark pixels |
 | readoutmode (GET/PUT), readoutmodes | One default mode (0) |
-| ccdtemperature, coolerpower, electronsperadu, exposureresolution, fullwellcapacity, gains, heatsinktemperature, imagearrayvariant, offsetmin, offsetmax, offsets, percentcompleted | 0x400 |
+| ccdtemperature, coolerpower, gains, heatsinktemperature, imagearrayvariant, offsetmin, offsetmax, offsets; exposureresolution, electronsperadu, fullwellcapacity when the driver does not report them | 0x400 |
 | cooleron, fastreadout, offset, setccdtemperature, subexposureduration (GET/PUT) | 0x400 |
 | pulseguide, stopexposure (PUT) | 0x400 |
 

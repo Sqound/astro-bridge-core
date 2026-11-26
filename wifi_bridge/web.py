@@ -22,7 +22,7 @@ from .secure_access import SecureAccess
 from .push import PushService
 from . import __version__
 from .build import BUILD_ID
-from .pwa import ASSETS, public_asset, revision
+from .pwa import SERVED, compressed, public_asset, revision
 
 
 class WebServer(ThreadingHTTPServer):
@@ -211,6 +211,34 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_asset(self, path):
+        """Fixed public shell: compressed once, revalidated, cached long only when versioned."""
+        body, mime, current = public_asset(path)
+        etag = '"' + current[:32] + '"'
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        versioned = path not in ('/', '/sw.js') and query == {'v': [current]}
+        accepts = [part.split(';')[0].strip().lower() for part in self.headers.get('Accept-Encoding', '').split(',')]
+        packed = compressed(path, body, mime) if 'gzip' in accepts else None
+        unchanged = self.headers.get('If-None-Match') == etag
+        self.send_response(304 if unchanged else 200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if versioned else "no-cache")
+        self.send_header("ETag", etag)
+        self.send_header("Vary", "Accept-Encoding")
+        if packed is not None and not unchanged:
+            self.send_header("Content-Encoding", "gzip")
+        payload = b'' if unchanged else packed if packed is not None else body
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("X-Bridge-Shell", current)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command != 'HEAD':
+            self.wfile.write(payload)
+
     @property
     def transport(self):
         # Only the actual accepted socket proves TLS. Proxy headers never do.
@@ -338,9 +366,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ui-info":
             self.reply(200, {"demo": bool(self.controller.demo)})
             return
-        if path in ASSETS or path == "/sw.js":
-            body, mime, current = public_asset(path)
-            self.reply(200, body, mime, shell_revision=current)
+        if path in SERVED or path == "/sw.js":
+            self.reply_asset(path)
             return
         session = self.session()
         if session is None:
@@ -352,6 +379,7 @@ class Handler(BaseHTTPRequestHandler):
                     "config_revision": self.server.api.revision(),
                     "paired_clients": self.server.paired_clients.public(),
                     "event_context": hashlib.sha256(session["csrf"].encode()).hexdigest(),
+                    "bridge_clock": self.controller.event_store.clock.browser_view(),
                     "connection_protection": self.controller.protection.status(hashlib.sha256(session["csrf"].encode()).hexdigest())}
             self.reply(200, status)
         elif path == '/api/protection':
@@ -471,6 +499,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/push":
                 self.reply(200, self.server.push.action(data, self.headers.get("Origin", ""))); return
+            if path == "/api/time-hint":
+                # The signed-in browser's clock; it can set a manifestly wrong appliance clock.
+                self.server.api.system_time(data, hashlib.sha256(session["csrf"].encode()).hexdigest())
+                self.reply(200, {"clock": self.controller.event_store.clock.browser_view()}); return
             if path == "/api/https":
                 self.reply(202, self.server.secure_access.action(data)); return
             if path not in ("/api/logout", "/api/protection") and self.server.updates.busy():
@@ -689,7 +721,10 @@ class Handler(BaseHTTPRequestHandler):
             if cookie and method != 'GET' and (not self.same_origin() or not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf'])):
                 raise ApiError(403, 'FORBIDDEN', 'Request refused. Reload the page.')
             required = api.required_scope(method, path)
-            if not cookie and required not in (None, 'authenticated') and not {'admin', required} & set(session.get('scopes', [])):
+            # Linking a recognized nearby device is part of connecting: apps paired with
+            # connect before link existed keep it without pairing again.
+            granted = set(session.get('scopes', [])) | ({'link'} if 'connect' in session.get('scopes', []) else set())
+            if not cookie and required not in (None, 'authenticated') and not {'admin', required} & granted:
                 raise ApiError(403, 'INSUFFICIENT_SCOPE', 'The token does not grant access to this resource.')
             if api.planned_native_route(method, path, data, parse_qs(urlsplit(self.path).query, keep_blank_values=True)):
                 raise ApiError(404, "NOT_IMPLEMENTED", "This native client feature is not implemented yet.")
@@ -723,7 +758,7 @@ class Handler(BaseHTTPRequestHandler):
                 if method != 'GET' and self.server.updates.busy():
                     raise ApiError(409, 'UPDATE_IN_PROGRESS', 'An application update is in progress. Try again shortly.')
                 value = api.cameras.handle(method, path, parse_qs(urlsplit(self.path).query, keep_blank_values=True),
-                                           data, self.headers.get('If-Match'), self.connection.getsockname()[0])
+                                           data, self.headers.get('If-Match'), self.connection.getsockname()[0], browser=cookie)
                 self.reply(200, value)
                 return
             if path == '/system/metrics' and method == 'GET':
@@ -770,6 +805,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/system/https/certificate" and method == "GET":
                 self.reply(200, self.server.secure_access.certificate(), "application/x-pem-file", certificate=True); return
             parts = path.strip("/").split("/")
+            if path == '/instruments/nearby' and method == 'GET':
+                api.fields(data, set())
+                self.reply(200, api.nearby.list()); return
+            if len(parts) == 4 and parts[:2] == ['instruments', 'nearby'] and parts[3] == 'link' and method == 'POST':
+                client = session.get('client_id') or hashlib.sha256(session['csrf'].encode()).hexdigest()
+                self.reply(201, api.nearby.link(parts[2], data, client)); return
+            if len(parts) == 3 and parts[0] == 'instruments' and parts[2] == 'link' and method == 'DELETE':
+                api.fields(data, set())
+                self.reply(200, api.nearby.unlink(parts[1])); return
             if parts[0] == 'instruments' and len(parts) <= 3:
                 client = session.get('client_id') or hashlib.sha256(session['csrf'].encode()).hexdigest()
                 request_path = api.info(self.connection.getsockname()[0])['request_path']
@@ -901,7 +945,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(202, api.action(ident, parts[2], self.headers.get("If-Match"), data)); return
             if path == "/credentials" and method == "POST":
                 api.fields(data, {"target", "current_password", "password"})
-                result = self.controller.credentials(data)
+                try:
+                    result = self.controller.credentials(data)
+                except NetworkError:
+                    # The Linux account refused the change: nothing else changed.
+                    raise Invalid("The Linux password could not be changed. Check the wifi-bridge-password service.") from None
                 if result["sessions_invalidated"]:
                     self.server.push.revoke_all()
                     with self.server.auth_lock:

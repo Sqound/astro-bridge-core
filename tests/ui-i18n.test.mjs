@@ -4,27 +4,42 @@ import vm from "node:vm";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../wifi_bridge/static/i18n.js", import.meta.url), "utf8");
-function load(saved = null) {
+const catalogSource = tag => readFileSync(new URL(`../wifi_bridge/static/i18n-${tag}.js`, import.meta.url), "utf8");
+const TAGS = ["fr", "ja", "de", "es", "it", "pt-BR", "zh-Hans", "zh-Hant", "ru"];
+// Runs the shell script, then the language files a page would load.
+function load(saved = null, { readyState = "complete", catalogs = TAGS } = {}) {
+  const written = [];
   const context = {
     window: {}, localStorage: { getItem: () => saved },
-    document: { documentElement: { dataset: {} }, addEventListener() {} }
+    document: { documentElement: { dataset: {} }, addEventListener() {}, readyState,
+      querySelector: () => ({ content: "a".repeat(64) }), write: value => written.push(value) }
   };
   vm.runInNewContext(source, context);
-  return { i18n: context.window.BridgeI18n, root: context.document.documentElement };
+  context.BridgeI18n = context.window.BridgeI18n;
+  for (const tag of catalogs) vm.runInNewContext(catalogSource(tag), context);
+  return { i18n: context.window.BridgeI18n, root: context.document.documentElement, written };
 }
+
+test("A page loads English plus only the chosen language, at parse time", () => {
+  const { i18n, written } = load("fr", { readyState: "loading", catalogs: [] });
+  assert.deepEqual(written, ['<script src="/i18n-fr.js?v=' + "a".repeat(64) + '"><\/script>']);
+  assert.deepEqual(Object.keys(i18n.catalogs), ["en"]);
+  assert.equal(load(null, { readyState: "loading", catalogs: [] }).written.length, 0);
+  assert.ok(source.length < 400000, "the shell script carries one language only");
+});
 
 test("English is the actual default and unsupported storage values are ignored", () => {
   for (const saved of [null, "xx", "../../fr"]) {
     const { i18n, root } = load(saved);
     assert.equal(i18n.locale, "en");
     assert.equal(root.lang, "en");
-    assert.equal(i18n.t("Telescope connections"), "Telescope connections");
+    assert.equal(i18n.t("Instrument connections"), "Instrument connections");
   }
 });
 
 test("French catalog interpolates named values and all ten choices have truthful coverage", () => {
   const { i18n } = load("fr");
-  assert.equal(i18n.t("USB connection {letter}", { letter: "B" }), "Connexion USB B");
+  assert.equal(i18n.t("Wi-Fi adapter {letter}", { letter: "B" }), "Clé Wi-Fi B");
   assert.equal(i18n.t("Connected to {name}", { name: "<custom telescope>" }), "Connecté à <custom telescope>");
   assert.equal(i18n.locales.length, 10);
   const expected=i18n.locales.filter(locale=>Object.keys(JSON.parse(readFileSync(new URL(`../locales/${locale.tag}.json`,import.meta.url),"utf8"))).length===Object.keys(i18n.catalogs.en).length).map(locale=>locale.tag);
@@ -34,7 +49,7 @@ test("French catalog interpolates named values and all ten choices have truthful
     const partial = load(locale.tag);
     assert.equal(partial.i18n.locale, locale.tag);
     assert.equal(partial.root.lang, "en");
-    assert.equal(partial.i18n.t("Telescope connections"), "Telescope connections");
+    assert.equal(partial.i18n.t("Instrument connections"), "Instrument connections");
   }
 });
 

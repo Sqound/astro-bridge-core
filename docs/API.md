@@ -106,6 +106,23 @@ The bounded fallback accepts at most 256 distinct clients during one interval.
 Rate limiting returns 429. This endpoint never sets the system clock, alters NTP,
 or supplies certificate issuance evidence.
 
+Both responses, and `bridge_clock` in the web interface status, add
+`last_sync: {kind, age_seconds, this_run, last_network_sync_utc}` (additive:
+current clients ignore it; the OpenAPI response schema lists it, and the clients
+in this repository read named fields and ignore the others). `kind` is `network`
+when chrony measured network time, `client_hint` when only a client's approximate
+time was received, and `never` when no setting is recorded. `age_seconds` counts
+monotonic seconds since that event during this run (for `network` while
+synchronized it is the age of chrony's latest measurement, at most one hour),
+so a wrong or jumping wall clock cannot change it; it is null, with `this_run`
+false, when the bridge has not seen it since it started. `last_network_sync_utc`
+is chrony's own UTC reference time, kept in mode-600 `clock-sync.json` beside
+`clock.json` (separate so a rollback to an older release loses nothing else) and
+rewritten at most once an hour. After a restart without network time it is a date
+to display, labelled as the last known setting, and never the basis of a duration.
+A bridge upgraded to this release reports `never` until network time is next
+seen, because earlier settings were not recorded.
+
 The last eight hints stay in memory. Their offsets use a common monotonic anchor
 and their median supplies corrected UTC, independent of later wall-clock jumps.
 `offset_ms` reports corrected minus current system UTC; `hint_age_seconds` uses
@@ -366,7 +383,7 @@ All paths below are relative to `/api/v1`.
 | GET / PATCH | `/home` | Read / partially edit home Wi-Fi |
 | GET / PATCH | `/hotspot` | Read AP state / set optional-AP preference |
 | GET / PATCH | `/settings` | Read / edit hostname, country and explicit Auto-connect policy |
-| POST | `/credentials` | Change web, hotspot or fixed Linux bridge password |
+| POST | `/credentials` | Change the single bridge password (web interface, hotspot, Linux account) |
 | POST | `/system/reboot` | Schedule a reboot; returns `202` |
 | POST | `/discovery` | Non-disruptive Wi-Fi observations or an existing attached protocol response |
 | GET / POST / DELETE | `/telescopes/{id}/binding` | Read, correct/add/remove aliases or unlink physical metadata; actual revision required for writes |
@@ -690,23 +707,39 @@ service, but native tokens can be reused at the new accepted management address.
 
 ### Passwords and reboot
 
-`POST /credentials` takes:
+`POST /credentials` changes the **single bridge password**:
 
 ```json
-{"target":"hotspot","current_password":"current-web-password","password":"new-hotspot-password"}
+{"current_password":"current-bridge-password","password":"new-bridge-password"}
 ```
 
-`target` is `web`, `hotspot` or `linux` (fixed account **bridge**). All changes
-require the current web password. New passwords have 8–128 characters; hotspot
-passwords additionally follow the WPA2 byte/hex limits. Controls are rejected.
-A Linux password change does not enable SSH. Web rotation returns
-`sessions_invalidated: true`; hotspot changes may return `hotspot_reconnect: true`.
-Invalidation follows a change of the effective administrator password, not a
-change of salted hash representation. The first ordinary configuration save may
-persist the bootstrap password as a hash without revoking browser sessions or
-native tokens. Omitting a new password, or explicitly submitting the same current
-password, preserves sessions; choosing a different web password revokes all of
-them. No administrator password is persisted in cleartext.
+One password protects the web interface, the hotspot and the Linux account
+(**root** on the Raspberry Pi 5 image, **bridge** on the Pi Zero W and live
+images; none on other installations). One request changes all of them, all or
+nothing: the Linux account is changed first and, if that fails, nothing else
+changes. `target` is optional; `all`, `web`, `hotspot` and `linux` (sent by
+earlier Setup versions) all change the three together. `linux` is refused where
+the bridge has no Linux account. The new password has 8 to 63 printable ASCII
+characters without spaces (no accented letters) and cannot be `12345678`.
+The request is refused while a reservation or an owner lock protects a
+connection. The reply keeps its format: `sessions_invalidated` (every session
+ends, paired apps keep their own credentials) and `hotspot_reconnect` (the
+hotspot restarts with the new key; each phone joined to it must join again).
+
+Nothing is stored in clear: the web interface keeps a salted hash, the hotspot
+keeps only its derived WPA key bound to its network name (earlier installations
+are migrated at start), the Linux account keeps its own crypt hash. Renaming the
+hotspot after a personal password was chosen needs `current_password` in the
+settings save, so the key can be derived for the new name (`409 PASSWORD_REQUIRED`
+otherwise). A first administrator password given in a settings save
+(`admin_password`) is the single password too.
+
+`default_credentials.password` is the one flag "the initial password is still
+accepted somewhere"; `web`, `hotspot` and `linux` repeat it for earlier clients.
+`ssh` in `/status` reports what SSH really accepts: `{"account":"root"|"bridge"|null,
+"password_login":true|false|null}`, written by the image rule at each SSH start
+(`null` where no image rule runs). SSH accepts the password only once it is no
+longer the initial one; key login is unchanged.
 
 `POST /system/reboot` with `{}` returns `202`. Service restart revokes tokens and
 requires reauthentication after the bridge returns. Neither command waits for
@@ -1332,6 +1365,17 @@ owner protection and foreign-client lease gates remain enforced. Native connect
 does not require a victim's legacy `auto_eligible`. A lack of capacity returns 409
 `NO_FREE_RADIO` with redacted candidate IDs/names. Candidate listing is not a promise
 that a later fresh safety check will permit replacement.
+
+Since 1.2.0 an explicit native connect also takes the radio of an enabled profile
+that is only being retried (`unreachable`) or that its app left connected after
+releasing its reservation (`standby`), without `auto_replaceable`. The 409 adds
+`holders` (who keeps the radios and what each is doing), and the optional
+`force_replace` (at most 24 profile IDs) replaces a named holder after the user's
+confirmation; pauses, owner locks and foreign-client leases still refuse. The answer
+and the operation name the displaced profile (`displaced`), whose catalog entry
+carries `released`. `disconnect` accepts `reason: "switched_off"`. Lost links are
+retried with a growing wait (15 s doubling up to 300 s), reported as `retry`.
+Details: [Radio release](NATIVE-CLIENT.md#radio-release-additive-proposed-for-contract-13).
 
 A ready 200 carries the endpoint and lease; accepted 202 carries the existing
 operation ID/status URL and lease. At most four connect requests wait concurrently;

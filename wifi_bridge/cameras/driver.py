@@ -35,7 +35,9 @@ def finite(value, minimum, maximum):
 
 def validate_info(value):
     """Validate a bounded, allowlisted driver description without retaining input."""
-    if not isinstance(value, dict) or set(value) != set(INFO_FIELDS):
+    # exposure_resolution (seconds) is optional: a driver that does not know its SDK unit leaves it out.
+    optional = {'exposure_resolution', 'electrons_per_adu', 'full_well_capacity'}
+    if not isinstance(value, dict) or set(value) - optional != set(INFO_FIELDS) or not set(INFO_FIELDS) <= set(value):
         raise CameraError('invalid_info')
     for key in ('name', 'sensor_name'):
         text = value[key]
@@ -60,6 +62,12 @@ def validate_info(value):
         raise CameraError('invalid_info')
     if not finite(value['exposure_min'], 0.000001, 86400) or not finite(value['exposure_max'], value['exposure_min'], 86400):
         raise CameraError('invalid_info')
+    if 'exposure_resolution' in value and not finite(value['exposure_resolution'], 0, value['exposure_max']):
+        raise CameraError('invalid_info')
+    # Only a value the SDK reports for the current mode; never derived or invented.
+    for key in ('electrons_per_adu', 'full_well_capacity'):
+        if key in value and not finite(value[key], 1e-6, 1e9):
+            raise CameraError('invalid_info')
     if type(value['can_abort']) is not bool or type(value['cooled']) is not bool:
         raise CameraError('invalid_info')
     result = dict(value)

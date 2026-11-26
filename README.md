@@ -64,22 +64,22 @@ Real networking needs suitable Linux Wi-Fi adapters and host integration. Plan o
 
 | Family | Implemented | Tested in simulation | Verified on hardware |
 | --- | --- | --- | --- |
-| Raspberry Pi 5 host, hotspot, two USB Wi-Fi adapters | Yes (image in implementations 1.1.0) | Yes | **Yes, partly:** automatic adapter roles in under 6 s, IPv4 forwarding, hotspot DHCP, DNS and Internet, Setup Launch found the bridge. Offline fallback hotspot not yet checked |
-| Raspberry Pi Zero W host | Yes (image in implementations 1.1.0) | Yes | **Partly:** 600 s idle run and a TCP relay test (147/147 replies). Camera hosting is not supported on this board. A full telescope session, hotspot loss/recovery and phone discovery are not yet checked |
+| Raspberry Pi 5 host, hotspot, two USB Wi-Fi adapters | Yes (image in implementations 1.2.0) | Yes | **Yes, partly:** with release candidates of 1.2.0, the hotspot and the web page at every boot, the home Wi-Fi, a mount linked at boot on the second adapter, the offline fallback hotspot started, cable and Wi-Fi on one network, the SSH key kept across boots, a restart in a few seconds and logs kept across a power cut. Earlier: automatic adapter roles in under 6 s, IPv4 forwarding, hotspot DHCP, DNS and Internet. USB Wi-Fi adapters plugged side by side against the board linked less reliably than on an extension cable |
+| Raspberry Pi Zero W host | Yes (image in implementations 1.2.0) | Yes | **Partly:** 600 s idle run and a TCP relay test (147/147 replies). Camera hosting is not supported on this board. A full telescope session, hotspot loss/recovery and phone discovery are not yet checked |
 | Raspberry Pi 3 B, Pi 4 | Yes | Yes | No |
 | Vespera (Wi-Fi, routed original address) | Yes | Yes | **Partly:** switching and the manufacturer-app path. Two isolated Vespera, per-tab switching and night reservation: no |
 | Seestar (relays, station profile) | Yes | Yes | **Partly:** automatic switching to and from another telescope (about 40 s) with notifications. Bridge `scan_iscope` probe and station mode: no |
 | DWARF (relays, operation state) | Yes | Yes | **Partly:** manufacturer-app discovery observed. Operation-state reading during a capture: no |
 | ZWO Wi-Fi mounts (TCP 4030) | Yes (read-only identification, relay, protection) | Yes | **Partly:** model read through the relay. Control, guiding, automatic switching: no |
-| SynScan Wi-Fi mounts (UDP 11880) | Yes | Yes | No |
+| SynScan Wi-Fi mounts (UDP 11880) | Yes | Yes | **Partly:** AZ-GTiX linked without any action at boot, with its own address, the PlanAstro app linked through the bridge for three hours (one Wi-Fi drop, back by itself in about 11 s), and the relay alone cut for 10 s three times without losing the mount Wi-Fi. Other models: no |
 | Celestron NexStar over USB serial (TCP relay) | Yes | Pseudo-terminal tests | No |
-| USB cameras over Alpaca (ZWO ASI) | Yes | Yes | **Partly:** ASI220MM, two 0.2 s exposures, 16-bit FITS (1920 × 1080 direct, 640 × 480 through a hub); full frame through a hub failed with USB resets |
+| USB cameras over Alpaca (ZWO ASI) | Yes | Yes | **Partly:** ASI220MM Mini with the SDK 1.42 downloaded on request: driver installed from Setup and from the web interface, 1920 × 1080 16-bit image received through Alpaca, gain applied. Earlier, through a hub: full frame failed with USB resets |
 | USB cameras (UVC, gPhoto) | Yes | Yes | No |
 | Native client contract 1.2 (pairing, leases, events, telemetry) | Yes | Replay scenarios and loopback mock | No third-party client verified against a physical bridge |
-| Astro Bridge Setup 1.1.0 (macOS, Windows, Linux) | Yes | Unit, Rust and browser tests with mocks | **Partly:** Launch found a Pi 5 bridge on a private network (macOS). Writing a card from the published 1.1.0 images: not yet checked; Windows and Linux builds not checked on a computer |
+| Astro Bridge Setup 1.2.0 (macOS, Windows, Linux) | Yes | Unit, Rust and browser tests with mocks | **Partly (macOS):** cards written for the Pi 5 with the home Wi-Fi, a bridge password and the ZWO driver, Launch found the bridge on the home network, a mount added and connected from Launch. Windows and Linux builds not checked on a computer |
 | Docker demo | Yes | Yes | Demo verified in a Linux VM on macOS. Physical USB Wi-Fi inside Docker: no |
 
-**Documented is not verified.** Only the last column is hardware evidence; "partly" lists exactly what was observed. A matching Wi-Fi name is a hint, not proof of compatibility. Live USB images and Celestron Origin are not part of this release. A freshly written 1.1.0 image still needs its first-boot check on each board.
+**Documented is not verified.** Only the last column is hardware evidence, and "partly" lists exactly what was observed. A matching Wi-Fi name is a hint, not proof of compatibility. Live USB images and Celestron Origin are not part of this release. A freshly written 1.2.0 Pi Zero W image still needs its first-boot check.
 
 See [connection mechanisms and limits](doc/reference/discovery.md). Instruments using the same downstream subnet must be selected one at a time.
 

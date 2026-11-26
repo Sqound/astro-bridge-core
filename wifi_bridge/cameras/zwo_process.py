@@ -1,4 +1,7 @@
-"""Bounded Unix socket transport for a disposable ASI SDK process on Linux."""
+"""Bounded Unix socket transport for a disposable ASI SDK process on Linux.
+
+The transport is shared by every manufacturer driver (vendor_process.py).
+"""
 import json
 import socket
 import struct
@@ -107,7 +110,7 @@ class IsolatedASI(CameraDriver):
         try:
             with child:
                 self.process = subprocess.Popen(
-                    [sys.executable, '-m', 'wifi_bridge.cameras.zwo_process', str(child.fileno())],
+                    self.command(child.fileno()),
                     pass_fds=(child.fileno(),), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL)
             info = validate_info(self._call('open', self.device))
@@ -117,6 +120,10 @@ class IsolatedASI(CameraDriver):
         except BaseException:
             self._stop()
             raise
+
+    def command(self, descriptor):
+        """The child process: one per opened camera, the manufacturer library loaded only there."""
+        return [sys.executable, '-m', 'wifi_bridge.cameras.zwo_process', str(descriptor)]
 
     def close(self):
         try:

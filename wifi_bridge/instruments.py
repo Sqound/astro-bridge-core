@@ -4,6 +4,9 @@ import re
 from .endpoints import inventory, SERVICE_STATES
 from .plugins import plugin
 
+# Steps of joining an instrument's Wi-Fi, in order. Only a step the system named is published.
+FAILURE_STAGES = ('NETWORK_NOT_FOUND', 'NOT_ASSOCIATED', 'ADDRESS_NOT_OBTAINED')
+
 
 def lease_summary(held, mine, now):
     """expires_in keeps its 1.0 bound; a night reservation adds its full horizon."""
@@ -14,7 +17,7 @@ def lease_summary(held, mine, now):
             'reservation_expires_in': remaining if chosen.get('reservation') else None}
 
 
-def catalog(snapshot, leases=(), client=None, *, now=0, observations=(), observation_age=None, events=(), sequences=None, telemetry=None, maker_keys=None, identities=None, free_radios=0, operations=None):
+def catalog(snapshot, leases=(), client=None, *, now=0, observations=(), observation_age=None, events=(), sequences=None, telemetry=None, maker_keys=None, identities=None, free_radios=0, operations=None, released=None, silences=None):
     live = {row['id']: row for row in snapshot.get('telescopes', [])}
     result = []
     for profile in snapshot['config']['telescopes']:
@@ -51,6 +54,23 @@ def catalog(snapshot, leases=(), client=None, *, now=0, observations=(), observa
             'since_seq': sequence, 'reason': reason, 'client_connect': permission, 'blockers': blockers,
             'lease': lease_summary(held, mine, now),
             'capabilities': {'telemetry': list((telemetry or {}).get(ident, ())), 'maker_key': (maker_keys or {}).get(profile['kind'], 'absent') if plugin(profile['kind']).get('maker_key') else None}})
+        # Present only when they apply, so earlier clients see an unchanged instrument.
+        # retry: the link was lost without a request and the bridge spaces its attempts.
+        if isinstance(row.get('retry'), dict) and not row.get('connected') and row['retry'].get('attempts'):
+            result[-1]['retry'] = {key: row['retry'][key] for key in ('attempts', 'interval_seconds', 'next_in_seconds')}
+        # address_fallback: linked with an address the bridge took itself, the instrument having given none.
+        if row.get('address_fallback') and row.get('connected'): result[-1]['address_fallback'] = True
+        # failure_stage: the step of joining its Wi-Fi that failed last, while the link is down.
+        if row.get('failure_stage') in FAILURE_STAGES and not row.get('connected'):
+            result[-1]['failure_stage'] = row['failure_stage']
+        # released: the profile was disabled on request (switched off, or its radio given to another instrument).
+        note = (released or {}).get(ident)
+        if note and not profile.get('enabled'):
+            result[-1]['released'] = dict(note)
+        # silence: a mount that may stop its Wi-Fi without a client is no longer heard (cause probable only).
+        quiet = (silences or {}).get(ident)
+        if quiet and (not row.get('connected') or service == 'not_answering'):
+            result[-1]['silence'] = dict(quiet)
     return result
 
 

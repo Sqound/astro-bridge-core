@@ -7,8 +7,10 @@ import re
 import ipaddress
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
+from pathlib import Path
 
 from .config import device_identity, Invalid, profiles, public_config, role_for, validate_config, password_hash, password_matches, text, network_intent, auto_policy, hotspot_ssid, reserved_hotspot_mac
 from .network import NetworkError, NetworkAuthenticationError, NetworkIsolationError, hotspot_route_targets
@@ -17,13 +19,59 @@ from .events import EventStore, ConnectionEvents
 from .tls import CertificateState
 from .api import ApiError
 from .readiness import ServiceReadiness, empty_service
+from .mount_sleep import WIFI_SLEEP
 from .radio_roles import role_allows, interface_roles
+
+# A radio whose hotspot failed this many times in a row is tried after the
+# other free radios, without changing the owner's saved adapter choice.
+HOTSPOT_FAILURE_LIMIT = 2
+# A recorded hotspot that stays unconfirmed this long is stopped and restarted.
+HOTSPOT_UNCONFIRMED_GRACE = 20
+# A hotspot confirmed for this long clears its radio's failure count.
+HOTSPOT_STABLE = 120
+# An instrument that does not come back is retried after 15 s, then each wait
+# doubles up to five minutes. A long retry keeps the radio and the network lock
+# busy, so an absent instrument must not be retried at full pace forever.
+RETRY_FIRST = 15
+RETRY_CAP = 300
+
+
+def retry_interval(failures):
+    """Seconds to wait before the next association attempt after this many failures in a row."""
+    return min(RETRY_CAP, RETRY_FIRST * 2 ** max(0, min(failures, 16) - 1))
+
+
+def hotspot_log(message):
+    """Plain service-log line; never includes network names or passwords."""
+    print('Astro Bridge hotspot: ' + message, flush=True)
+
+
+def home_wifi_log(message):
+    """Plain service-log line about the home Wi-Fi retry, never with a network name or password."""
+    print('Astro Bridge home Wi-Fi: ' + message, flush=True)
+
+
+HOME_RETRY_MESSAGES = {
+    'HOME_RETRY_ATTEMPT': 'trying the home Wi-Fi on {name}.',
+    'HOME_RETRY_FAILED': 'the home Wi-Fi retry on {name} failed. It is tried again every 45 seconds.',
+    'HOME_RETRY_FAILED_AP_RESTORED': 'the home Wi-Fi retry on {name} failed. The recovery hotspot is back.',
+    'HOME_RETRY_FAILED_AP_RESTORE_FAILED': 'the home Wi-Fi retry on {name} failed and the recovery hotspot could not start again.',
+    'HOME_RETRY_DEFERRED_AP_RESERVED': 'the home Wi-Fi retry on {name} is deferred: its radio carries the recovery hotspot, which is in use.',
+    'HOME_RETRY_DEFERRED_RADIO_BUSY': 'the home Wi-Fi retry on {name} is deferred: the radio is busy ({radio}).',
+    'HOME_RADIO_MISSING': 'the home Wi-Fi adapter is missing.',
+    'HOME_READY': 'the home Wi-Fi is connected on {name}.',
+}
 
 
 class Controller:
     def __init__(self, store, network, bootstrap, demo=False):
         require_config_plugins(store.config)
         self.store, self.net, self.bootstrap, self.demo = store, network, bootstrap, demo
+        from .config import migrate_hotspot_password
+        # Earlier versions kept the hotspot password in clear: keep only its key.
+        migrated = migrate_hotspot_password(store.config, getattr(store, 'mac', ''), bootstrap['password'])
+        if migrated is not None:
+            store.save(migrated)
         from .cameras.discovery import platform_supported
         self.camera_supported = platform_supported(demo)
         self.device_id = device_identity(store.path.parent)
@@ -38,10 +86,24 @@ class Controller:
                       "hotspot": {"active": False, "reason": "starting"},
                       "management": {"mode":"none","paths":[],"reason":"STARTING","home_retry":{"reason":"STARTING","remaining_seconds":0}}}
         self.action_at = None
+        # The network backend asks this before each fallback address it would try.
+        if hasattr(network, 'halting'): network.halting = self.halting
         self.configured_this_boot = False
         self.last_home_attempt = -1000
         self.next_home_attempt = 0
         self.attempts = {}
+        # Failed association attempts in a row per role, since its last association.
+        self.retries = {}
+        # Last failed step of joining an instrument's Wi-Fi, by role (see network.link_failure_stage).
+        self.link_stages = {}
+        # Connected instruments whose app released its reservation: the link stays up
+        # for a quick return, but the next explicit request may take the radio.
+        self.standby = set()
+        # Sleep-prone Wi-Fi mounts: cycle time each one was last joined and answering.
+        self.mount_contact = {}
+        self.cycle_now = None
+        from .released import ReleaseNotes
+        self.release_notes = ReleaseNotes(store.path.parent)
         from .auth_failures import AuthenticationFailures
         self.auth_failures = AuthenticationFailures(store.path.parent)
         self.applied = {}
@@ -53,6 +115,16 @@ class Controller:
         self.password_attempts = deque()
         self.default_hash_cache = (None, False)
         self.ap_password = None
+        # Recent hotspot failures per radio MAC, the recorded AP owner that is not
+        # confirmed working (interface, since) and the confirmed AP (mac, since).
+        # Demo mode simulates its radios: it never writes hotspot log lines.
+        self.log = (lambda message: None) if demo else hotspot_log
+        self.home_log = (lambda message: None) if demo else home_wifi_log
+        # Last home Wi-Fi retry reason written to the service log: one line per change, never per cycle.
+        self.home_retry_logged = None
+        self.ap_failures = {}
+        self.ap_unconfirmed = None
+        self.ap_confirmed = None
         self.routing_conflicts = set()
         self.proxy_owners = {proxy_flag(p['id']):None for p in relay_plugins()}
         self.discovery_plan = None
@@ -69,6 +141,12 @@ class Controller:
         self.candidates = CandidateDiscovery(self)
 
         self.event_store = EventStore(store.path.parent / "events.json")
+        # Only a platform that owns its host clock may set it from a signed-in browser.
+        from .clock import set_system_clock
+        from .runtime import platform
+        from .cameras.discovery import pi5_appliance
+        if not demo and (pi5_appliance() or platform() in ('raspberry', 'live-usb')):
+            self.event_store.clock.set_system = set_system_clock
         from .telemetry import TelemetryStore, Sessions
         self.telemetry_store = TelemetryStore(store.path.parent / 'telemetry.sqlite3',
                                               clock=self.event_store.clock, boot_id=self.event_store.boot_id)
@@ -175,8 +253,27 @@ class Controller:
     def _radio_catalog(self, snapshot, client, telemetry, discovery, age):
         from .instruments import catalog
         return (catalog(snapshot, self.protection.leases.values(), client, now=self.protection.clock(), telemetry=telemetry, maker_keys=self.maker_keys.inventory(), identities=self.identities, free_radios=self.free_radios(),
+                       released=self.release_notes.status(),
+                       silences=self.mount_silences(),
                        operations={p['id']: self.operation_detail(p) for p in profiles(self.store.config)},
                        observations=discovery.nearby_rows, observation_age=age, events=self.event_store.events, sequences=self.event_store.instrument_sequences))
+
+    def mount_silences(self):
+        """Sleep-prone Wi-Fi mounts the bridge no longer hears, with the probable cause."""
+        from .mount_sleep import silence
+        result = {}
+        discovery = self.candidates
+        wall = discovery.wall()
+        for p in profiles(self.store.config):
+            if p['kind'] not in WIFI_SLEEP: continue
+            contact = self.mount_contact.get(p['id'])
+            link_age = self.cycle_now - contact if contact is not None and self.cycle_now is not None else None
+            heard = [entry['observed_at'] for entry in discovery.observations.values()
+                     if entry.get('ssid') == p['ssid'] and (not p.get('bssid') or entry.get('bssid') == p['bssid'])]
+            scan_age = max(0, wall - max(heard)) if heard else None
+            value = silence(p['kind'], link_age, scan_age)
+            if value: result[p['id']] = value
+        return result
 
     def _native_event_snapshot(self):
         from .instruments import endpoint
@@ -251,6 +348,8 @@ class Controller:
             # Contract 1.1 hints: radios a client could use without replacing anything.
             runtime['free_radios'] = self.free_radios()
             runtime['hotspot'] = bool(self.state.get('hotspot', {}).get('active'))
+            boot = re.sub('[^0-9a-f]', '', str(self.event_store.boot_id))[:8]
+            if len(boot) == 8: runtime['boot'] = boot
             return {'name': display_name(self.store.config['hostname']),
                     'device_id': self.device_id}, runtime
 
@@ -295,15 +394,20 @@ class Controller:
             result['maker_demands'] = {'seestar':dict(result['maker_demand']),**{kind:adapter.status() for kind,adapter in self.plugin_adapters.items()}}
             result['connection_protection'] = self.protection.status()
             result['connection_pauses'] = self.pauses.status(self.store.config)
+            result['radio_releases'] = self.release_notes.status()
             result['connection_activity'] = self.net.activity_status() if hasattr(self.net, 'activity_status') else {'supported':False,'profiles':{},'reason':'SIMULATION_NOT_MEASURED','idle_selection_implemented':True}
         from .runtime import capabilities
         result["deployment"] = capabilities(self.demo)
         encoded = self.store.config["admin_hash"]
         if self.default_hash_cache[0] != encoded:
             self.default_hash_cache = (encoded, password_matches("12345678", encoded) if encoded else self.bootstrap["password"] == "12345678")
-        result["default_credentials"] = {"web": self.default_hash_cache[1],
-            "hotspot": self.store.config.get("hotspot_password", self.bootstrap["password"]) == "12345678",
-            "linux": self.store.config.get("linux_password_default", self.bootstrap["password"] == "12345678")}
+        from .password import default_in_use
+        from .linux_account import ssh_status
+        account = result["deployment"]["linux_account"]
+        default = default_in_use(self.store.config, self.bootstrap["password"], account, self.default_hash_cache[1])
+        # One password: the three historical flags report the same single answer.
+        result["default_credentials"] = {"password": default, "web": default, "hotspot": default, "linux": default}
+        result["ssh"] = (dict(account=account, password_login=not default) if self.demo and account else ssh_status(account))
         access = result.setdefault('network_access', {'available':False,'reason':'NOT_RECONCILED'})
         mode = result['config']['connection_mode']
         if access.get('mode',mode) != mode or access.get('private_lan_allowed',False) != result['config']['hotspot_private_lan']:
@@ -352,6 +456,9 @@ class Controller:
                 raise ApiError(409, 'CONNECTION_OPERATION_PENDING', 'A connection operation is pending.')
             if self.action_at is not None:
                 raise Invalid("A reboot is already scheduled.")
+            payload = dict(payload)
+            # Only used to derive a new hotspot key when a personal password renames the hotspot.
+            rename_password = payload.pop("current_password", None)
             if not self.store.config["admin_hash"] and not payload.get("admin_password"):
                 payload = dict(payload, admin_password=self.bootstrap["password"])
             previous = self.store.config
@@ -361,6 +468,19 @@ class Controller:
             admin = payload.get('admin_password', '')
             password_changed = bool(admin) and not (password_matches(admin, previous['admin_hash'])
                 if previous['admin_hash'] else hmac.compare_digest(admin.encode(), self.bootstrap['password'].encode()))
+            from .password import check, PasswordRuleError, valid_key, hotspot_key
+            if password_changed:
+                # A new administrator password is the single bridge password.
+                try:
+                    check(admin)
+                except PasswordRuleError as error:
+                    raise Invalid(str(error)) from None
+            elif valid_key(previous.get('hotspot_key')) and value['hotspot'].get('ssid') \
+                    and value['hotspot']['ssid'] != previous['hotspot_key']['ssid']:
+                # The stored key belongs to one network name: a new name needs the password again.
+                if not isinstance(rename_password, str) or not self._password_valid(rename_password):
+                    raise ApiError(409, 'PASSWORD_REQUIRED', 'Enter the bridge password to rename the hotspot.')
+                value['hotspot_key'] = hotspot_key(rename_password, value['hotspot']['ssid'])
             access_changed = any(value[key] != previous.get(key, default) for key, default in
                                  (('connection_mode', 'private'), ('hotspot_private_lan', False)))
             access_changed |= value['hotspot'].get('ssid', '') != previous.get('hotspot', {}).get('ssid', '')
@@ -382,7 +502,12 @@ class Controller:
             if any(self.pauses.held(ident) for ident in changed):
                 if self.pauses.error: raise ApiError(409, 'PAUSE_REGISTRY_RECOVERY_REQUIRED', 'Recover the pause registry before editing held network intent.')
                 self.protection.precondition(expected, revision or (lambda: ''))
-            self.store.save(value)
+            undo = self._unify(value, admin) if password_changed else None
+            try:
+                self.store.save(value)
+            except BaseException:
+                if undo: undo()
+                raise
             self.serial_mounts.reconcile()
             self.refresh_auth_failures(profiles(value))
             if value['home']!=previous['home']:self.next_home_attempt=0
@@ -398,47 +523,89 @@ class Controller:
         return {"ok": True, "url": "http://" + value["hostname"] + ".local", "reboot_in": 4 if reboot else 0,
                 "operation_id": operation_id, "sessions_invalidated": password_changed}
 
+    def _password_valid(self, password):
+        """Check the current bridge password, at most five tries a minute. Caller holds the lock."""
+        now = time.monotonic()
+        while self.password_attempts and now - self.password_attempts[0] >= 60:
+            self.password_attempts.popleft()
+        if len(self.password_attempts) >= 5:
+            raise Invalid("Too many attempts. Try again in a minute.")
+        self.password_attempts.append(now)
+        encoded = self.store.config["admin_hash"]
+        valid = password_matches(password, encoded) if encoded else hmac.compare_digest(password.encode(), self.bootstrap["password"].encode())
+        if valid:
+            self.password_attempts.clear()
+        return valid
+
+    def _hotspot_key_ssid(self, config):
+        """The network name the hotspot key is derived for: the name the hotspot uses now."""
+        from .password import valid_key
+        explicit = config.get('hotspot', {}).get('ssid', '')
+        if explicit:
+            return explicit
+        if valid_key(config.get('hotspot_key')):
+            return config['hotspot_key']['ssid']
+        hotspot = self.state.get('hotspot', {})
+        radio = (hotspot.get('mac') if hotspot.get('active') else '') or config.get('hotspot', {}).get('mac') \
+            or reserved_hotspot_mac(config) or next((d['mac'] for d in self.state.get('devices', []) if d.get('ap', True)), '') \
+            or getattr(self.store, 'mac', '')
+        return hotspot_ssid({k: v for k, v in config.items() if k != 'hotspot_key'}, radio)
+
+    def _unify(self, value, password):
+        """Give the Linux account, the web interface and the hotspot this one password.
+
+        The Linux account is changed first: if it fails, the exception leaves the
+        configuration untouched. The caller saves value in one write and calls the
+        returned undo (or None) if that write fails.
+        """
+        from .password import hotspot_key
+        from .runtime import linux_account
+        account = linux_account(self.demo)
+        undo = self.net.linux_password(password) if account else None
+        value["admin_hash"] = password_hash(password)
+        value["hotspot_key"] = hotspot_key(password, self._hotspot_key_ssid(value))
+        value.pop("hotspot_password", None)
+        if account:
+            value["linux_password_default"] = False
+        return undo if callable(undo) else None
+
     def credentials(self, payload):
-        target = payload.get("target")
-        if target not in ("web", "hotspot", "linux"):
+        """Change the single bridge password: web interface, hotspot and Linux account.
+
+        Earlier clients name one target (web, hotspot or linux); every target now
+        changes all three, so the rule "one password" always holds. All or nothing:
+        a Linux account that cannot be changed leaves everything as it was.
+        """
+        target = payload.get("target", "all")
+        if target not in ("all", "web", "hotspot", "linux"):
             raise Invalid("Unknown account.")
-        from .runtime import capabilities
-        if target == "linux" and not capabilities(self.demo)['linux_credentials']:
+        from .runtime import linux_account
+        from .password import check, PasswordRuleError
+        if target == "linux" and not linux_account(self.demo):
             raise Invalid("Unknown account.")
         password = text(payload.get("password"), 128)
-        if not 8 <= len(password) <= 128:
-            raise Invalid("Password must contain 8 to 128 characters.")
-        if target == "hotspot" and not (8 <= len(password.encode()) <= 63 or
-                len(password) == 64 and all(c in "0123456789abcdefABCDEF" for c in password)):
-            raise Invalid("Hotspot password must contain 8 to 63 bytes or 64 hexadecimal characters.")
+        try:
+            check(password)
+        except PasswordRuleError as error:
+            raise Invalid(str(error)) from None
         current = text(payload.get("current_password"), 128)
         with self.lock:
             if self.operations.pending: raise ApiError(409, 'CONNECTION_OPERATION_PENDING', 'A connection operation is pending.')
         with self.net_lock, self.lock:
             self.protection.reject()
             if self.operations.pending: raise ApiError(409, 'CONNECTION_OPERATION_PENDING', 'A connection operation is pending.')
-            now = time.monotonic()
-            while self.password_attempts and now - self.password_attempts[0] >= 60:
-                self.password_attempts.popleft()
-            if len(self.password_attempts) >= 5:
-                raise Invalid("Too many attempts. Try again in a minute.")
-            self.password_attempts.append(now)
-            encoded = self.store.config["admin_hash"]
-            valid = password_matches(current, encoded) if encoded else current == self.bootstrap["password"]
-            if not valid:
+            if not self._password_valid(current):
                 raise Invalid("Incorrect current administrator password.")
-            self.password_attempts.clear()
             value = copy.deepcopy(self.store.config)
-            if target == "linux":
-                self.net.linux_password(password)
-                value["linux_password_default"] = password == "12345678"
-            elif target == "web":
-                value["admin_hash"] = password_hash(password)
-            else:
-                value["hotspot_password"] = password
-            self.store.save(value)
-        return {"ok": True, "sessions_invalidated": target == "web" and not hmac.compare_digest(password.encode(), current.encode()),
-                "hotspot_reconnect": target == "hotspot" and self.state["hotspot"]["active"]}
+            undo = self._unify(value, password)
+            try:
+                self.store.save(value)
+            except BaseException:
+                if undo: undo()
+                raise
+        changed = not hmac.compare_digest(password.encode(), current.encode())
+        return {"ok": True, "sessions_invalidated": changed,
+                "hotspot_reconnect": changed and bool(self.state["hotspot"].get("active"))}
 
     def telescope_action(self, payload, cause="MANUAL", expected=None, revision=None):
         ident, action = payload.get("id"), payload.get("action")
@@ -452,6 +619,7 @@ class Controller:
             chosen = next((p for p in entries if p["id"] == ident), None)
             if not chosen:
                 raise Invalid("Unknown profile.")
+            self.standby.discard(ident)
             if self.pauses.held(ident):
                 self.protection.reject(ident)
                 self.protection.precondition(expected, revision or (lambda: ''))
@@ -509,6 +677,7 @@ class Controller:
     def refresh_auth_failures(self, entries):
         for ident in self.auth_failures.prune(entries):
             self.attempts.pop(role_for({'id': ident}), None)
+            self.retries.pop(role_for({'id': ident}), None)
             self.operations.negative.pop(ident, None)
 
     def scan(self, name):
@@ -549,25 +718,117 @@ class Controller:
             cause='RECONCILE', reason=reason or 'HOTSPOT_RESTORED',
             outcome='failed' if reason else 'ready', associated=not reason, ready=not reason)
 
-    def _ap(self, devices, reserved, emergency=False, only=None):
+    def _ap_failed(self, device, message, diagnosis=None):
+        """Count a hotspot failure on this radio and say it once in the service log."""
+        mac = device.get('mac') if device else None
+        if not mac:
+            return
+        count = self.ap_failures.get(mac, 0) + 1
+        self.ap_failures[mac] = count
+        if self.ap_confirmed and self.ap_confirmed[0] == mac:
+            self.ap_confirmed = None
+        name = device.get('name') or 'its radio'
+        if count == 1:
+            self.log(message.format(name=name))
+        if count == HOTSPOT_FAILURE_LIMIT:
+            self.log('the hotspot failed again on ' + name + '. Another free Wi-Fi adapter is tried first from now on.')
+        text = (diagnosis() if callable(diagnosis) else diagnosis) if count in (1, HOTSPOT_FAILURE_LIMIT) and diagnosis else None
+        if text:
+            # Why it did not take: radio mode, who holds the radio, hostapd's own words.
+            self.log('state when it failed: ' + text + '.')
+
+    def _ap_confirmed(self, device, now):
+        mac = device['mac']
+        if not self.ap_confirmed or self.ap_confirmed[0] != mac:
+            self.ap_confirmed = (mac, now)
+        elif now - self.ap_confirmed[1] >= HOTSPOT_STABLE:
+            self.ap_failures.pop(mac, None)
+
+    def _ap_failing(self, device):
+        return self.ap_failures.get(device['mac'], 0) >= HOTSPOT_FAILURE_LIMIT
+
+    def _reclaim_unconfirmed_ap(self, devices, now):
+        """Stop a recorded hotspot that does not work, so that it can start again.
+
+        The AP owner record keeps its radio out of NetworkManager. When its
+        access point or DHCP service stays down, nothing else can ever use that
+        radio or start another hotspot, so after a grace period the bridge stops
+        its own AP services and hands the radio back, as a normal AP stop does.
+        """
+        owner_of = getattr(self.net, 'hotspot_owner', None)
+        owner = owner_of() if owner_of else ''
+        if not owner:
+            self.ap_unconfirmed = None
+            return
+        if not self.ap_unconfirmed or self.ap_unconfirmed[0] != owner:
+            self.ap_unconfirmed = (owner, now, False)
+            return
+        _, since, reported = self.ap_unconfirmed
+        if now - since < HOTSPOT_UNCONFIRMED_GRACE:
+            return
+        device = next((d for d in devices if d['name'] == owner), {'name': owner})
+        observe = getattr(self.net, 'ap_diagnosis', None)
+        said = getattr(self, 'ap_unconfirmed_said', {})
+        self.ap_unconfirmed_said = said
+        if observe and not reported and said.get(owner, 0) < HOTSPOT_FAILURE_LIMIT:
+            said[owner] = said.get(owner, 0) + 1
+            # Twice per radio and boot at most. Said before the stop changes the radio: why this hotspot was never confirmed.
+            self.log('the hotspot on ' + owner + ' was not confirmed for ' + str(HOTSPOT_UNCONFIRMED_GRACE)
+                     + ' seconds. State: ' + observe(owner) + '.')
+        try:
+            self.net.disconnect('setup')
+        except NetworkError:
+            if not reported:
+                self.log('the hotspot on ' + owner + ' does not work and could not be stopped. '
+                            'Check: rc-service wifi-bridge-ap status; tail /var/log/wifi-bridge-ap.log')
+            self.ap_unconfirmed = (owner, since, True)
+            return
+        self.ap_unconfirmed = None
+        self.update(setup_ssid='', hotspot={'active': False, 'reason': 'start_failed'})
+        # The failure itself was counted when the hotspot was lost or did not start.
+        self.log('the radio ' + device['name'] + ' was released from the stopped hotspot. The hotspot starts again.')
+
+    def _hotspot_key(self, mac):
+        """Network name and derived WPA key for a hotspot on this radio; never the password."""
+        from .password import hotspot_psk, valid_key
+        config = self.store.config
+        ssid = hotspot_ssid(config, mac)
+        key = config.get('hotspot_key')
+        if valid_key(key) and key['ssid'] != ssid:
+            ssid = key['ssid']  # The key names the network it belongs to.
+        return ssid, hotspot_psk(config, ssid, self.bootstrap['password'])
+
+    def _ap(self, devices, reserved, emergency=False, only=None, now=None):
+        now = time.monotonic() if now is None else now
         current = self.active_ap(devices)
         if not current and self.state['hotspot'].get('active'):
             self._hotspot_event('HOTSPOT_RADIO_UNAVAILABLE')
+            lost = next((d for d in devices if d['mac'] == self.state['hotspot'].get('mac')), None)
+            observe = getattr(self.net, 'ap_diagnosis', None)
+            self._ap_failed(lost, 'the hotspot on {name} stopped. It is restarted automatically. '
+                                  'Details: tail /var/log/wifi-bridge-ap.log',
+                            (lambda: observe(lost['name'])) if observe and lost else None)
         preferred = self.store.config.get('hotspot', {}).get('mac', '')
-        password = self.store.config.get('hotspot_password', self.bootstrap['password'])
         if current and not role_allows(self.store.config, current['mac'], 'hotspot'):
             self.protection.reject()
             self.net.disconnect('setup')
             self.update(setup_ssid='', hotspot={'active': False, 'reason': 'adapter_role_changed'})
             current = None
         current_name = self.net.hotspot_name() if current else ''
-        if current and (not preferred or current['mac'] == preferred) and self.ap_password in (None,password) and current_name == hotspot_ssid(self.store.config, current['mac']):
-            self.ap_password = password
+        if current and (not preferred or current['mac'] == preferred) and self.ap_password in (None,self._hotspot_key(current['mac'])[1]) and current_name == self._hotspot_key(current['mac'])[0]:
+            self.ap_password = self._hotspot_key(current['mac'])[1]
+            self._ap_confirmed(current, now)
             self._hotspot_event(device=current)
             reason=self.state['hotspot'].get('reason')
             if reason not in ('requested','recovery','recovery_retained'):reason='recovery' if emergency else 'requested'
             self.update(setup_ssid=current_name,hotspot={'active':True,'reason':reason,'interface':current['name'],'mac':current['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(current)})
             return current
+        owner_of = getattr(self.net, 'hotspot_owner', None)
+        if not current and owner_of and owner_of():
+            # The previous AP is still recorded but not working: every other
+            # radio would be refused until it is stopped and released.
+            self.update(setup_ssid='', hotspot={'active': False, 'reason': 'start_failed'})
+            return None
         if (self.protection.protected() or self.operations.pending) and not emergency:
             if current:
                 self.update(setup_ssid=current_name,hotspot={'active':True,'reason':'connection_protected','interface':current['name'],'mac':current['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(current)})
@@ -579,8 +840,11 @@ class Controller:
         candidates = [d for d in devices if d['mac'] not in protected and d.get('ap',True) and role_allows(self.store.config, d['mac'], 'hotspot')
                       and (d['mac'] not in reserved or emergency and d['mac']==home_mac)
                       and (only is None or d['mac']==only['mac']) and self.net.radio_idle(d)]
-        candidates.sort(key=lambda d:(d['mac']==home_mac,d['usb'],d['name']))
-        selected = next((d for d in candidates if d['mac'] == preferred), None)
+        # A radio that keeps failing is tried after the other free radios, so a
+        # hotspot that cannot run on the saved adapter moves to another one.
+        candidates.sort(key=lambda d:(self._ap_failing(d),d['mac']==home_mac,d['usb'],d['name']))
+        selected = next((d for d in candidates if d['mac'] == preferred
+                         and not (self._ap_failing(d) and (len(candidates) > 1 or current))), None)
         if preferred:
             device = selected or (current if current and current['mac'] == preferred else None)
             if device is None:
@@ -588,6 +852,7 @@ class Controller:
                 # radio, but never change the persisted owner-selected adapter.
                 device = current or (candidates[0] if candidates else None)
             if device is current and current and current['mac'] != preferred:
+                self._ap_confirmed(current, now)
                 self.update(setup_ssid=current_name,hotspot={'active':True,'reason':'selected_adapter_unavailable',
                     'interface':current['name'],'mac':current['mac'],'ip':'192.168.77.1',**self.net.hotspot_clients(current)})
                 return current
@@ -596,6 +861,9 @@ class Controller:
         if current:self.protection.reject()
         if not device:
             self.update(setup_ssid='',hotspot={'active':False,'reason':'protected_no_recovery_radio' if emergency and protected else 'selected_adapter_unavailable' if preferred else 'no_free_radio'})
+            if getattr(self, '_hotspot_failure', None) != 'HOTSPOT_RADIO_UNAVAILABLE':
+                self.log('no free Wi-Fi adapter can start the hotspot now. Plug in a USB Wi-Fi adapter or an Ethernet cable, '
+                            'or check: rc-service wifi-bridge-ap status')
             self._hotspot_event('HOTSPOT_RADIO_UNAVAILABLE')
             return None
         # Try each eligible radio once per reconcile; a failed preferred adapter
@@ -612,9 +880,9 @@ class Controller:
                     saved['interface_roles'] = {reservation: 'hotspot'}
                     saved['hotspot'] = dict(saved.get('hotspot', {}), mac=reservation, enabled=True)
                     self.store.save(saved)
-            ssid = hotspot_ssid(self.store.config, device['mac'])
+            ssid, psk = self._hotspot_key(device['mac'])
             try:
-                self.net.hotspot(device,ssid,password,self.hotspot_route_targets(devices))
+                self.net.hotspot(device,ssid,psk,self.hotspot_route_targets(devices))
             except NetworkError:
                 surviving = self.active_ap(devices)
                 if surviving:
@@ -625,8 +893,13 @@ class Controller:
                         'mac':surviving['mac'], 'ip':'192.168.77.1', **self.net.hotspot_clients(surviving)})
                     return surviving
                 self._hotspot_event('HOTSPOT_START_FAILED', device)
+                self._ap_failed(device, 'the hotspot could not start on {name}. '
+                                        'Details: tail /var/log/wifi-bridge-ap.log',
+                                getattr(self.net, 'last_ap_diagnosis', None))
                 continue
-            self.ap_password = password
+            self.ap_password = psk
+            self._ap_confirmed(device, now)
+            self.log('the hotspot started on ' + device['name'] + '.')
             self._hotspot_event(device=device)
             self.update(setup_ssid=ssid,
                         hotspot={'active':True,'reason':'recovery' if emergency else 'requested',
@@ -651,7 +924,8 @@ class Controller:
         return hotspot_route_targets((p.get('target_ip') for p in profiles(self.store.config) if not p.get('isolated')), networks, addresses)
 
     def management_paths(self, home, ap):
-        return self.net.management_paths(home,ap)
+        # An interface that has just lost its address is no management path.
+        return [path for path in self.net.management_paths(home,ap) if path.get('address')]
 
     def wired_home(self):
         # Demo and older synthetic backends need not expose physical Ethernet.
@@ -687,10 +961,13 @@ class Controller:
     def _management(self, devices, config, now):
         tick=time.monotonic();by_mac={d['mac']:d for d in devices}
         home=by_mac.get(config.get('home',{}).get('mac'));ap=self.active_ap(devices)
-        if not ap:self.net.release_stale_hotspot(devices)
+        if not ap:
+            self._reclaim_unconfirmed_ap(devices,now)
+            self.net.release_stale_hotspot(devices)
+        else:self.ap_unconfirmed=None
         reserved={p['mac'] for p in profiles(config) if p['enabled']}
         if config.get('home'): reserved.add(config['home']['mac'])
-        if ap:ap=self._ap(devices,reserved,emergency=not config.get('hotspot',{}).get('enabled',False))
+        if ap:ap=self._ap(devices,reserved,emergency=not config.get('hotspot',{}).get('enabled',False),now=now)
         retry={'reason':'NOT_CONFIGURED' if not config['home'] else 'HOME_READY','remaining_seconds':0}
         home_changed='home' in self.applied and self.applied['home']!=config['home']
         if home_changed:
@@ -699,8 +976,8 @@ class Controller:
         wired=self.wired_home()
         # An owned Ethernet path can free the only onboard radio for the AP.
         # Keep other allocations and user-protected work unchanged.
-        from .cameras.discovery import pi5_gphoto_enabled
-        single_radio_shared=(pi5_gphoto_enabled() and config.get('connection_mode')=='hotspot_shared' and wired
+        from .cameras.discovery import pi5_appliance
+        single_radio_shared=(pi5_appliance() and config.get('connection_mode')=='hotspot_shared' and wired
             and wired['name']=='eth0' and len(devices)==1 and home and home['name']=='wlan0'
             and not home.get('usb',True) and home.get('ap',True)
             and role_allows(config,home['mac'],'hotspot')
@@ -721,7 +998,8 @@ class Controller:
         stopped_ap=None
         if config['home'] and not home_up and not single_radio_shared:
             retry={'reason':'HOME_RADIO_MISSING' if not home else 'RETRY_WAIT','remaining_seconds':max(0,int(self.next_home_attempt-now))}
-            if home and now>=self.next_home_attempt:
+            # No new home attempt once a restart is requested or the service is stopping.
+            if home and now>=self.next_home_attempt and not self.halting():
                 if ap and ap['mac']==home['mac']:
                     if self.ap_can_stop(ap):
                         self.update(message='Empty recovery hotspot: a bounded private-network retry may briefly interrupt management.')
@@ -730,6 +1008,7 @@ class Controller:
                     else:retry={'reason':'HOME_RETRY_DEFERRED_AP_RESERVED','remaining_seconds':0}
                 if not ap or ap['mac']!=home['mac']:
                     if self.net.radio_idle(home):
+                        self._home_retry_note('HOME_RETRY_ATTEMPT', home)
                         # Keep a separate AP and all validated routes throughout the blocking command.
                         self.firewall()
                         try:
@@ -737,7 +1016,7 @@ class Controller:
                         except NetworkError:home_up=False
                         if home_up:self.applied['home']=copy.deepcopy(config['home'])
                         if stopped_ap and not home_up:
-                            try:ap=self._ap(devices,set(),emergency=True,only=stopped_ap)
+                            try:ap=self._ap(devices,set(),emergency=True,only=stopped_ap,now=now)
                             except NetworkError:
                                 self.update(hotspot={'active':False,'reason':'restore_failed'})
                             retry={'reason':'HOME_RETRY_FAILED_AP_RESTORED' if ap else 'HOME_RETRY_FAILED_AP_RESTORE_FAILED','remaining_seconds':45}
@@ -745,13 +1024,16 @@ class Controller:
                         completed=now+max(0,time.monotonic()-tick)
                         self.last_home_attempt=completed;self.next_home_attempt=completed+45
                     elif not ap or ap['mac']!=home['mac']:retry={'reason':'HOME_RETRY_DEFERRED_RADIO_BUSY','remaining_seconds':0}
+        self._home_retry_note(retry['reason'], home)
         if not home_up:home=None
         home = self.wired_home() or home
         instrument_networks=[];instrument_subnets={}
         for profile in profiles(config):
             device=by_mac.get(profile['mac'])
             if profile['enabled'] and not profile.get('isolated') and device and self.net.connected(role_for(profile),device,profile):
-                subnet=ipaddress.ip_interface(self.net.address(device)).network
+                address=self.net.address(device)
+                if not address:continue  # Linked, but its address is gone: it occupies no network now.
+                subnet=ipaddress.ip_interface(address).network
                 instrument_networks.append(subnet);instrument_subnets[profile['id']]=subnet
         self.routing_conflicts={ident for ident,subnet in instrument_subnets.items() if home and ipaddress.ip_interface(self.net.address(home)).network.overlaps(subnet)}
         if self.routing_conflicts:
@@ -762,7 +1044,7 @@ class Controller:
             ap_network=ipaddress.ip_network('192.168.77.0/24')
             overlap=any(ap_network.overlaps(n) for n in instrument_networks+([ipaddress.ip_interface(self.net.address(home)).network] if home else []))
             if overlap:self.update(setup_ssid='',hotspot={'active':False,'reason':'subnet_conflict'})
-            else:ap=self._ap(devices,reserved,emergency=not home)
+            else:ap=self._ap(devices,reserved,emergency=not home,now=now)
         elif ap and home and not desired_ap:
             explicit_stop=self.state['hotspot'].get('reason')=='requested'
             if explicit_stop or self.ap_can_stop(ap):
@@ -791,6 +1073,33 @@ class Controller:
                 'reason':'ROUTING_CONFLICT' if self.routing_conflicts else 'READY' if paths else 'MANAGEMENT_UNAVAILABLE','home_retry':retry}
         self.update(home_ip=self.net.address(home).split('/')[0] if home else '')
         return home,ap
+
+    def halting(self):
+        """True once a restart is requested or the service is stopping."""
+        return self.action_at is not None or self.stop.is_set()
+
+    def _home_retry_note(self, reason, device):
+        """Write one service-log line when the home Wi-Fi retry reason changes.
+
+        Waiting between attempts keeps the last reason. A new attempt after a failure
+        writes nothing, so a long outage gives one failure line, then one line when
+        the home Wi-Fi is back.
+        """
+        previous = self.home_retry_logged
+        if reason == 'RETRY_WAIT' or reason == previous or reason not in HOME_RETRY_MESSAGES and reason != 'NOT_CONFIGURED':
+            return
+        if reason == 'HOME_RETRY_ATTEMPT' and previous and previous.startswith('HOME_RETRY_FAILED'):
+            return
+        self.home_retry_logged = reason
+        # A home Wi-Fi already up at start, or no home Wi-Fi saved, is no change worth a line.
+        if reason == 'NOT_CONFIGURED' or reason == 'HOME_READY' and previous in (None, 'NOT_CONFIGURED'):
+            return
+        name = device['name'] if device else ''
+        radio = 'radio state not read'
+        observed = getattr(self.net, 'radio_observations', {}).get(name) if device else None
+        if observed:
+            radio = 'NetworkManager state ' + observed['state'] + ', iw link ' + observed['link']
+        self.home_log(HOME_RETRY_MESSAGES[reason].format(name=name, radio=radio))
 
     def retained_forwarding(self):
         """Keep unaffected, still-owned validated routes during free-radio preparation."""
@@ -996,6 +1305,7 @@ class Controller:
     def _cycle(self, now=None):
         with self.lock: self.protection.prune()
         now = time.monotonic() if now is None else now
+        self.cycle_now = now
         devices = self.net.devices()
         self.update(devices=devices)
         with self.lock:
@@ -1035,12 +1345,15 @@ class Controller:
             self.managed_roles |= owned
             self.configured_this_boot = True
         by_mac={d['mac']:d for d in devices}
+        if hasattr(self.net, 'address_fallback'): self.net.address_fallback = config.get('auto_policy', {}).get('address_fallback', True) is not False
         home,ap=self._management(devices,config,now)
         entries = profiles(config)
         self.refresh_auth_failures(entries)
         desired = {role_for(p): p for p in entries if p["enabled"] and role_allows(config, p["mac"], "telescope")}
         stale = self.managed_roles - desired.keys()
         changed = {r for r, p in desired.items() if r in self.applied and network_intent(self.applied[r]) != network_intent(p)}
+        victim = self.operations.victim_id
+        yielding = role_for({'id': victim}) if victim else None
         if stale or changed:
             self.firewall()
             for role in stale | changed:
@@ -1048,6 +1361,8 @@ class Controller:
                 self._disconnect_profile(role)
                 self.applied.pop(role, None)
                 self.attempts.pop(role, None)
+                # A profile set aside for the time of one operation keeps its retry pace.
+                if role != yielding: self.retries.pop(role, None)
         obsolete = self.managed_roles - {role_for(p) for p in entries}
         with self.lock:
             pending = (self.pending_deletions | obsolete) - desired.keys()
@@ -1055,6 +1370,13 @@ class Controller:
         for role in pending:
             self.net.remove_profile(role)
         self.managed_roles = set(desired)
+        with self.lock:
+            # A release note explains a disabled profile only.
+            self.release_notes.keep({p['id'] for p in entries if not p['enabled']})
+            self.standby &= {p['id'] for p in profiles(self.store.config) if p['enabled']}
+            kept = {role_for(p) for p in profiles(self.store.config) if p['enabled']}
+            self.retries = {role: count for role, count in self.retries.items() if role in kept}
+            self.link_stages = {role: stage for role, stage in self.link_stages.items() if role in kept}
         topology = (tuple(sorted(by_mac)), tuple((p["device"]["name"],p["address"]) for p in self.management_paths(home,ap)),
                     tuple((p["id"], p["mac"], p["target_ip"], p["ssid"]) for p in entries if p["enabled"]))
         if topology != self.topology:
@@ -1117,7 +1439,10 @@ class Controller:
                     if self.connection_events.states.get(p["id"], {}).get("associated"):
                         self._event_contexts[p["id"]] = self.connection_events.observe(
                             p, False, False, "waiting", "CONNECTION_LOST", self._event_contexts.get(p["id"]))
-            if not up and paths and now - self.attempts.get(role, -1000) >= 15:
+            if up:
+                self.retries.pop(role, None)
+            # No new telescope link attempt once a restart is requested or the service is stopping.
+            if not up and paths and not self.halting() and now - self.attempts.get(role, -1000) >= retry_interval(self.retries.get(role, 0)):
                 if not self.operations.before_association(p):
                     row.update(state='error'); continue
                 self.attempts[role] = now
@@ -1128,12 +1453,19 @@ class Controller:
                     self.net.connect(role, device, p)
                     self.applied[role] = copy.deepcopy(p)
                     up = self.net.connected(role, device, p)
+                    if up: self.retries.pop(role, None)
+                    else: self.retries[role] = self.retries.get(role, 0) + 1
                 except NetworkError as error:
                     up = False
+                    self.retries[role] = self.retries.get(role, 0) + 1
                     rejected = isinstance(error, NetworkAuthenticationError)
                     if rejected: self.auth_failures.hold(p)
                     reason = error.reason if isinstance(error, NetworkIsolationError) else 'WIFI_AUTHENTICATION_FAILED' if rejected else 'ASSOCIATION_FAILED'
-                    self.operations.fail_association(p, reason)
+                    # The reason keeps its published value; the step that failed is said beside it.
+                    stage = getattr(error, 'stage', None)
+                    if stage: self.link_stages[role] = stage
+                    else: self.link_stages.pop(role, None)
+                    self.operations.fail_association(p, reason, stage)
                     with self.lock:
                         self.connection_events.phase(p, "failed", "ASSOCIATION_FAILED" if isinstance(error, NetworkIsolationError) else reason, self._event_contexts.get(p["id"]))
                     if isinstance(error, NetworkIsolationError):
@@ -1144,11 +1476,27 @@ class Controller:
                         row.update(state='authentication_failed', reason=reason, retry_blocked=True,
                                    message='Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.')
                         continue
+            # One reading serves the whole cycle: an instrument that stops giving an
+            # address between two readings is waited for, never a failed reconcile.
+            address = self.net.address(device) if up else ''
+            if up and not address:
+                up = False
+                self.link_stages[role] = 'ADDRESS_NOT_OBTAINED'
+            if up: self.link_stages.pop(role, None)
             if not up:
-                row.update(state="waiting", message="Waiting for the telescope · automatic reconnection")
+                failures = self.retries.get(role, 0)
+                wait = retry_interval(failures)
+                # The radio stays assigned, but an explicit request for another
+                # instrument may take it once an attempt has failed (see operations).
+                row.update(state="waiting", message="Waiting for the telescope · automatic reconnection",
+                           retry={'attempts': failures, 'interval_seconds': wait,
+                                  'next_in_seconds': max(0, int(self.attempts.get(role, now - wait) + wait - now))})
+                # Which step of joining its Wi-Fi failed last, when the system said so.
+                if self.link_stages.get(role): row['failure_stage'] = self.link_stages[role]
                 continue
-            address = self.net.address(device)
             row.update(connected=True, client_ip=address, state="connected", message="Wi-Fi connected")
+            # The instrument gave no address and the bridge took one of its fixed network itself.
+            if role in getattr(self.net, 'fallback_roles', ()): row['address_fallback'] = True
             network = ipaddress.IPv4Interface(address)
             target = ipaddress.IPv4Address(p["target_ip"])
             if p['id'] in self.routing_conflicts:
@@ -1181,6 +1529,9 @@ class Controller:
             ready = self.net.probe(p["target_ip"], device) if plugin(p['kind'])['readiness']=='vespera_tcp' else True
             row['service'] = self.service_readiness.check(p, device, address, now,
                 vespera=ready if plugin(p['kind'])['readiness']=='vespera_tcp' else None)
+            # A mount that may stop its Wi-Fi without a client: remember when it last answered.
+            if p['kind'] in WIFI_SLEEP and row['service'].get('state') != 'not_answering':
+                self.mount_contact[p['id']] = now
             row.update(relay_ready=bool(ready and paths), state="online" if ready and paths else "waiting_service",
                        message="Forwarding available" if ready else "Wi-Fi connected · waiting for service",
                        subnet=str(network.network),
@@ -1223,6 +1574,9 @@ class Controller:
                 else:
                     self.update(mode="error", message="Network error. Check the current management paths.")
             except Exception as error:
-                print("wifi-bridge: internal error " + type(error).__name__, flush=True)
+                # Where it happened, never the message: it may hold a network name.
+                frame = traceback.extract_tb(error.__traceback__)[-1:]
+                where = ' at ' + Path(frame[0].filename).name + ':' + str(frame[0].lineno) if frame else ''
+                print("wifi-bridge: internal error " + type(error).__name__ + where, flush=True)
                 self.update(mode="error", relay_ready=False, message="Internal error. Check the service log.")
             self.stop.wait(5)

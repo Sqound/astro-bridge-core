@@ -6,7 +6,7 @@ périodes de la source, une valeur porte l’heure de sa dernière lecture. « E
 signifie que l’observateur a cédé la place, pas que l’instrument s’est arrêté. Les
 valeurs absentes restent inconnues. Choisissez les données dans chaque profil.
 L’empilement Seestar nécessite une clé fournie par le propriétaire ; son obtention
-exige une action explicite et Internet sur le bridge. Vos choix d’écoute sont
+exige une action explicite et Internet sur le pont. Vos choix d’écoute sont
 conservés lors du remplacement de la clé. DWARF reste limité à la liaison et à une
 seule application à la fois.
 
@@ -33,7 +33,7 @@ Les Pi Zero W et Zero 2 W servent uniquement aux connexions et à la télémétr
 Les caméras visent les Pi de classe 3/4 approuvés ; commencez leur validation
 physique sur un banc Pi 3B. Activez volontairement le partage et la découverte dans
 Configuration → Caméras. La démo démarre sans caméra ; son bouton ajoute seulement
-un simulateur local, jamais une caméra physique. Les clients découvrent le bridge
+un simulateur local, jamais une caméra physique. Les clients découvrent le pont
 et lui demandent ses adresses réelles par connexion, sans vous faire saisir
 l’adresse d’un instrument. La découverte Alpaca répond seulement sur les réseaux
 de gestion confirmés ; une adresse n’apparaît qu’après l’ouverture de son écouteur.

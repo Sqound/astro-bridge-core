@@ -33,7 +33,18 @@
               }
             ],
             "free_radios": 0,
-            "simultaneous": false
+            "simultaneous": false,
+            "holders": [
+              {
+                "instrument_id": "tel-vespera-1",
+                "name": "Test telescope two",
+                "kind": "smart_telescope",
+                "state": "connected",
+                "current_operation": null,
+                "blocker": null,
+                "forceable": true
+              }
+            ]
           }
         }
       },

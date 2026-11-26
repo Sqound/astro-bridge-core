@@ -29,10 +29,28 @@ class CatalogSourceTests(unittest.TestCase):
     def test_generated_asset_matches_sources_and_all_ten_locales_are_complete(self):
         spec=importlib.util.spec_from_file_location('catalog_build',ROOT/'tools/build-i18n.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        self.assertEqual(module.compile_catalogs(),(ROOT/'wifi_bridge/static/i18n.js').read_text())
+        files=module.compile_catalogs()
+        # English is built in; each other language is its own asset, loaded only when chosen.
+        self.assertEqual(set(files),{'i18n.js'}|{f'i18n-{tag}.js' for tag,_,_ in module.LOCALES[1:]})
+        for name,value in files.items():
+            self.assertEqual(value,(ROOT/'wifi_bridge/static'/name).read_text(),name)
+        self.assertLess(len(files['i18n.js'].encode()),400_000)
         en=json.loads((ROOT/'locales/en.json').read_text());fr=json.loads((ROOT/'locales/fr.json').read_text())
         self.assertEqual(set(en),set(fr));self.assertGreater(len(en),600)
         # Every shipped locale has its own complete catalog; no automatic fill.
         for tag,_,_ in module.LOCALES:
             values=json.loads((ROOT/'locales'/f'{tag}.json').read_text())
             self.assertEqual(set(values),set(en),tag)
+
+    def test_adapter_that_carries_a_link_is_never_named_as_a_usb_connection(self):
+        # "USB connection B" on a mount linked over Wi-Fi read as a mount plugged by USB.
+        app=(ROOT/'wifi_bridge/static/app.js').read_text()
+        self.assertIn('t("Wi-Fi adapter {letter}"',app)
+        self.assertNotIn('USB connection',app)
+        for path in sorted((ROOT/'locales').glob('*.json')):
+            catalog=json.loads(path.read_text())
+            with self.subTest(locale=path.stem):
+                self.assertNotIn('USB connection {letter}',catalog)
+                label=catalog['Wi-Fi adapter {letter}']
+                self.assertIn('{letter}',label);self.assertNotIn('USB',label)
+                self.assertFalse(set(';\u2014')&set(label))

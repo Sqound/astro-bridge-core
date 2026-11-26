@@ -178,7 +178,7 @@ class ConnectionOperations:
                 'manufacturer_identity': 'unknown', 'maker_app_acceptance': 'unverified',
                 'service_readiness': 'checked' if plugin(profile['kind'])['readiness']=='vespera_tcp' else 'not_probed'}
 
-    def ensure(self, ident, expected, revision, client, expires, *, internal=False, origin=None, native_client=None, allow_replace=()):
+    def ensure(self, ident, expected, revision, client, expires, *, internal=False, origin=None, native_client=None, allow_replace=(), force_replace=()):
         c = self.c
         with c.lock:
             self.prune()
@@ -211,7 +211,8 @@ class ConnectionOperations:
                 if profile['enabled']: refused('MANUAL_CONNECTION_PENDING', 'This enabled profile has existing manual reconnect intent. Wait or disconnect it explicitly.')
                 if any(c.net.connected(role_for(profile), d) for d in c.state['devices']):
                     refused('ROLE_CLEANUP_PENDING', 'An unwanted association for this profile still needs cleanup.')
-                if self.negative.get(ident, 0) > self.clock(): refused('TARGET_BACKOFF', 'A recent failed attempt is cooling down; no automatic retry is queued.')
+                # The pause after a failure paces automatic attempts; a person who asks again is served.
+                if native_client is None and self.negative.get(ident, 0) > self.clock(): refused('TARGET_BACKOFF', 'A recent failed attempt is cooling down; no automatic retry is queued.')
                 if self.clock()-self.cooldowns.get(ident, -1e9) < auto_policy(c.store.config)['cooldown_seconds']: refused('REPLACEMENT_COOLDOWN', 'This instrument is cooling down after a replacement.')
                 if (self.active or c.discovery_pending or c.certificate_job_pending or c.certificates.busy()
                         or c.action_at is not None or c.stop.is_set() or c.pending_deletions or c.cleanup_required):
@@ -234,6 +235,7 @@ class ConnectionOperations:
                     'restoration': {'state': 'not_needed', 'reason': None}, 'status_url': '/api/v1/operations/'+operation}}
                 self.records[operation]['native_client'] = native_client
                 self.records[operation]['allow_replace'] = tuple(allow_replace)
+                self.records[operation]['force_replace'] = tuple(force_replace)
                 self.active = self.last = operation
                 self.expected, self.revision = revision(), revision
                 self.deadline = self.clock()+120
@@ -325,9 +327,12 @@ class ConnectionOperations:
         self.announce()
         return True
 
-    def fail_association(self, profile, reason='ASSOCIATION_FAILED'):
+    def fail_association(self, profile, reason='ASSOCIATION_FAILED', stage=None):
         if self.restoring and profile['id'] == self.victim_id: self.restore_failed = True
-        if self.overlay and self.overlay['id'] == profile['id']: self.failure = reason
+        if self.overlay and self.overlay['id'] == profile['id']:
+            self.failure = reason
+            # Which step failed (network not seen, association, address): the reason stays as published.
+            if stage and self.active: self.records[self.active]['public']['failure_stage'] = stage
 
     def verify_association(self, profile, device):
         if self.restoring and profile['id'] == self.victim_id:
@@ -372,6 +377,10 @@ class ConnectionOperations:
                 try: c.store.save(saved)
                 except OSError: self.failure = 'PERSISTENCE_FAILED'
                 else:
+                    if self.victim and self.victim.get('explicit'):
+                        # Say why the displaced profile is now disabled: it is not a lost link.
+                        c.release_notes.note(self.victim_id, 'REPLACED_ON_REQUEST' if self.victim['explicit'] == 'FORCED' else 'RADIO_YIELDED',
+                                             to=effective['id'])
                     value.update(state='succeeded', phase='finished', reason='READY',
                                  endpoint=self.endpoint(effective, row, c.state['home_ip']),
                                  restoration={'state':'not_needed','reason':'VICTIM_INTENT_REPLACED' if self.victim else None})
@@ -404,7 +413,7 @@ class ConnectionOperations:
         if free and not eligible_free: refused('REPLACEMENT_COOLDOWN', 'The free adapter is cooling down after replacement; no victim was taken.')
         free = eligible_free
         if not free:
-            device = self.replace(profile, devices, home)
+            device = self.release_for(profile, devices, home) or self.replace(profile, devices, home)
             # Only this actually displaced network may overlap the requested target.
             occupied=[] if profile.get('isolated') else c.occupied_management_networks(devices)
             occupied += [] if profile.get('isolated') else [ipaddress.ip_network(row['subnet']) for row in c.state['telescopes']
@@ -462,6 +471,82 @@ class ConnectionOperations:
                 return dict(measured, state='active' if measured.get('state') == 'active' else 'unknown',
                             reason='OPERATION_UNKNOWN', quiet_seconds=None)
             return measured
+
+    def holder_state(self, profile, device):
+        """How an enabled profile holds its radio.
+
+        unreachable: the link is down and at least one new attempt has failed since
+        the last association (or retries are stopped after a refused password or an
+        address conflict): the instrument is out of reach, not in use.
+        reconnecting: the link was just lost and no new attempt has failed yet.
+        in_service: connected with a running or unknown operation, recent traffic,
+        or a mount (the bridge cannot prove a mount is idle).
+        standby: connected, quiet, and the app that used it released its reservation.
+        connected: connected, nothing known to be running, never released.
+        Only unreachable and standby give way to an explicit request without confirmation.
+        """
+        c = self.c; role = role_for(profile)
+        if device and c.net.connected(role, device):
+            activity = c.net.activity_status().get('profiles', {}) if hasattr(c.net, 'activity_status') else {}
+            if (c.operation_state(profile) in ('running', 'unknown') or (activity.get(profile['id']) or {}).get('state') == 'active'
+                    or plugin(profile['kind'])['category'] == 'mount'): return 'in_service'
+            reserved = any(v['profile_id'] == profile['id'] for v in c.protection.leases.values())
+            return 'standby' if profile['id'] in c.standby and not reserved else 'connected'
+        if c.retries.get(role, 0) >= 1 or c.auth_failures.held(profile) or role in c.blocked: return 'unreachable'
+        return 'reconnecting'
+
+    def release_for(self, target, devices, home):
+        """Give an explicit app request the radio of a profile that only retries, of one
+        its app released, or of one the user confirmed.
+
+        Never used by automatic demands. A paused, owner-locked or otherwise
+        reserved profile is left alone; one in use is taken only when the request
+        names it in force_replace. Returns the freed radio, or None.
+        """
+        c = self.c; record = self.records[self.active]
+        client = record.get('native_client')
+        if client is None: return None
+        forced = record.get('force_replace', ())
+        hints = [a.get('frequency') for a in (target.get('physical_binding') or {}).get('aliases', []) if not target['bssid'] or a['bssid'] == target['bssid']]
+        required_bands = {'2.4' if f < 3000 else '5' if f < 5925 else '6' for f in hints if f}
+        choices = []
+        with c.lock:
+            for index, profile in enumerate(profiles(c.store.config)):
+                if not profile['enabled'] or profile['id'] == target['id'] or c.pauses.held(profile['id']): continue
+                device = next((d for d in devices if d['mac'] == profile['mac']), None)
+                if (not device or not role_allows(c.store.config, device['mac'], 'telescope')
+                        or device['mac'] in (home['mac'], c.state['hotspot'].get('mac'), reserved_hotspot_mac(c.store.config))): continue
+                if required_bands and not required_bands.intersection(device.get('bands', [])): continue
+                try: c.protection.native_guard(profile['id'], client)
+                except ApiError: continue
+                state = self.holder_state(profile, device)
+                if state == 'unreachable': choices.append((0, index, profile, device, 'UNREACHABLE'))
+                elif state == 'standby': choices.append((1, index, profile, device, 'STANDBY'))
+                elif profile['id'] in forced: choices.append((2, index, profile, device, 'FORCED'))
+            if not choices: return None
+            _, _, profile, device, reason = min(choices, key=lambda item: item[:2])
+            row = next((r for r in c.state['telescopes'] if r['id'] == profile['id']), None)
+            actual = c.net.link_observation(device, profile) if reason != 'UNREACHABLE' else None
+            if self.revision() != self.expected: refused('SUPERSEDED', 'Configuration changed before selection.')
+            # Only a connection that was ready is worth restoring if the request fails.
+            self.victim = {'id': profile['id'], 'intent': c.pauses.fingerprint(profile), 'explicit': reason,
+                           'actual_bssid': actual['bssid'] if actual else None,
+                           'restorable': bool(actual and self.current(profile, row, device))}
+            self.allocated = device['mac']
+            # This client's own reservation on the displaced instrument ends with it.
+            for key, value in list(c.protection.leases.items()):
+                if value['profile_id'] == profile['id'] and value['client'] == client:
+                    c.protection.leases.pop(key)
+                    if c.protection.lease_hook: c.protection.lease_hook('lease.ended', profile['id'], key, 0, 'RELEASED')
+            record['public'].update(phase='disconnecting_victim', reason={'UNREACHABLE': 'RELEASING_UNREACHABLE', 'STANDBY': 'RELEASING_STANDBY'}.get(reason, 'FORCED_REPLACEMENT'),
+                                    displaced={'profile_id': profile['id'], 'reason': reason})
+            effective = self.intent(copy.deepcopy(c.store.config))
+            c.connection_events.request(c.store.config, effective, self.cause, operation_id=self.active)
+        self.announce()
+        c.cycle()  # Stops the retries or the confirmed connection; other relays stay.
+        if c.net.connected(role_for(profile), device) or not c.net.radio_idle(device):
+            refused('VICTIM_DISCONNECT_FAILED', 'Displaced connection did not release its radio.')
+        return device
 
     def replace(self, target, devices, home):
         c = self.c; policy = auto_policy(c.store.config)
@@ -549,6 +634,10 @@ class ConnectionOperations:
         return device
 
     def restore(self, value):
+        if self.victim.get('explicit') and not self.victim.get('restorable'):
+            # It was not connected: its saved intent is untouched and the ordinary retries resume.
+            self.overlay = None
+            return 'not_needed', 'ORIGINAL_INTENT_PRESERVED'
         try: return self._restore(value)
         except Exception:
             # Enumeration/identity checks can fail independently of reconcile.
@@ -652,7 +741,8 @@ class ConnectionOperations:
                 self.negative = {key:until for key,until in self.negative.items() if until > self.clock()}
         finally:
             with c.lock:
-                if self.victim:
+                if self.victim and not self.victim.get('explicit'):
+                    # Cooldowns pace automatic replacement only, never a user's explicit request.
                     self.last_replacement = self.clock()
                     for key in (self.victim_id, self.records[operation]['public']['profile_id'], self.allocated):
                         if key: self.cooldowns[key] = self.clock()

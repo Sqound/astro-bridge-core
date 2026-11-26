@@ -22,7 +22,8 @@ try{
  const page=await browser.newPage({viewport:{width:375,height:900}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
  await page.goto(`http://127.0.0.1:${port}`);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
  const check=async(name,fn)=>{await fn();results.push(name);console.log('PASS',name);};
- await page.locator('#nav-networks').click();
+ // Navigation goes through a hash change, a queued task: wait for the page before non-waiting checks such as isVisible.
+ await page.locator('#nav-networks').click();await page.locator('#view-networks').waitFor({state:'visible'});
  await check('three explanatory modes, collapsed advanced access and one stable help modal',async()=>{
   assert.deepEqual(await page.locator('#connection-mode option').evaluateAll(items=>items.map(e=>e.value)),['private','hotspot_isolated','hotspot_shared']);
   assert.equal(await page.locator('#connection-mode-card details').evaluate(e=>e.open),false);
@@ -57,7 +58,7 @@ try{
   assert.equal(await page.evaluate(()=>state.config.connection_mode),'hotspot_shared');
   await page.locator('#connection-mode').selectOption('private');
   assert.equal(await page.locator('#optional-hotspot').isVisible(),true);
-  assert.match(await page.locator('#simple-home-purpose').innerText(),/use your telescope apps on that network/);
+  assert.match(await page.locator('#simple-home-purpose').innerText(),/use your instrument apps on that network/);
   await page.locator('#connection-mode').selectOption('hotspot_shared');
   await page.locator('#hotspot-name-form').screenshot({path:resolve(output,'hotspot-name-375.png')});
  });
@@ -86,7 +87,7 @@ try{
  await check('ten locales fit at 320px and do not erase the mode draft',async()=>{
   await page.setViewportSize({width:320,height:900});
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,locale);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.equal(await page.locator('#connection-mode').inputValue(),'hotspot_shared');
   }
   await page.locator('#connection-mode-card').screenshot({path:resolve(output,'network-modes-320.png')});

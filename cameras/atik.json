@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "atik",
+  "driver": "atik",
+  "usb": [
+    {"vendor_id": 8423, "except_product_ids": []}
+  ],
+  "validation": "unverified"
+}

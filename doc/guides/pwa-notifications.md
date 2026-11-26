@@ -27,7 +27,7 @@ Downloading a profile does not install or trust it. Complete both iOS settings s
 
 | Category | Examples |
 | --- | --- |
-| Discovery | Recognized unsaved telescope; opens the prefilled addition flow |
+| Discovery | Recognized unsaved instrument; opens the prefilled addition flow |
 | Connections | Instrument connected, disconnected or needs attention |
 | Switching | Switch started, estimated duration and completion/failure |
 | Hotspot | A client joined the hotspot |

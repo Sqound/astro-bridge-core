@@ -52,7 +52,13 @@
           "corrected_utc": "2026-11-04T00:00:00.000+00:00",
           "offset_ms": 0,
           "source": "lower_bound",
-          "hint_age_seconds": null
+          "hint_age_seconds": null,
+          "last_sync": {
+            "kind": "never",
+            "age_seconds": null,
+            "this_run": false,
+            "last_network_sync_utc": null
+          }
         }
       },
       "note": "System UTC and corrected UTC are estimates; only sequences order records.",
@@ -88,7 +94,13 @@
           "corrected_utc": "2026-11-04T00:00:00.000+00:00",
           "offset_ms": 0,
           "source": "client_hint",
-          "hint_age_seconds": 0
+          "hint_age_seconds": 0,
+          "last_sync": {
+            "kind": "client_hint",
+            "age_seconds": 0,
+            "this_run": true,
+            "last_network_sync_utc": null
+          }
         }
       },
       "note": "Read scope is sufficient; an already synchronized clock ignores the hint. Otherwise the last eight offsets use a median on a monotonic timeline.",
@@ -98,7 +110,10 @@
         "/corrected_utc": "^\\d{4}-\\d{2}-\\d{2}T.*\\+00:00$",
         "/offset_ms": "^-?\\d+$",
         "/source": "^(client_hint|ntp)$",
-        "/hint_age_seconds": "^(0|None)$"
+        "/hint_age_seconds": "^(0|None)$",
+        "/last_sync/kind": "^(client_hint|network)$",
+        "/last_sync/age_seconds": "^\\d+$",
+        "/last_sync/last_network_sync_utc": "^(None|\\d{4}-\\d{2}-\\d{2}T.*\\+00:00)$"
       }
     }
   ]

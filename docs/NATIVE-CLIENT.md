@@ -225,7 +225,7 @@ owner locks and another client's lease always win, including after confirmation.
 | --- | --- |
 | 200 | `{state:"ready",instrument_id,lease:{id,expires_in},endpoint}`; use the returned endpoint |
 | 202 | `{state:"connecting",operation:{id,status_url},lease:{id,expires_in}}`; poll the existing operation |
-| 409 `NO_FREE_RADIO` | `error.replaceable:[{instrument_id,name}]`; ask the user, then resend with only confirmed victims |
+| 409 `NO_FREE_RADIO` | `error.replaceable:[{instrument_id,name}]`; ask the user, then resend with only confirmed victims. Since 1.2.0 `error.holders` names the instruments that keep the radios (see [Radio release](#radio-release-additive-proposed-for-contract-13)) |
 | 409 `INSTRUMENT_PROTECTED` | `error.reason` explains the protection; do not retry around it |
 | 409 `LEASED_BY_OTHER_CLIENT` | Another client's reservation wins |
 | 403 `CLIENT_CONNECT_DISABLED` | Owner disabled this client action |
@@ -274,10 +274,14 @@ NOT_CONNECTED**. Refresh after connection loss, movement or address change.
   access; it is never a manufacturer-control lock.
 - `POST /instruments/{id}/release {lease_id}` returns `{ok:true}`. Normal quiet and
   switching policy applies afterwards; it does **not** immediately disconnect.
-- `POST /instruments/{id}/disconnect {lease_id?}` returns `{ok:true}` for the user's
+  Since 1.2.0, an instrument left connected this way gives its radio to the next
+  explicit `connect` for another instrument without any confirmation, unless it is
+  still in use.
+- `POST /instruments/{id}/disconnect {lease_id?,reason?}` returns `{ok:true}` for the user's
   explicit disconnect request. Another client's lease returns **409
   LEASED_BY_OTHER_CLIENT**. The response acknowledges the request, not physical
-  completion; follow catalog/events for the actual link state.
+  completion; follow catalog/events for the actual link state. Since 1.2.0,
+  `reason: "switched_off"` records that the instrument was switched off on purpose.
 
 While a lease runs, the bridge restores a lost link automatically. No client
 retry loop should fight that recovery. A lease remains subject to expiry and the
@@ -787,6 +791,13 @@ will not have to replace another instrument (protection and leases still apply).
 It is a hint at announcement time, not a reservation. A 1.0 bridge omits all of
 these; absence means unknown, never zero.
 
+`boot=<8 lowercase hex>` (additive) changes at every start of the bridge service:
+the first characters of the `boot_id` of its events. A client that kept an
+earlier answer for this `id`, a failed check included, must read `/info` again
+when `boot` differs. The bridge also restarts its announcement daemon by itself
+when it finds it stopped, so the announcement returns after a restart of the
+bridge without any other change.
+
 ### Retry-After
 
 Every 429 response carries a `Retry-After` header in seconds and the same value
@@ -880,3 +891,146 @@ the same paths as administrator `management`), with `url` such as
 `tls_fingerprint`. The list is empty when the bridge knows no path. Open `url` as
 given to show the owner's web interface; never build an address yourself.
 Scenario: [info-public](../contracts/native-client/v1/info-public.json).
+
+## Radio release (additive, proposed for contract 1.3)
+
+Shipped in 1.1.1. Every field below is optional or new in a response; the frozen
+1.2 snapshot is unchanged, `contract_minor` stays `2`, and a client that sends
+and reads nothing new keeps working. These rules are covered by tests with
+simulated radios only; they are **not verified on hardware** yet.
+
+One free Wi-Fi adapter links one instrument at a time. An enabled profile keeps
+its adapter. What happens to a `connect` for **another** instrument depends on
+what the holder is doing:
+
+| Holder `state` | Meaning | A `connect` for another instrument |
+| --- | --- | --- |
+| `unreachable` | Link down and at least one new attempt failed (switched off, out of range), or retries stopped after a refused password or an address conflict | Takes the radio. No confirmation |
+| `standby` | Connected and quiet, and the app that used it released its reservation (`release`) | Takes the radio. No confirmation |
+| `reconnecting` | Link just lost, no new attempt has failed yet | `409 NO_FREE_RADIO`; `force_replace` accepted |
+| `connected` | Connected, nothing known to be running, never released | `409 NO_FREE_RADIO`; `force_replace` accepted |
+| `in_service` | Connected with a running or unknown operation, recent traffic, or a mount (the bridge cannot prove a mount is idle) | `409 NO_FREE_RADIO`; `force_replace` accepted |
+
+A paused connection, an owner lock or another client's reservation is never
+taken, forced or not: the holder then has `forceable: false` and a `blocker`
+(`CONNECTION_PAUSED`, `OWNER_LOCKED`, `LEASED_BY_OTHER_CLIENT`).
+
+### Refusal
+
+```json
+{"error": {"code": "NO_FREE_RADIO", "message": "…", "replaceable": [], "free_radios": 0, "simultaneous": false,
+  "holders": [{"instrument_id": "tel-vespera-1", "name": "Test telescope two", "kind": "smart_telescope",
+               "state": "in_service", "current_operation": {"state": "running", "kind": "observation", "since": "…"},
+               "blocker": null, "forceable": true}]}}
+```
+
+Nothing was changed on the bridge. Show the holder's `name` and what it is doing.
+Treat an unknown `state` as `in_service`.
+
+### Forcing after the user's confirmation
+
+Send the same `connect` again with `"force_replace": ["tel-vespera-1"]` (at most 24
+identifiers, taken from `holders` with `forceable: true`). Unlike `allow_replace`
+it needs neither the owner's `auto_replaceable` consent nor a quiet connection,
+and no replacement cooldown applies. Ask the user first, naming the instrument:
+forcing cuts the bridge's link to it whatever it is doing. **A mount keeps
+moving or tracking on its own when its link is cut; the bridge sends it no
+command.** If the new instrument cannot be linked, the bridge restores the
+replaced connection. A 1.1.0 bridge answers `400 INVALID_FIELDS` to this field.
+
+### What gave way
+
+When a request takes a radio, the `200` or `202` answer and the operation add:
+
+```json
+"displaced": {"instrument_id": "tel-vespera-1", "name": "Test telescope two", "kind": "smart_telescope", "reason": "UNREACHABLE"}
+```
+
+`reason` is `UNREACHABLE`, `STANDBY` or `FORCED`. On a `202` it is the bridge's
+plan; the operation result is authoritative. The displaced profile is disabled
+(no more attempts) and its catalog entry says why until it is linked again:
+
+```json
+"released": {"reason": "RADIO_YIELDED", "to": "tel-seestar-1", "age_seconds": 42}
+```
+
+`released.reason` is `RADIO_YIELDED` (unreachable or on standby, radio given to
+`to`), `REPLACED_ON_REQUEST` (forced) or `SWITCHED_OFF` (below). `age_seconds` is
+null after a bridge restart. `released` is absent otherwise. This client's own
+reservation on the displaced instrument ends (`lease.ended`, `RELEASED`).
+
+### Switched off on request
+
+After the user switches an instrument off (or asks the instrument to shut down)
+through the bridge, call `POST /instruments/{id}/disconnect` with
+`{"lease_id": "…", "reason": "switched_off"}`. The bridge relays the
+manufacturer protocol without reading it, so it cannot know by itself that a
+shutdown was requested. The profile is disabled, its radio is free at once, no
+attempt is made, and the catalog shows `released.reason: "SWITCHED_OFF"` with
+`link: "saved"`: say "switched off", not "link lost". A 1.1.0 bridge answers
+`400 INVALID_FIELDS`: send the request again without `reason`.
+
+### Lost without any request
+
+The bridge keeps the profile enabled and retries by itself, with a growing
+wait: 15 s, then 15, 30, 60, 120, 240 and 300 s between attempts (ceiling: five
+minutes). While at least one attempt has failed, the catalog entry adds:
+
+```json
+"retry": {"attempts": 4, "interval_seconds": 120, "next_in_seconds": 37}
+```
+
+The instrument is then `unreachable`: its radio goes to any explicit request for
+another instrument. A `connect` for the lost instrument itself answers as before
+(its own radio is not free) and makes the bridge try again at its next
+reconcile, without waiting for `next_in_seconds`.
+
+### Busy network
+
+`connect` answers `409 NETWORK_BUSY` while the bridge reconciles its network
+(an attempt towards an absent instrument can take up to 40 s on hardware). With
+`wait_seconds`, the bridge now tries again by itself within that time; otherwise
+retry after a few seconds.
+
+### Which step of a link failed
+
+A link that cannot be made keeps its published reason (`ASSOCIATION_FAILED`).
+When the system names the step, the failed operation and the catalog entry of
+an instrument the bridge keeps retrying add `failure_stage`:
+
+| `failure_stage` | What happened | What to tell the user |
+| --- | --- | --- |
+| `NETWORK_NOT_FOUND` | The instrument's Wi-Fi is not heard | Check that it is on and near the bridge; if it is, restart it |
+| `NOT_ASSOCIATED` | Heard, but the instrument did not accept the link | Try again; move the bridge closer |
+| `ADDRESS_NOT_OBTAINED` | Linked, but the instrument gave no address | Restart the instrument: its Wi-Fi no longer gives addresses |
+
+The field is absent when nothing names the step, on a wrong password
+(`WIFI_AUTHENTICATION_FAILED`) and on earlier bridges; treat an unknown value
+as absent. It is derived from NetworkManager's own codes and has been checked
+with simulated answers only.
+
+### An instrument that gives no address
+
+Some instruments keep accepting the Wi-Fi link and stop giving addresses. For
+an instrument whose own network always uses one address plan (today a SynScan
+mount at `192.168.4.1/24`, nothing else), the bridge then takes a free address
+of that network itself: one of `.250`, `.249`, `.248`, probed first so that an
+address that answers is left to its owner, and kept only if the instrument
+answers a ping. Nothing else is sent to the instrument. The catalog entry says
+`"address_fallback": true` while this lasts, and every new link asks the
+instrument for an address first.
+
+The owner switches it off with `auto_policy.address_fallback: false`
+(`PATCH /api/v1/settings`); it is on unless set. Without it, or for any other
+instrument, the attempt fails with `failure_stage: "ADDRESS_NOT_OBTAINED"`.
+Written from one bench observation and checked with simulated answers only:
+**not yet verified on hardware**.
+
+### Asking again after a failure
+
+The two-minute pause after a failed attempt (`409 TARGET_BACKOFF`) paces the
+bridge's own automatic attempts only. A `connect` sent by a paired app is a
+person asking again: it starts a new attempt at once, within the usual limit of
+five requests a minute (`429 CONNECT_LIMITED`). A 1.1.0 bridge answers
+`409 TARGET_BACKOFF` to such a request: the bridge answered, so say that it
+is busy and when to try again, not that it does not answer.

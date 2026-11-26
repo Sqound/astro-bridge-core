@@ -28,6 +28,14 @@ class NativeCameras:
             return []
         used = {p['id'] for p in self.c.store.config['telescopes']}
         aliases = {}
+        from .catalog import entries
+        from .vendor_process import verified_on_hardware
+        manufacturers = entries()
+        for row in rows:
+            # A manufacturer driver says whether a camera of that brand was ever served on the bench.
+            if row.get('driver') in manufacturers:
+                row['verified_on_hardware'] = (manufacturers[row['driver']]['verified_on_hardware']
+                                               and verified_on_hardware(row['driver']))
         for row in sorted(rows, key=lambda item: item['id']):
             ident = row['id']
             if not re.fullmatch('[a-z0-9][a-z0-9-]{0,31}', ident) or ident in used:

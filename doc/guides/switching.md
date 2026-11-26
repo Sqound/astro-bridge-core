@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) / Switching
 
-Enable **Automatic telescope switching** on the home page. It reacts to supported app searches or connection attempts reaching Astro Bridge.
+Enable **Automatic instrument switching** on the home page. It reacts to supported app searches or connection attempts reaching Astro Bridge.
 
 ![Automatic switching settings](../images/switching-settings.png)
 

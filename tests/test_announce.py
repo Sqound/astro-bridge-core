@@ -108,8 +108,45 @@ class AnnouncementTests(unittest.TestCase):
                         update(root, 'bridge', [], SETTINGS, runtime, lambda args: (_ for _ in ()).throw(OSError()))
                 calls = []
                 self.assertTrue(update(root, 'bridge', [], SETTINGS, runtime, calls.append))
-                self.assertEqual(calls, [expected])
+                # A reload that failed means no daemon was running: the next try starts it.
+                self.assertEqual(calls, [['systemctl', 'restart', 'avahi-daemon']])
                 self.assertFalse(update(root, 'bridge', [], SETTINGS, runtime, calls.append))
+
+    def test_stopped_daemon_is_started_again_without_any_file_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            net = LinuxNetwork(directory); calls = []; running = {'daemon': False}
+
+            def command(args, **kwargs):
+                calls.append(list(args))
+                if args == ['avahi-daemon', '--check'] and not running['daemon']: raise NetworkError('System command failed: avahi-daemon')
+                if args == ['systemctl', 'restart', 'avahi-daemon']: running['daemon'] = True
+                return ''
+            appliance = lambda marker: marker.name == 'pi5-appliance'
+            with patch('wifi_bridge.runtime.platform', return_value='native'), \
+                 patch('wifi_bridge.cameras.discovery._pi5_marker', side_effect=appliance), \
+                 patch('wifi_bridge.announce.update', return_value=False), patch('wifi_bridge.network.run', side_effect=command):
+                # After a restart of the bridge service alone the files are unchanged and nothing is running.
+                self.assertTrue(net.identity('bridge', [{'name': 'wlan0'}], SETTINGS, {}))
+                self.assertEqual(calls, [['avahi-daemon', '--check'], ['systemctl', 'restart', 'avahi-daemon']])
+                calls.clear()
+                self.assertFalse(net.identity('bridge', [{'name': 'wlan0'}], SETTINGS, {}))
+                self.assertEqual(calls, [])  # At most twice a minute.
+                self.assertFalse(net.keep_announcing(now=net.announce_check)); self.assertEqual(calls, [['avahi-daemon', '--check']])
+                # A daemon that cannot be started never fails the reconcile.
+                running['daemon'] = False; calls.clear()
+                with patch('wifi_bridge.network.run', side_effect=NetworkError('unavailable')):
+                    self.assertFalse(net.keep_announcing(now=net.announce_check))
+
+    def test_each_start_of_the_bridge_changes_the_announcement(self):
+        first = dict(s.split('=', 1) for s in txt_records(SETTINGS, {'boot': '0123abcd'}))
+        self.assertEqual(first['boot'], '0123abcd')
+        self.assertNotIn('boot', dict(s.split('=', 1) for s in txt_records(SETTINGS, {})))
+        for value in ('0123ABCD', '0123abc', 12345678, '0123abcd-'):
+            with self.assertRaises(ValueError): txt_records(SETTINGS, {'boot': value})
+        fixture = Fixture('setUp'); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        _, runtime = fixture.controller.announcement()
+        self.assertRegex(runtime['boot'], '^[0-9a-f]{8}$')
+        self.assertTrue(fixture.controller.event_store.boot_id.replace('-', '').startswith(runtime['boot']))
 
     def test_stable_private_random_installation_identity(self):
         with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
@@ -144,6 +181,23 @@ class AnnouncementTests(unittest.TestCase):
                 publish.assert_not_called()
             with patch('wifi_bridge.runtime.platform', return_value='docker'), \
                  patch('wifi_bridge.cameras.discovery.pi5_gphoto_enabled', return_value=True), \
+                 patch('wifi_bridge.announce.update') as publish:
+                self.assertFalse(net.identity('bridge', [], SETTINGS, {}))
+                publish.assert_not_called()
+
+    def test_public_pi5_image_marker_enables_the_announcement(self):
+        # The public Pi 5 image has no private camera marker; its own image
+        # marker must still let the bridge start Avahi and announce itself.
+        with tempfile.TemporaryDirectory() as directory:
+            net = LinuxNetwork(directory)
+            appliance = lambda marker: marker.name == 'pi5-appliance'
+            with patch('wifi_bridge.runtime.platform', return_value='native'), \
+                 patch('wifi_bridge.cameras.discovery._pi5_marker', side_effect=appliance), \
+                 patch('wifi_bridge.announce.update', return_value=True) as publish:
+                self.assertTrue(net.identity('bridge', [{'name':'eth0'}], SETTINGS, {}))
+                self.assertEqual(publish.call_args.args[2], [{'name':'eth0'}])
+            with patch('wifi_bridge.runtime.platform', return_value='native'), \
+                 patch('wifi_bridge.cameras.discovery._pi5_marker', return_value=False), \
                  patch('wifi_bridge.announce.update') as publish:
                 self.assertFalse(net.identity('bridge', [], SETTINGS, {}))
                 publish.assert_not_called()

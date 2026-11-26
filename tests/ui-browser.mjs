@@ -55,8 +55,8 @@ try {
   await check("English default and authenticated actual demo state", async () => {
     assert.equal(await page.locator("html").getAttribute("lang"), "en");
     await page.locator("#login-password").fill("synthetic-wrong-password");await page.locator("#login-form button").click();await page.waitForFunction(()=>document.getElementById("error").textContent==="Incorrect password.");
-    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();assert.equal(await page.locator("#error").textContent(),"Mot de passe incorrect.");
-    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="en"]').click();
+    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await page.waitForFunction(()=>BridgeI18n.locale==="fr");assert.equal(await page.locator("#error").textContent(),"Mot de passe incorrect.");
+    await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="en"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'en');
     await login(); assert.equal((await data()).demo, true);
     // Fresh AP-only configuration is independent of an optional home network.
     await clickTab("nav-configuration");await clickTab("tab-telescopes");await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -75,7 +75,7 @@ try {
     await clickTab("nav-telescopes");assert.equal(await page.locator(`[id^="simple-connect-"][id$="-${fresh.id}"]`).count(),1);
     await connect(free.number,fresh);await waitData(s=>s.telescopes.find(p=>p.id===fresh.id)?.relay_ready);
     const connected=await data();assert.equal(connected.config.telescopes[0].mac,free.mac);assert.equal(connected.hotspot.mac,hotspotMac);assert.equal(connected.hotspot.active,true);
-    assert.equal((await data()).management.mode,"ap_only");assert.match(await page.locator("#simple-notice").textContent(),/You can use telescopes through the hotspot/);
+    assert.equal((await data()).management.mode,"ap_only");assert.match(await page.locator("#simple-notice").textContent(),/You can use instruments through the hotspot/);
     await page.waitForFunction(()=>state?.management?.mode==="ap_only");assert.equal(await page.locator("#management-notice").isVisible(),false);
     assert.equal(await page.locator("#other-network-interfaces").getAttribute("open"),null);
     await page.locator("#other-network-interfaces summary").click();assert.equal(await page.locator('[data-reserved-role="hotspot"]').textContent(),"Reserved for hotspot");assert.equal(await page.locator("#other-connections button").count(),0);await page.locator("#other-network-interfaces summary").click();
@@ -130,7 +130,7 @@ try {
       await clickTab("nav-telescopes");await connect(firstConnection,profiles[0]);await waitData(s=>s.telescopes.find(p=>p.id===profiles[0].id)?.relay_ready);
       await clickTab("nav-configuration");await clickTab("tab-telescopes");assert.equal(await page.locator(`[id="profile-${profiles[0].id}-info"]`).count(),1);
       for(const locale of ["en","fr","ja","de","es","it","pt-BR","zh-Hans","zh-Hant","ru"]){
-        await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();
+        await clickUserControl(page, '#locale-menu summary');await page.locator(`button[data-locale="${locale}"]`).click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,locale);
         assert.equal(await page.locator("html").getAttribute("lang"),locale);assert.equal(await page.locator("#locale-select").inputValue(),locale);assert.equal(await page.locator("#locale-fallback").isVisible(),false);
         for(const width of [320,375,768,1280]){
           await page.setViewportSize({width,height:960});await page.waitForTimeout(100);
@@ -148,18 +148,18 @@ try {
     });
     await check("localization: open editor draft and focus survive synchronized language changes",async()=>{
       await page.locator(`[id="profile-${profiles[0].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#profile-name").fill("UNSENT PRIVATE LOCALIZATION DRAFT");await page.locator("#profile-name").focus();
-      for(const locale of ["en","fr","ja","de","es","it","pt-BR","zh-Hans","zh-Hant","ru"]){await page.evaluate(locale=>BridgeI18n.setLocale(locale),locale);assert.equal(await page.locator("#profile-name").inputValue(),"UNSENT PRIVATE LOCALIZATION DRAFT");assert.equal(await page.locator("#profile-name").evaluate(e=>e===document.activeElement),true);assert.equal(await page.locator("#locale-select").inputValue(),locale);assert.equal(await page.locator("#editor-title").textContent(),await page.evaluate(()=>BridgeI18n.t("Edit telescope")));}
+      for(const locale of ["en","fr","ja","de","es","it","pt-BR","zh-Hans","zh-Hant","ru"]){await page.evaluate(locale=>BridgeI18n.setLocale(locale),locale);assert.equal(await page.locator("#profile-name").inputValue(),"UNSENT PRIVATE LOCALIZATION DRAFT");assert.equal(await page.locator("#profile-name").evaluate(e=>e===document.activeElement),true);assert.equal(await page.locator("#locale-select").inputValue(),locale);assert.equal(await page.locator("#editor-title").textContent(),await page.evaluate(()=>BridgeI18n.t("Edit instrument")));}
       await page.evaluate(()=>BridgeI18n.setLocale("fr"));assert.equal(await page.locator("#locale-select").inputValue(),"fr");assert.equal(await page.locator("#editor-title").textContent(),"Modifier le télescope");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
       await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});assert.equal(await page.locator("html").getAttribute("lang"),"fr");
       assert.doesNotMatch(await page.locator("body").innerText(),/UNSENT PRIVATE LOCALIZATION DRAFT/);
     });
     await check("localization: error to success and closed editor cannot resurrect old messages",async()=>{
       await page.evaluate(()=>BridgeI18n.setLocale("en"));await clickTab("tab-general");
-      await page.locator("#credential-target").selectOption("linux");
-      const fill=async password=>{await page.locator("#current-password").fill(password);await page.locator("#new-password").fill("synthetic-new-linux-password");await page.locator("#confirm-password").fill("synthetic-new-linux-password");await page.locator("#credentials-form button").click();};
-      await fill("synthetic-wrong-password");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Incorrect current administrator password.");
-      await fill("12345678");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Password changed.");await page.evaluate(()=>BridgeI18n.setLocale("fr"));
-      assert.equal(await page.locator("#credentials-message").textContent(),"Mot de passe modifié.");
+      const fill=async(current,password)=>{await page.locator("#current-password").fill(current);await page.locator("#new-password").fill(password);await page.locator("#confirm-password").fill(password);await page.locator("#credentials-form button").click();};
+      await fill("synthetic-wrong-password","synthetic-new-bridge-pass");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="Incorrect current administrator password.");
+      // The single password rule: no space, no accented letter. Nothing changes on the bridge.
+      await fill("12345678","synthetic new pass");await page.waitForFunction(()=>document.getElementById("credentials-message").textContent==="The password must have 8 to 63 characters: letters without accents, digits and symbols, without spaces.");await page.evaluate(()=>BridgeI18n.setLocale("fr"));
+      assert.equal(await page.locator("#credentials-message").textContent(),"Le mot de passe doit faire 8 à 63 caractères : lettres sans accent, chiffres et signes, sans espace.");
       await clickTab("tab-telescopes");await page.locator(`[id="profile-${profiles[1].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#network-ssid").fill("😀".repeat(9));await page.locator("#network-password").fill("synthetic-scope-pass");await page.locator("#network-save").click();await page.locator("#editor-error").waitFor({state:"visible"});
       await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.evaluate(()=>BridgeI18n.setLocale("en"));await page.locator(`[id="profile-${profiles[1].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
       assert.equal(await page.locator("#editor-error").textContent(),"");assert.equal(await page.locator("#editor-error").isVisible(),false);await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -178,7 +178,7 @@ try {
       await page.screenshot({path:resolve(output,"field-ap-only-en.png"),fullPage:true,timeout:10000});
     });
     await check("field: notice remains visible in all tabs and French mobile without overflow",async()=>{
-      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await page.setViewportSize({width:375,height:960});
+      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'fr');await page.setViewportSize({width:375,height:960});
       for(const tab of ["nav-telescopes","nav-networks","nav-configuration"]){await clickTab(tab);assert.equal(await page.locator("#management-notice").isVisible(),true);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
       assert.match(await page.locator("#management-notice").innerText(),/point d’accès uniquement/);await page.waitForTimeout(350);
       await page.screenshot({path:resolve(output,"field-ap-only-fr-375.png"),fullPage:true,timeout:10000});
@@ -232,7 +232,7 @@ try {
       await page.setViewportSize({width:375,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:resolve(output,"dwarf-proxy-endpoint-375.png"),fullPage:true,timeout:10000});
     });
     await check("replacement: French mobile guidance and logout clears policy/private profile state",async()=>{
-      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await clickTab("tab-general");
+      await clickUserControl(page, '#locale-menu summary');await page.locator('[data-locale="fr"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'fr');await clickTab("tab-general");
       await page.setViewportSize({width:375,height:960});await page.waitForTimeout(350);
       assert.match(await page.locator("#auto-policy-form").innerText(),/interrompre une pose/);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       await page.screenshot({path:resolve(output,"replacement-policy-fr-375.png"),fullPage:true,timeout:10000});
@@ -260,13 +260,13 @@ try {
       await page.locator("#protection-password").fill("12345678");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();
       await page.waitForFunction(()=>document.getElementById("protection-error").textContent.includes("renewed"));assert.equal(await page.locator("#protection-password").inputValue(),"");assert.equal(await page.locator("#protection-confirm").isChecked(),false);
       await page.locator("#protection-cancel").click();await page.reload();await page.locator("#dashboard").waitFor({state:"visible"});await clickTab("nav-configuration");await clickTab("tab-general");
-      await page.locator("#connection-protection-settings>summary").click();await page.locator("#locale-select").selectOption("fr");await page.locator(`#lease-${foreignLease.id}-release`).click();
+      await page.locator("#connection-protection-settings>summary").click();await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"fr");await page.locator(`#lease-${foreignLease.id}-release`).click();
       for(const width of [320,375,768]){await page.setViewportSize({width,height:960});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.getElementById("protection-dialog").scrollWidth<=document.getElementById("protection-dialog").clientWidth));}
       await page.setViewportSize({width:375,height:960});await page.screenshot({path:resolve(output,"owner-release-fr-375.png"),fullPage:false});
       await page.locator("#protection-password").fill("12345678");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();await page.locator("#protection-dialog").waitFor({state:"hidden"});await waitData(s=>!s.connection_protection.leases.some(l=>l.id===foreignLease.id));
     });
     await check("protection: cancel and Escape clear secrets; late error cannot enter another dialog",async()=>{
-      await page.setViewportSize({width:1280,height:960});await page.locator("#locale-select").selectOption("en");await clickTab("tab-telescopes");
+      await page.setViewportSize({width:1280,height:960});await page.locator("#locale-select").selectOption("en");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"en");await clickTab("tab-telescopes");
       for(const dismiss of ["cancel","escape"]){await page.locator(`[id="profile-${profiles[0].id}-lock"]`).click();await page.locator("#protection-password").fill("synthetic-unsent-password");await page.locator("#protection-confirm").check();if(dismiss==="cancel")await page.locator("#protection-cancel").click();else await page.keyboard.press("Escape");await page.locator("#protection-dialog").waitFor({state:"hidden"});assert.equal(await page.locator("#protection-password").inputValue(),"");assert.equal(await page.locator("#protection-confirm").isChecked(),false);}
       let release,held=false,done;const completed=new Promise(r=>done=r);await context.route("**/api/protection",async route=>{try{const response=await route.fetch();held=true;await new Promise(r=>release=r);await route.fulfill({response});}finally{done();}});
       await page.locator(`[id="profile-${profiles[0].id}-lock"]`).click();await page.locator("#protection-password").fill("wrong-test-password");await page.locator("#protection-confirm").check();await page.locator("#protection-form button[type=submit]").click();while(!held)await new Promise(r=>setTimeout(r,25));
@@ -304,7 +304,7 @@ try {
       await page.locator(`[id="profile-${profiles[1].id}-ensure"]`).click();await waitData(s=>s.connection_operation?.profile_id===profiles[1].id&&s.connection_operation.state==="failed");
       await page.waitForFunction(()=>document.getElementById("ensure-message").textContent.includes("already in use"));
       const status=await data();assert.equal(status.connection_operation.reason,"PHYSICAL_NETWORK_IN_USE");assert.equal(status.telescopes[0].relay_ready,true);assert.ok(status.home_ip);assert.equal(status.config.telescopes[1].enabled,false);assert.equal(status.config.telescopes[1].mac,"");
-      await clickTab("tab-general");await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(()=>document.getElementById("ensure-message").textContent.includes("déjà utilisé"));
+      await clickTab("tab-general");await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"fr");await page.waitForFunction(()=>document.getElementById("ensure-message").textContent.includes("déjà utilisé"));
       for(const width of [320,375,768]){await page.setViewportSize({width,height:960});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
       await page.setViewportSize({width:375,height:960});await page.screenshot({path:resolve(output,"ensure-failure-fr-375.png"),fullPage:false});
     });
@@ -390,11 +390,11 @@ try {
       await page.locator("#binding-confirm").check();await page.locator("#bind-after-save").check();await page.locator("#network-save").click();await page.locator("#editor").waitFor({state:"hidden"});
       await waitData(s=>s.config.telescopes.some(p=>p.name==="Observed DEMO"&&p.physical_binding));
       const observed=(await data()).config.telescopes.find(p=>p.name==="Observed DEMO");assert.equal(observed.enabled,false);assert.equal(observed.mac,"");assert.equal(observed.physical_binding.aliases[0].source,"wifi-observed");assert.equal(observed.physical_binding.aliases[0].frequency,2412);
-      await clickTab("tab-general");await page.locator("#locale-select").selectOption("fr");await clickTab("tab-telescopes");await page.locator(`[id="profile-${observed.id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
+      await clickTab("tab-general");await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"fr");await clickTab("tab-telescopes");await page.locator(`[id="profile-${observed.id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
       assert.match(await page.locator("#binding-info").textContent(),/Observé en Wi-Fi/);
       for(const width of [320,375,768]){await page.setViewportSize({width,height:960});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.getElementById("editor").scrollWidth<=document.getElementById("editor").clientWidth));}
       await page.setViewportSize({width:375,height:960});await page.screenshot({path:resolve(output,"binding-375.png"),fullPage:false});
-      await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.setViewportSize({width:1280,height:960});await clickTab("tab-general");await page.locator("#locale-select").selectOption("en");await clickTab("tab-telescopes");
+      await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.setViewportSize({width:1280,height:960});await clickTab("tab-general");await page.locator("#locale-select").selectOption("en");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"en");await clickTab("tab-telescopes");
       await page.waitForTimeout(15000);let release,held=false,done;const completed=new Promise(r=>done=r);await context.route("**/api/discovery",async route=>{try{const response=await route.fetch();held=true;await new Promise(r=>release=r);await route.fulfill({response});}finally{done();}});
       await page.locator("#add-scope").click();await page.locator("#discovery-manual").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator("#scan").click();while(!held)await new Promise(r=>setTimeout(r,25));await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);await page.locator(`[id="profile-${profiles[0].id}-edit"]`).click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);release();await completed;await context.unroute("**/api/discovery");await page.waitForTimeout(250);
       assert.equal(await page.locator("#scan-results button").count(),0);assert.equal(await page.locator("#binding-bssid").inputValue(),"");await page.locator("#close-editor").click();await page.locator("#profile-advanced").evaluate(e=>e.open=true);await page.locator("#physical-advanced").evaluate(e=>e.open=true);
@@ -413,8 +413,8 @@ try {
     await waitData(s => s.telescopes[0]?.connected); await page.waitForFunction(() => document.getElementById("occupied-count").textContent === "1 / 2");
     await connect(secondConnection,profiles[0]); await page.locator("#move-dialog").waitFor({ state: "visible" });
     const languageTab=await context.newPage(); await languageTab.goto(url+"/#configuration/general"); await languageTab.locator("#dashboard").waitFor({state:"visible"});
-    await languageTab.locator("#locale-select").selectOption("fr"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("utilise"));
-    await languageTab.locator("#locale-select").selectOption("en"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("is assigned")); await languageTab.close();
+    await languageTab.locator("#locale-select").selectOption("fr");await languageTab.waitForFunction(tag=>BridgeI18n.locale===tag,"fr"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("utilise"));
+    await languageTab.locator("#locale-select").selectOption("en");await languageTab.waitForFunction(tag=>BridgeI18n.locale===tag,"en"); await page.waitForFunction(() => document.getElementById("move-description").textContent.includes("is assigned")); await languageTab.close();
     await page.locator("#cancel-move").click(); assert.equal((await data()).config.telescopes[0].mac, firstRadio.mac);
     await connect(secondConnection,profiles[0]); await page.locator("#confirm-move").click();
     await waitData(s => s.telescopes[0]?.connected && s.telescopes[0]?.interface === secondRadio.name);
@@ -579,17 +579,17 @@ try {
     assert.equal(await page.locator("#hostname").inputValue(), "unsaved-device-draft"); assert.equal(await page.locator("#country").inputValue(), "FR"); assert.equal(await page.evaluate(() => document.activeElement.id), "country");
   });
   await check("header and General locale controls synchronize and persist with complete Japanese", async () => {
-    await clickUserControl(page, '#locale-menu summary'); await page.locator('[data-locale="fr"]').click();
+    await clickUserControl(page, '#locale-menu summary'); await page.locator('[data-locale="fr"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'fr');
     assert.equal(await page.locator("#locale-select").inputValue(), "fr"); assert.equal(await page.locator("html").getAttribute("lang"), "fr");
     assert.equal(await page.locator("#hostname").inputValue(), "unsaved-device-draft");
-    await page.locator("#locale-select").selectOption("ja"); assert.equal(await page.locator("#locale-current").textContent(), "JA");
+    await page.locator("#locale-select").selectOption("ja");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"ja"); assert.equal(await page.locator("#locale-current").textContent(), "JA");
     assert.equal(await page.locator("html").getAttribute("lang"), "ja"); assert.equal(await page.locator("#locale-fallback").isVisible(), false);
     await page.reload(); await page.locator("#dashboard").waitFor({ state: "visible" });
-    assert.equal(await page.locator("#locale-select").inputValue(), "ja"); await page.locator("#locale-select").selectOption("fr");
+    assert.equal(await page.locator("#locale-select").inputValue(), "ja"); await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"fr");
     assert.equal(await page.locator("#locale-fallback").isVisible(), false);
     const other = await context.newPage(); await other.goto(url); await other.locator("#dashboard").waitFor({ state: "visible" });
-    await page.locator("#locale-select").selectOption("en"); await other.waitForFunction(() => document.documentElement.lang === "en"); await other.close();
-    await page.locator("#locale-select").selectOption("fr");
+    await page.locator("#locale-select").selectOption("en");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"en"); await other.waitForFunction(() => document.documentElement.lang === "en"); await other.close();
+    await page.locator("#locale-select").selectOption("fr");await page.waitForFunction(tag=>BridgeI18n.locale===tag,"fr");
   });
   await check("direct links, history and keyboard tab navigation", async () => {
     await clickTab("nav-networks"); await clickTab("nav-configuration"); await clickTab("tab-radios");
@@ -627,10 +627,18 @@ try {
   await check("credentials and update controls remain backed by existing APIs", async () => {
     await page.setViewportSize({width:1280,height:960}); await clickTab("nav-configuration"); await clickTab("tab-general");
     assert.equal(await page.locator("#update-check").isDisabled(), true); assert.equal(await page.locator("#update-automatic").isDisabled(), true);
-    await page.locator("#credential-target").selectOption("linux"); await page.locator("#current-password").fill("12345678");
-    await page.locator("#new-password").fill("synthetic-linux-password"); await page.locator("#confirm-password").fill("synthetic-linux-password");
-    await page.locator("#credentials-form button").click(); await page.waitForFunction(() => document.getElementById("credentials-message").textContent.length > 0);
+    // One password for the web interface, the hotspot and SSH: no target to choose. The reply is
+    // synthetic so the demo keeps its initial password for the following checks.
+    assert.equal(await page.locator("#credential-target").count(), 0);
+    let sent=null;await page.route("**/api/credentials",route=>{sent=route.request().postDataJSON();return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,sessions_invalidated:true,hotspot_reconnect:true})});});
+    await page.locator("#current-password").fill("12345678");
+    await page.locator("#new-password").fill("synthetic-bridge-pass"); await page.locator("#confirm-password").fill("synthetic-bridge-pass");
+    await page.locator("#credentials-form button").click(); await page.locator("#login").waitFor({state:"visible"});
+    assert.deepEqual(sent,{current_password:"12345678",password:"synthetic-bridge-pass"});
+    const said=await page.evaluate(()=>BridgeI18n.t("Password changed. Join the hotspot again with the new password, then sign in."));
+    await page.waitForFunction(text=>document.body.innerText.includes(text),said);
     assert.equal(await page.locator("#current-password").inputValue(), ""); assert.equal(await page.locator("#new-password").inputValue(), "");
+    await page.unroute("**/api/credentials"); await login();
   });
   await check("logout clears authenticated event names, endpoints and late inventory responses",async()=>{
     let release,finished;const gate=new Promise(r=>release=r),done=new Promise(r=>finished=r);

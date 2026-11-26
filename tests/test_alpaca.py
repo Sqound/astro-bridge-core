@@ -88,9 +88,57 @@ class AlpacaTests(unittest.TestCase):
                 with self.subTest(method=method, member=member):
                     status, result = self.request(member, method.upper())
                     self.assertEqual(status, 200)
-                    self.assertIn(result['ErrorNumber'], (0, 0x400, 0x401, 0x402))
+                    self.assertIn(result['ErrorNumber'], (0, 0x400, 0x401, 0x402, 0x40B if member == 'percentcompleted' else 0))
                     self.assertIn('ServerTransactionID', result)
         self.assertEqual(self.request('imagearrayvariant')[1]['ErrorNumber'], 0x400)
+
+    def test_exposure_resolution_value_and_not_implemented(self):
+        self.connect()
+        status, result = self.request('exposureresolution')
+        self.assertEqual((status, result['ErrorNumber'], result['Value']), (200, 0, 0.0))
+        self.assertLessEqual(result['Value'], self.request('exposuremax')[1]['Value'])
+        info = self.camera.info()
+        info.pop('exposure_resolution')
+        with patch.object(SimulatedCamera, 'info', return_value=info):
+            self.service.add('noresolution', 'simulator', SimulatedCamera(width=8, height=6))
+        path = '/api/v1/camera/1/'
+        self.assertEqual(self.request('', 'PUT', {'Connected': 'true'}, path=path + 'connected')[1]['ErrorNumber'], 0)
+        result = self.request('', path=path + 'exposureresolution')[1]
+        self.assertEqual(result['ErrorNumber'], 0x400)
+        self.assertNotIn('Value', result)
+
+    def test_percent_completed_follows_the_exposure_and_is_invalid_when_idle(self):
+        self.connect()
+        idle = self.request('percentcompleted')[1]
+        self.assertEqual(idle['ErrorNumber'], 0x40B)
+        self.assertNotIn('Value', idle)
+        self.assertNotIn('another client', idle['ErrorMessage'])
+        self.assertEqual(self.request('startexposure', 'PUT', {'Duration': '10', 'Light': 'true'})[1]['ErrorNumber'], 0)
+        seen = []
+        for now in (0.0, 2.5, 5.0, 9.9, 10.0):
+            self.now = now
+            result = self.request('percentcompleted')[1]
+            self.assertEqual(result['ErrorNumber'], 0)
+            seen.append(result['Value'])
+        self.assertEqual(seen[:4], [0, 25, 50, 99])
+        self.assertTrue(all(type(v) is int for v in seen))
+        self.now = 10.0 + self.camera.READOUT_SECONDS + 1
+        self.assertEqual(self.request('percentcompleted')[1]['Value'], 100)  # image ready, not yet retrieved
+
+    def test_electrons_per_adu_and_full_well_only_when_the_sdk_reports_them(self):
+        self.connect()
+        for member in ('electronsperadu', 'fullwellcapacity'):
+            result = self.request(member)[1]
+            self.assertEqual(result['ErrorNumber'], 0x400)
+            self.assertNotIn('Value', result)
+        info = self.camera.info()
+        info.update(electrons_per_adu=1.25, full_well_capacity=15000.0)
+        with patch.object(SimulatedCamera, 'info', return_value=info):
+            self.service.add('reports', 'simulator', SimulatedCamera(width=8, height=6))
+        path = '/api/v1/camera/1/'
+        self.assertEqual(self.request('', 'PUT', {'Connected': 'true'}, path=path + 'connected')[1]['ErrorNumber'], 0)
+        self.assertEqual(self.request('', path=path + 'electronsperadu')[1]['Value'], 1.25)
+        self.assertEqual(self.request('', path=path + 'fullwellcapacity')[1]['Value'], 15000.0)
 
     def test_management_transactions_and_route_separation(self):
         status, data = self.request('', params={'cLiEnTtRaNsAcTiOnId': '4294967295'}, path='/management/apiversions')

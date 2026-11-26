@@ -79,7 +79,7 @@ test('worker always shows a neutral fallback for unusable pushes and strictly ro
   const self={location:{origin:'https://bridge.test'},addEventListener(name,fn){events[name]=fn;},
     registration:{showNotification:async(title,options)=>shown.push({title,...options})},
     clients:{matchAll:async()=>windows,openWindow:async url=>opened.push(url)}};
-  runInNewContext(worker,{REVISION:'synthetic',ASSETS:[],self,URL,Set,Date,JSON});
+  runInNewContext(worker,{REVISION:'synthetic',ASSETS:[],LAZY:[],self,URL,Set,Date,JSON});
   let done;
   const push=async data=>{events.push({data:{text:()=>typeof data==='string'?data:JSON.stringify(data)},waitUntil:p=>done=p});await done;};
   const click=async data=>{events.notificationclick({notification:{close(){},data},waitUntil:p=>done=p});await done;};

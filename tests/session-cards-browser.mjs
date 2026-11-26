@@ -25,7 +25,9 @@ try{
  await request('POST','/telescopes/vespera-demo/connect',{mac});
  await wait(async()=>!!(await request('GET','/telemetry')).card_data?.['vespera-demo']?.readings?.['stack.frames_accepted']);
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}});
- const page=await browser.newPage({viewport:{width:375,height:960}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+ const page=await browser.newPage({viewport:{width:375,height:960}});
+ // The dialog's close event is a queued task: wait for it before reading where focus went.
+ const focusReturns=selector=>page.waitForFunction(selector=>document.querySelector(selector)===document.activeElement,selector,{timeout:5000});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin);await page.locator('#login-password').fill('12345678');await page.locator('#login-form button').click();await page.locator('#dashboard').waitFor({state:'visible'});
  await page.locator('#instrument-vespera-demo .session-values dd').first().waitFor();
  assert.ok((await page.locator('#instrument-vespera-demo .session-block').innerText()).includes('Stacking · M 27'));
@@ -39,10 +41,10 @@ try{
  }
  await page.setViewportSize({width:375,height:960});await page.evaluate(()=>document.documentElement.dataset.theme='light');
  results.push('Actual offline demo produces stacking, rejections, units and Tonight without hardware; card captures at320/375/1280 in both themes');
- await page.locator('#session-info-vespera-demo').click();await page.keyboard.press('Escape');assert.equal(await page.locator('#session-info-vespera-demo').evaluate(e=>e===document.activeElement),true);
+ await page.locator('#session-info-vespera-demo').click();await page.keyboard.press('Escape');await focusReturns('#session-info-vespera-demo');
  await page.locator('#session-history-vespera-demo').click();await page.locator('#session-history-list strong').first().waitFor();
  for(const locale of ['de','ru','en']){await page.evaluate(tag=>BridgeI18n.setLocale(tag),locale);assert.equal(await page.locator('#session-history-list .session-open').first().innerText(),await page.evaluate(()=>t('Open session')));assert.ok((await page.locator('#session-history-title').innerText()).includes('Vespera II'));assert.ok(await page.locator('#session-history-list [data-session-started]').evaluateAll(elements=>elements.every(element=>element.textContent===new Date(element.dataset.sessionStarted).toLocaleString(BridgeI18n.locale))));}
- await page.keyboard.press('Escape');assert.equal(await page.locator('#session-history-vespera-demo').evaluate(e=>e===document.activeElement),true);
+ await page.keyboard.press('Escape');await focusReturns('#session-history-vespera-demo');
  results.push('Real sessions API powers history; information/history dialogs restore keyboard focus');
  const snapshot=await request('GET','/telemetry');
  let mode='stale';

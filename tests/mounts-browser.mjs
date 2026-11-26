@@ -68,10 +68,10 @@ try{
  });
  await check('mount profiles fit narrow screens in every language',async()=>{
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,locale);
    await page.setViewportSize({width:320,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,locale);
   }
-  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="en"]').click();await page.screenshot({path:resolve(output,'mounts-320.png'),fullPage:true});
+  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="en"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'en');await page.screenshot({path:resolve(output,'mounts-320.png'),fullPage:true});
  });
  assert.deepEqual(errors,[]);await writeFile(resolve(output,'browser.json'),JSON.stringify({results,errors,simulation:true},null,2));
 }finally{

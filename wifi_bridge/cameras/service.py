@@ -353,6 +353,28 @@ class CameraService:
             return events
         return self._call(reconcile)
 
+    def driver_changed(self, driver):
+        """A driver became available or was withdrawn by the owner.
+
+        Attached cameras of that driver return to detection. Served ones are
+        released exactly as on unplug; the next reconcile retries the driver.
+        """
+        def change():
+            for ident, item in self._usb.items():
+                if item['driver'] != driver:
+                    continue
+                camera = self._cameras.pop(ident, None)
+                if camera:
+                    try:
+                        camera.release()
+                    except Exception:
+                        pass
+                    self._retain_unreaped(camera.driver)
+                item['discovery']['state'] = 'detected'
+            with self._lock:
+                self._count = len(self._cameras)
+        return self._call(change)
+
     def _start_profile_probe(self, item, device):
         from .gphoto_platform import attachment_token, profile, probe
         item['profile_generation'] = uuid.uuid4().hex

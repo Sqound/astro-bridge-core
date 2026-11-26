@@ -48,7 +48,7 @@ try {
  });
  await check('preferences are grouped in one menu; titles and decorative eyebrows are absent',async()=>{
   assert.equal(await page.locator('#theme-toggle').isVisible(),false);await page.locator('#user-menu>summary').click();assert.equal(await page.locator('#theme-toggle').isVisible(),true);assert.equal(await page.locator('#logout').isVisible(),true);
-  await page.locator('#locale-menu>summary').click();await page.locator('button[data-locale="fr"]').click();assert.equal(await page.locator('#activity-toggle').getAttribute('aria-label'),'Activité');await page.locator('#locale-menu>summary').click();await page.locator('button[data-locale="en"]').click();
+  await page.locator('#locale-menu>summary').click();await page.locator('button[data-locale="fr"]').click();await page.waitForFunction(()=>BridgeI18n.locale==='fr');assert.equal(await page.locator('#activity-toggle').getAttribute('aria-label'),'Activité');await page.locator('#locale-menu>summary').click();await page.locator('button[data-locale="en"]').click();
   await page.keyboard.press('Escape');await page.locator('#nav-configuration').click();assert.equal(await page.locator('#configuration-title').evaluate(e=>getComputedStyle(e).position),'absolute');assert.doesNotMatch(await page.locator('#view-configuration').innerText(),/YOUR DEVICE/);assert.equal(await page.locator('#activity-panel').count(),0);
  });
  await check('mobile popover and preferences fit a 320px screen',async()=>{

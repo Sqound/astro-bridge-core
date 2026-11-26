@@ -20,7 +20,8 @@ class CameraRegistryTests(unittest.TestCase):
         self.assertEqual(json.loads((ROOT / 'cameras/schema/manifest.schema.json').read_text()), manifest_schema())
         registry = load_registry()
         self.assertEqual(registry.descriptors(), load_registry(ROOT / 'cameras').descriptors())
-        self.assertEqual({d['id'] for d in registry.descriptors()}, {'simulator', 'uvc', 'zwo_asi'})
+        self.assertEqual({d['id'] for d in registry.descriptors()},
+                         {'simulator', 'uvc', 'zwo_asi', 'player_one', 'qhyccd', 'atik', 'moravian'})
         self.assertTrue(registry.available('simulator'))
         self.assertTrue(registry.available('uvc'))
         camera = registry.create('simulator', width=20, height=10)

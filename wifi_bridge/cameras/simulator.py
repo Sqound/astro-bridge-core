@@ -28,7 +28,7 @@ class SimulatedCamera(CameraDriver):
             'width': width, 'height': height, 'pixel_um_x': 3.75, 'pixel_um_y': 3.75,
             'bits': 16, 'max_adu': 65535, 'sensor_type': 2 if bayer else 0,
             'bayer_offset': [0, 0], 'max_bin': 1 if bayer else min(4, width, height),
-            'gain_min': 0, 'gain_max': 100, 'exposure_min': 0.001, 'exposure_max': 3600.0,
+            'gain_min': 0, 'gain_max': 100, 'exposure_min': 0.001, 'exposure_max': 3600.0, 'exposure_resolution': 0.0,
             'can_abort': True, 'cooled': False})
         self._opened = False
         self._state = 'idle'

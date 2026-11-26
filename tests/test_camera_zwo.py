@@ -95,6 +95,7 @@ class ASITests(unittest.TestCase):
                          (128, 64, 3.75, 2))
         self.assertEqual((info['gain_min'], info['gain_max'], info['exposure_min'], info['exposure_max']),
                          (1, 50, 0.00001, 60))
+        self.assertEqual(info['exposure_resolution'], 1e-6)
         self.assertEqual((info['bits'], info['cooled'], info['can_abort']), (16, True, True))
         self.sdk.ASICloseCamera.assert_called_once_with(17)
         self.driver.open()

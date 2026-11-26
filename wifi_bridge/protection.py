@@ -41,7 +41,7 @@ class ConnectionProtection:
             raise ApiError(409, 'CONNECTION_PROTECTED', 'Release reservations and explicitly remove the owner lock before changing this connection.')
 
     def guard(self, previous, value, reboot=False):
-        if reboot or any(previous.get(key) != value.get(key) for key in ('home','country','hostname','hotspot','hotspot_password','admin_hash')):
+        if reboot or any(previous.get(key) != value.get(key) for key in ('home','country','hostname','hotspot','hotspot_key','admin_hash')):
             self.reject()
         before = {p['id']:p for p in profiles(previous)}
         after = {p['id']:p for p in profiles(value)}

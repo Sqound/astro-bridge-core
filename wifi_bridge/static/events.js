@@ -47,13 +47,13 @@
     };
     if(event.type==="waiting") {
       return t(event.reason==="HOME_UNAVAILABLE"?"{name}: waiting for the home network.":event.associated?
-        "{name}: Wi-Fi associated; waiting for services.":"{name}: waiting for the telescope.",values);
+        "{name}: Wi-Fi associated; waiting for services.":"{name}: waiting for the instrument.",values);
     }
     return t(messages[event.type]||"{name}: connection status changed.",values);
   }
   function reasonText(reason) {
     const descriptions={OPERATION_RUNNING:"A running instrument operation prevents automatic replacement.",HOTSPOT_RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",HOTSPOT_START_FAILED:"Could not start the hotspot. Check its driver and service logs.",RADIO_UNAVAILABLE:"Wi-Fi adapter unavailable.",CONFIGURATION_CONFLICT:"Network subnet conflict.",
-      WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",INVALID_TARGET:"Check the telescope IP address.",ASSOCIATION_FAILED:"Wi-Fi association failed; enabled profiles retry automatically.",
+      WIFI_AUTHENTICATION_FAILED:"Wi-Fi authentication failed. Check the password. Retries resume after you change it or reboot the bridge.",INVALID_TARGET:"Check the instrument IP address.",ASSOCIATION_FAILED:"Wi-Fi association failed; enabled profiles retry automatically.",
       RECONCILE_FAILED:"Network reconciliation failed. Check device status."};
     return descriptions[reason]?t(descriptions[reason]):"";
   }

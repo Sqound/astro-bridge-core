@@ -1,4 +1,4 @@
-"""ASI SDK 1.41 ABI. Only the isolated driver process opens an attached camera."""
+"""ASI SDK ABI (checked against 1.41 and 1.42). Only the isolated driver process opens an attached camera."""
 import ctypes as C
 import time
 
@@ -6,6 +6,12 @@ from .driver import CameraDriver, CameraError, validate_exposure, validate_info
 from .frames import Frame
 from .loader import load_platform_sdk
 from .usb import SysfsUSB, validate_device
+
+# One ASI220MM was served by a bridge on the bench, with SDK 1.41 supplied in an image. The bridge now delivers
+# SDK 1.42, downloaded and installed on request (a new path), which no bridge has served a camera with yet:
+# verified with 1.41, not verified with 1.42, so False. Documented or assumed is not verified on hardware.
+VERIFIED_ON_HARDWARE = False
+VERIFIED_SDK_VERSIONS = ('1.41',)
 
 
 class CameraInfo(C.Structure):
@@ -146,6 +152,7 @@ class ASIDriver(CameraDriver):
             sensor_type=2 if info.color else 0, bayer_offset=offsets[info.bayer] if info.color else (0, 0),
             max_bin=max_bin, gain_min=limits[GAIN][0], gain_max=limits[GAIN][1],
             exposure_min=max(1, limits[EXPOSURE][0])/1e6, exposure_max=min(86400, limits[EXPOSURE][1]/1e6),
+            exposure_resolution=1e-6,  # ASI_EXPOSURE is written in whole microseconds
             can_abort=True, cooled=bool(info.cooler)))
 
     def info(self):

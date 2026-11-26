@@ -170,9 +170,10 @@ function adapterLabel(device) {
   return t("USB adapter {letter}", {letter:String.fromCharCode(65 + index)});
 }
 function connectionLabel(group) {
-  return group.device ? group.device.usb ? t("USB connection {letter}", {
+  // Names the bridge's own Wi-Fi adapter that carries the link, never how the instrument is plugged.
+  return group.device ? group.device.usb ? t("Wi-Fi adapter {letter}", {
     letter:String.fromCharCode(65 + state.devices.filter(d => d.usb).findIndex(d => d.mac === group.device.mac))
-  }) : t("Built-in connection") : t("Unavailable connection {number}", {number:group.number});
+  }) : t("Built-in Wi-Fi") : t("Unavailable connection {number}", {number:group.number});
 }
 
 function simpleStatus(profile,live,s,available){
@@ -181,10 +182,10 @@ function simpleStatus(profile,live,s,available){
   if(!available)return t("Connection unavailable");
   if(live.state==="conflict")return t("Routing conflict · forwarding suspended");
   if(live.connected&&!live.relay_ready)return t("Wi-Fi connected · forwarding unavailable");
-  if(live.connected)return live.state==="waiting_service"?t("Connected · telescope service starting…"):t("Connected");
+  if(live.connected)return live.state==="waiting_service"?t("Connected · instrument service starting…"):t("Connected");
   if(!profile.enabled)return t("Ready to connect");
-  if(["conflict","invalid_ip","error"].includes(live.state))return t("Check settings in the Telescopes tab");
-  return t("Connecting… Check that the telescope is switched on.");
+  if(["conflict","invalid_ip","error"].includes(live.state))return t("Check settings in the Instruments tab");
+  return t("Connecting… Check that the instrument is switched on.");
 }
 
 function connectionGuard(profile,s){
@@ -218,7 +219,7 @@ function renderNearby(s){
   const focused=$("nearby-list").contains(document.activeElement)?document.activeElement.id:null;
   $("nearby-list").replaceChildren(...found.map(candidate=>{
     const row=node("article",undefined,"nearby-telescope"),name=node("div");name.append(node("h3",candidate.ssid),node("p",instrumentKind(candidate.kind),"small"));
-    const button=node("button",t("Add telescope"));button.type="button";button.id="nearby-add-"+candidate.observation_id;
+    const button=node("button",t("Add instrument"));button.type="button";button.id="nearby-add-"+candidate.observation_id;
     button.addEventListener("click",()=>{
       const target="#configuration/telescopes?add="+candidate.observation_id;
       if(location.hash===target){notificationFocusedHash="";applyNavigation();}else location.hash=target;
@@ -233,10 +234,10 @@ function renderSimple(s){
   renderSimpleNetwork(s);
   renderConnectionMode(s);
   const connected=s.telescopes.filter(p=>p.connected).length;
-  $("simple-summary").textContent=connected?t("Connected telescopes: {count}",{count:connected}):t("No telescope connected");
+  $("simple-summary").textContent=connected?t("Connected instruments: {count}",{count:connected}):t("No instrument connected");
   $("simple-summary").className="badge"+(connected?" online":"");
   $("simple-empty").hidden=!!profiles.length;$("simple-help").hidden=!profiles.length;$("simple-connections").hidden=!profiles.length;
-  const notice=!s.config.home.ssid?t("No private network is configured. You can use telescopes through the hotspot, or add private-network access in Networks & hotspot."):s.last_error?t("A connection needs attention. Check profiles and network settings."):"";
+  const notice=!s.config.home.ssid?t("No private network is configured. You can use instruments through the hotspot, or add private-network access in Networks & hotspot."):s.last_error?t("A connection needs attention. Check profiles and network settings."):"";
   $("simple-notice").textContent=notice;$("simple-notice").hidden=!notice;
   const focused=$("simple-connections").contains(document.activeElement)?document.activeElement.id:null;
   const focusedProfile=focused?document.activeElement.closest("[data-profile-id]")?.dataset.profileId:null;
@@ -411,9 +412,9 @@ function renderMoveDescription(){
 function renderManagement(s){
   const management=s.management||{},retry=management.home_retry||{};
   const homeUnavailable=management.mode==="ap_only"&&!!s.config.home.ssid;
-  const messages={ap_only:"Hotspot access only. Telescope forwarding uses the hotspot; private-network access is unavailable.",none:"No confirmed management path. Telescope Wi-Fi may remain associated, but forwarding is unavailable."};
+  const messages={ap_only:"Hotspot access only. Instrument forwarding uses the hotspot; private-network access is unavailable.",none:"No confirmed management path. Instrument Wi-Fi may remain associated, but forwarding is unavailable."};
   let text=management.mode==="none"||homeUnavailable?t(messages[management.mode]):"";
-  if(management.reason==="ROUTING_CONFLICT")text=t("A private-network route overlaps a telescope subnet. Affected forwarding and endpoints are suspended; telescope Wi-Fi is preserved. Correct the network overlap.");
+  if(management.reason==="ROUTING_CONFLICT")text=t("A private-network route overlaps an instrument subnet. Affected forwarding and endpoints are suspended; instrument Wi-Fi is preserved. Correct the network overlap.");
   const reasons={HOME_RETRY_DEFERRED_AP_RESERVED:"Private-network retry is deferred while the hotspot has clients, protections, pending work or unknown vacancy. No connection is interrupted.",HOME_RETRY_DEFERRED_RADIO_BUSY:"The private-network adapter is busy. Automatic recovery will not take over its connection.",HOME_RETRY_FAILED_AP_RESTORED:"The private-network attempt failed; hotspot access was restored. Another attempt waits at least 45 seconds.",HOME_RETRY_FAILED_AP_RESTORE_FAILED:"Hotspot restoration failed. Check local console access; management availability is not confirmed."};
   if(reasons[retry.reason])text+=(text?" ":"")+t(reasons[retry.reason]);
   if(homeUnavailable)text+=" "+t("If the home adapter also hosts the hotspot, an empty hotspot may be briefly interrupted for a bounded retry. Any station or active protection defers it.");
@@ -447,10 +448,10 @@ function renderSimpleNetwork(s){
   const other=connected.some(p=>!["vespera","seestar"].includes(profilesFor(s,p.id)?.kind));
   const nativeSeestar=connected.some(p=>p.seestar_proxy);
   $("simple-route-state").textContent=!ready?t("Private network unavailable"):vespera?t("Check required"):nativeSeestar&&!other?t("Not required for Seestar"):t("Depends on the app");
-  $("simple-route-help").textContent=vespera?t("Singularity uses a router route for Vespera. The bridge cannot confirm that this route is configured. Other apps may have different requirements."):nativeSeestar&&!other?t("The Seestar relay allows its app to connect without adding a router route."):t("Access requirements depend on the telescope and its app. Router configuration cannot be verified from the bridge.");
+  $("simple-route-help").textContent=vespera?t("Singularity uses a router route for Vespera. The bridge cannot confirm that this route is configured. Other apps may have different requirements."):nativeSeestar&&!other?t("The Seestar relay allows its app to connect without adding a router route."):t("Access requirements depend on the instrument and its app. Router configuration cannot be verified from the bridge.");
   badge("simple-ap-badge",ap.active?t("Active"):["no_free_radio","connection_protected","protected_no_recovery_radio","selected_adapter_unavailable","start_failed"].includes(ap.reason)?t("Waiting"):t("Disabled"),!!ap.active);
   $("simple-ap-name").textContent=ap.active?s.setup_ssid:t("Emergency hotspot");
-  $("simple-ap-detail").textContent=ap.reason==="start_failed"?t("Could not start the hotspot. Check its driver and service logs."):ap.reason==="selected_adapter_unavailable"?t("The selected hotspot adapter is unavailable or in use. Connect it or choose another free adapter. Any existing hotspot remains active."):ap.active?t("Join this Wi-Fi network to reach the device directly. The connection uses your hotspot password."):ap.reason==="connection_protected"?t("Optional hotspot change deferred while a connection is protected."):ap.reason==="protected_no_recovery_radio"?t("No unprotected radio is available for recovery access. The protected connection was not taken."):ap.reason==="no_free_radio"?t("All connections are in use. Telescopes keep priority."):ap.reason==="subnet_conflict"?t("Direct access is waiting for a network settings correction."):t("It starts automatically if the private network becomes unavailable.");
+  $("simple-ap-detail").textContent=ap.reason==="start_failed"?t("Could not start the hotspot. Check its driver and service logs."):ap.reason==="selected_adapter_unavailable"?t("The selected hotspot adapter is unavailable or in use. Connect it or choose another free adapter. Any existing hotspot remains active."):ap.active?t("Join this Wi-Fi network to reach the device directly. The connection uses your hotspot password."):ap.reason==="connection_protected"?t("Optional hotspot change deferred while a connection is protected."):ap.reason==="protected_no_recovery_radio"?t("No unprotected radio is available for recovery access. The protected connection was not taken."):ap.reason==="no_free_radio"?t("All connections are in use. Instruments keep priority."):ap.reason==="subnet_conflict"?t("Direct access is waiting for a network settings correction."):t("It starts automatically if the private network becomes unavailable.");
   $("simple-ap-url").hidden=!ap.active;
   const clients=ap.clients||[];
   $("simple-client-title").textContent=t("Connected devices")+(ap.active&&ap.clients_available?" · "+clients.length:"");
@@ -464,8 +465,8 @@ function renderConnectionMode(s){
   const mode=s.config.connection_mode||"private", access=s.network_access||{};
   if(!modeDirty&&!modePending){$("connection-mode").value=mode;$("hotspot-private-lan").checked=!!s.config.hotspot_private_lan;}
   const selected=$("connection-mode").value;
-  $("connection-mode-purpose").textContent=t(selected==="private"?"Private Wi-Fi: stay on your usual network with Internet. Vespera may need a route on your router.":selected==="hotspot_shared"?"Connect your phone to the Astro Bridge hotspot for telescope access and Internet. Astro Bridge gets Internet from your private Wi-Fi.":"Hotspot without Internet: join Astro Bridge for telescope access without configuring your router.");
-  $("simple-home-purpose").textContent=t(selected==="hotspot_shared"?"Your private Wi-Fi supplies Internet to the Astro Bridge hotspot. Connect your phone to the hotspot to use your telescopes and Internet.":selected==="hotspot_isolated"?"Your phone connects to the Astro Bridge hotspot to use your telescopes. Private Wi-Fi is optional and does not provide Internet to this hotspot.":"Connect Astro Bridge to your usual Wi-Fi to use your telescope apps on that network.");
+  $("connection-mode-purpose").textContent=t(selected==="private"?"Private Wi-Fi: stay on your usual network with Internet. Vespera may need a route on your router.":selected==="hotspot_shared"?"Connect your phone to the Astro Bridge hotspot for instrument access and Internet. Astro Bridge gets Internet from your private Wi-Fi.":"Hotspot without Internet: join Astro Bridge for instrument access without configuring your router.");
+  $("simple-home-purpose").textContent=t(selected==="hotspot_shared"?"Your private Wi-Fi supplies Internet to the Astro Bridge hotspot. Connect your phone to the hotspot to use your instruments and Internet.":selected==="hotspot_isolated"?"Your phone connects to the Astro Bridge hotspot to use your instruments. Private Wi-Fi is optional and does not provide Internet to this hotspot.":"Connect Astro Bridge to your usual Wi-Fi to use your instrument apps on that network.");
   $("simple-home-detail").textContent=selected==="hotspot_shared"?t(s.home_ip?"Private Wi-Fi connected. Internet access on the hotspot depends on this network.":"Connect Astro Bridge to a private Wi-Fi network with Internet to share it through the hotspot."):selected==="hotspot_isolated"?"":t(s.home_ip?"Astro Bridge is accessible from your private network.":"Direct access lets you reach the device when the private network is absent.");
   const wired=wiredHomePath(s);
   $("connection-mode").querySelector('[value="private"]').textContent=t(wired?"Private network":"Private Wi-Fi bridge");
@@ -476,11 +477,11 @@ function renderConnectionMode(s){
   }
   $("simple-home-detail").hidden=!$("simple-home-detail").textContent;
   $("optional-hotspot").hidden=selected!=="private";
-  $("hotspot-mode-help").textContent=t(selected==="private"?"Telescopes have priority. The emergency hotspot starts automatically when the private network is unavailable.":"The hotspot stays enabled in this mode. Connect your phone to it to use your telescopes.");
+  $("hotspot-mode-help").textContent=t(selected==="private"?"Instruments have priority. The emergency hotspot starts automatically when the private network is unavailable.":"The hotspot stays enabled in this mode. Connect your phone to it to use your instruments.");
   $("hotspot-private-lan").disabled=modePending||selected!=="hotspot_shared";
   $("connection-mode").disabled=modePending;$("connection-mode-save").disabled=modePending;
   const messages={HOTSPOT_UNAVAILABLE:"Sharing is waiting for the hotspot.",UPLINK_UNAVAILABLE:"Sharing is waiting for the private Wi-Fi connection.",DNS_UNAVAILABLE:"Sharing is waiting for a valid DNS server.",SUBNET_CONFLICT:"Sharing is unavailable because network addresses overlap."};
-  $("connection-mode-status").textContent=mode!=="hotspot_shared"?"":access.available?t("Internet sharing is ready. Internet access still depends on your private network."):t(messages[access.reason]||"Internet sharing is not available yet. Telescope access is preserved.");
+  $("connection-mode-status").textContent=mode!=="hotspot_shared"?"":access.available?t("Internet sharing is ready. Internet access still depends on your private network."):t(messages[access.reason]||"Internet sharing is not available yet. Instrument access is preserved.");
 }
 function profilesFor(s,id){return s.config.telescopes.find(p=>p.id===id);}
 function localMessage(id,message){const element=$(id),key=BridgeI18n.sourceKey(message);if(key){element.dataset.i18n=key;dynamicMessages.add(id);}else{delete element.dataset.i18n;dynamicMessages.delete(id);}element.textContent=key?t(key):message;}
@@ -515,7 +516,10 @@ function radioName(mac){const d=state.devices.find(d=>d.mac===mac);return d?adap
 function badge(id,text,online){$(id).textContent=text;$(id).className="badge"+(online?" online":"");}
 function renderAdapterNotice(s){
   const count=s.devices.length;
-  const message=count===0?t("No Wi-Fi adapter is detected. Check that your adapters are connected. At least two are needed to link a telescope to your private network. Built-in Wi-Fi plus one USB adapter is enough. You can continue configuring the bridge."):count===1?t("Only one Wi-Fi adapter is detected. At least two are needed to link a telescope to your private network. Built-in Wi-Fi plus one USB adapter is enough. You can continue configuring the bridge."):"";
+  let message=count===0?t("No Wi-Fi adapter is detected. Check that your adapters are connected. At least two are needed to link an instrument to your private network. Built-in Wi-Fi plus one USB adapter is enough. You can continue configuring the bridge."):count===1?t("Only one Wi-Fi adapter is detected. At least two are needed to link an instrument to your private network. Built-in Wi-Fi plus one USB adapter is enough. You can continue configuring the bridge."):"";
+  // An adapter behind a hub more often failed to get an address from a mount.
+  const hub=s.devices.some(d=>d.usb&&d.usb_hub)?t("A Wi-Fi adapter is plugged through a USB hub. Plug it directly into a USB port of the Raspberry Pi if you can. Behind a hub shared with other devices, an adapter more often failed to get an address from a mount."):"";
+  if(hub)message=message?message+" "+hub:hub;
   const notice=$("adapter-notice");
   // Keep the live region unchanged between identical status polls.
   if(notice.textContent!==message)notice.textContent=message;
@@ -568,22 +572,56 @@ function renderPairedApps(clients,revision){
     });row.append(name,button);return row;
   });$("paired-apps-list").replaceChildren(...rows);
 }
+// How long ago, in the interface language; the bridge only sends a duration it measured on its own monotonic clock.
+function clockAgo(seconds){
+  if(seconds<60)return t("less than a minute ago");
+  const [count,unit]=seconds<3600?[Math.floor(seconds/60),"minute"]:seconds<86400?[Math.floor(seconds/3600),"hour"]:[Math.floor(seconds/86400),"day"];
+  try{return new Intl.RelativeTimeFormat(BridgeI18n.locale,{numeric:"always"}).format(-count,unit);}catch{return `${count} ${unit}`;}
+}
+function clockDate(value){
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?value:date.toLocaleString(BridgeI18n.locale,{timeZone:"UTC",dateStyle:"medium",timeStyle:"short"})+" UTC";
+}
+// When the bridge last set its clock from network time, and what it cannot claim.
+function renderClockSync(clock){
+  const box=$("clock-sync"),sync=clock?.last_sync;if(!sync){box.hidden=true;return;}
+  let line;
+  if(sync.kind==="network"&&sync.age_seconds!==null)line=t("Clock last set from network time {when}.",{when:clockAgo(sync.age_seconds)});
+  else if(sync.kind==="network")line=t("Not set from network time since the bridge started. Last known setting: {date}.",{date:clockDate(sync.last_network_sync_utc)});
+  else if(sync.kind==="client_hint")line=t("Only an approximate time from a phone or browser was received {when}. It is not network time.",{when:clockAgo(sync.age_seconds)});
+  else line=t("Clock never set from network time.");
+  $("clock-sync-line").textContent=line;
+  const verified=clock.clock_status==="synchronized";
+  $("clock-sync-advice").textContent=verified?"":t("Clock not verified. Connect the bridge to the Internet or open the app so it can set its clock.");
+  $("clock-sync-advice").hidden=verified;box.hidden=false;
+}
+let clockHintSent=false;
+// The bridge has no battery clock: show its time when manifestly wrong and offer this browser's.
+function renderBridgeClock(clock){
+  renderClockSync(clock);
+  const notice=$("bridge-clock");if(!clock){notice.hidden=true;return;}
+  const shown=new Date(clock.system_utc),time=Number.isNaN(shown.getTime())?clock.system_utc:shown.toLocaleString(BridgeI18n.locale,{timeZone:"UTC",dateStyle:"medium",timeStyle:"short"})+" UTC";
+  if(!clock.system_plausible){notice.textContent=t("The bridge clock reads {time}, which is wrong. Times shown by the bridge are approximate until it reaches network time.",{time});notice.hidden=false;}
+  else if(clock.set_from_browser&&clock.clock_status!=="synchronized"){notice.textContent=t("The bridge clock was set from this browser. It uses network time as soon as it reaches the Internet.");notice.hidden=false;}
+  else notice.hidden=true;
+  if(!clock.system_plausible&&clock.clock_status!=="synchronized"&&!clockHintSent){
+    clockHintSent=true;
+    void fetch("/api/time-hint",{method:"POST",cache:"no-store",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({utc_iso:new Date().toISOString(),uncertainty_ms:5000})})
+      .then(response=>response.ok?response.json():null).then(result=>{if(result?.clock)renderBridgeClock(result.clock);}).catch(()=>{});
+  }
+}
 function render(s){
   renderPairedApps(s.paired_clients||[],s.config_revision);
   if(s.deployment){
     $("retry-button").hidden=!s.deployment.host_reboot;
-    const option=$("credential-target").querySelector('option[value="linux"]');
-    option.hidden=!s.deployment.linux_credentials;option.disabled=option.hidden;
-    if(option.hidden&&$("credential-target").value==="linux")$("credential-target").value="web";
   }
   if(s.ui_revision!==BridgePWA.revision){BridgePWA.checkRevision(s.ui_revision||"unknown");return;}
   loggedOut=false;accessReady=true;statusFailures=0;$("dashboard").inert=false;$("login-form").inert=false;BridgePWA.connection("");
-  state=s;csrf=s.csrf;syncSessionPage();$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;$("demo").hidden=!s.demo;
+  state=s;csrf=s.csrf;syncSessionPage();$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;$("demo").hidden=!s.demo;renderBridgeClock(s.bridge_clock);
   void loadCameras();renderAdapterNotice(s);renderManagement(s);renderSimple(s);renderProtection(s);renderAutomation(s);ensureView=s.connection_operation||null;renderEnsure();
   if(!autoPreferencePending)$("auto-connect").checked=!!s.config.auto_connect;$("auto-connect").disabled=autoPreferencePending||ensureView?.state==="running";BridgeEvents.start(s.event_context);BridgeSecure.start(s.event_context);BridgePush.start();if(!updateState)refreshUpdates();focusNotificationTarget();
   $("local-url").textContent=s.url;$("local-url").href=s.url;
-  const defaults=Object.entries(s.default_credentials||{}).filter(([,v])=>v).map(([key])=>({web:t("web interface"),linux:t("Linux bridge account"),hotspot:t("Wi-Fi hotspot")}[key]));
-  $("default-warning").hidden=!defaults.length;$("default-warning").textContent=t("Default password 12345678 is still used for: {access}. Change these passwords in General settings.",{access:defaults.join(", ")});
+  renderPassword(s);
   const ap=s.hotspot||{};
   if(!hotspotPending)$("ap-enabled").checked=!!s.config.hotspot.enabled||(s.config.connection_mode||"private")!=="private";$("ap-enabled").disabled=hotspotPending||!s.config.admin_configured||(s.config.connection_mode||"private")!=="private";
   $("scope-count").textContent=s.telescopes.filter(p=>p.connected).length+" / "+s.config.telescopes.length;
@@ -751,7 +789,7 @@ function renderRadioRoles(s){
   const labels={auto:"Auto",home:"Private Wi-Fi",hotspot:"Hotspot",telescope:"Telescopes and mounts"};
   $("radios").replaceChildren(...[...devices.values()].map(d=>{
     const row=node("div",undefined,"radio-row"),label=node("label",d.missing?d.mac:adapterLabel(d));
-    const id="radio-role-"+d.mac.replaceAll(":","");label.htmlFor=id;label.append(node("small",d.mac+" · "+(d.missing?t("Adapter missing"):(d.bands||[]).join(" / ")+" GHz")));
+    const id="radio-role-"+d.mac.replaceAll(":","");label.htmlFor=id;label.append(node("small",d.mac+" · "+(d.missing?t("Adapter missing"):(d.bands||[]).join(" / ")+" GHz")));if(!d.missing&&d.usb&&d.usb_hub)label.append(node("small",t("Through a USB hub. Plug it directly into the Raspberry Pi if you can."),"radio-hub-warning"));
     const group=node("div",undefined,"radio-role-controls"),select=node("select");select.id=id;select.dataset.roleMac=d.mac;
     for(const [value,text]of Object.entries(labels)){const option=node("option",t(text));option.value=value;option.disabled=value==="hotspot"&&d.ap===false;select.append(option);}
     select.value=configuredRadioRole(s,d.mac);select.disabled=interfaceRolePending;
@@ -781,7 +819,7 @@ function installPluginCatalog(catalog){
   if(catalog.schema_version!==1||!Array.isArray(catalog.plugins)||!catalog.plugins.length)throw new Error("Plugin catalog unavailable");
   pluginCatalog=catalog.plugins;
   $("profile-kind").replaceChildren(...pluginCatalog.map(p=>{const option=node("option",t(p.name));option.value=p.id;option.dataset.i18n=p.name;return option;}));
-  const legend=node("legend",t("Telescope types included in automatic switching"));legend.dataset.i18n="Telescope types included in automatic switching";
+  const legend=node("legend",t("Instrument types included in automatic switching"));legend.dataset.i18n="Instrument types included in automatic switching";
   $("plugin-auto-choices").replaceChildren(legend,...pluginCatalog.filter(p=>p.discovery.engine!=="none").map(p=>{const label=node("label",undefined,"checkbox"),input=node("input"),name=node("span",t(p.name));input.type="checkbox";input.id=pluginPolicyId(p.id);name.dataset.i18n=p.name;label.append(input,name);return label;}));
 }
 function renderPluginDetails(){
@@ -870,7 +908,7 @@ async function scopeAction(id,action,button,assignment={}){
   const radios=new Set([mac,assignment.mac].filter(Boolean));
   for(const radio of radios)pendingRadios.add(radio);button.disabled=true;error();$("simple-feedback").hidden=true;renderSimple(state);
   try{await api("/api/telescopes/action",{id,action,config_revision:state.config_revision,...assignment});await refresh();
-    $("simple-feedback").textContent=action==="connect"?t("Connection to {name} requested. Its actual status updates automatically.",{name:profile.name}):action==="disconnect"?t("Connection to {name} disabled.",{name:profile.name}):t("Telescope deleted.");
+    $("simple-feedback").textContent=action==="connect"?t("Connection to {name} requested. Its actual status updates automatically.",{name:profile.name}):action==="disconnect"?t("Connection to {name} disabled.",{name:profile.name}):t("Instrument deleted.");
     $("simple-feedback").hidden=false;
     feedbackTimer=setTimeout(()=>{$("simple-feedback").hidden=true;},8000);
   }catch(e){error(e.code==="CONNECTION_PROTECTED"?protectionError(e.code):e.message);}finally{for(const radio of radios)pendingRadios.delete(radio);button.disabled=false;if(state)renderSimple(state);if(restoreFocus)$(buttonId)?.focus({preventScroll:true});}
@@ -889,17 +927,20 @@ async function save(data, savePreferences=false, keepEditor=false){
 function openEditor(profile=null,home=false){
   localMessage("editor-error","");
   if(!state)return;discoveryEpoch++;discoveryChoices=[];editing={candidate:null,home,presetKind:profile?.kind||"generic",id:profile?.id||"scope-"+crypto.getRandomValues(new Uint32Array(1))[0].toString(36)};
-  $("editor-step").hidden=!!profile||home;$("editor-step").dataset.i18n="Step 2 of 2 — check the details, then add your telescope.";$("editor-step").textContent=t($("editor-step").dataset.i18n);$("choose-telescope").hidden=!!profile||home;
+  $("editor-step").hidden=!!profile||home;$("editor-step").dataset.i18n="Step 2 of 2 — check the details, then add your instrument.";$("editor-step").textContent=t($("editor-step").dataset.i18n);$("choose-telescope").hidden=!!profile||home;
   $("profile-advanced").open=false;$("physical-advanced").open=false;$("scan").hidden=false;$("factory-password-help").hidden=true;
   $("profile-replaceable-row").hidden=home;$("profile-auto-row").hidden=home;$("profile-client-row").hidden=home;$("physical-advanced").hidden=home;
-  $("network-save").dataset.i18n=!profile&&!home?"Add telescope":"Save";$("network-save").textContent=t($("network-save").dataset.i18n);
-  const p=home?state.config.home:profile||{};$("editor-title").textContent=home?t("Private network"):profile?t("Edit telescope"):t("Add telescope");$("scope-fields").hidden=home;$("scope-ip").hidden=home;$("first-admin").hidden=state.config.admin_configured;$("initial-admin").required=false;$("initial-admin").value="";
+  $("network-save").dataset.i18n=!profile&&!home?"Add instrument":"Save";$("network-save").textContent=t($("network-save").dataset.i18n);
+  const p=home?state.config.home:profile||{};$("editor-title").textContent=home?t("Private network"):profile?t("Edit instrument"):t("Add instrument");$("scope-fields").hidden=home;$("scope-ip").hidden=home;$("first-admin").hidden=state.config.admin_configured;$("initial-admin").required=false;$("initial-admin").value="";
   $("profile-name").value=p.name||"";$("profile-name").required=!home;$("profile-kind").value=p.kind||"generic";$("profile-client-connect").checked=p.client_connect!==false;$("profile-auto-eligible").checked=!!p.auto_eligible;$("profile-replaceable").checked=!!p.auto_replaceable;
   const select=$("network-interface");select.replaceChildren();
   for(const d of state.devices){if(!radioAllows(state,d.mac,home?"home":"telescope")||!home&&d.mac===state.config.home.mac)continue;const occupants=state.config.telescopes.filter(p=>p.enabled&&p.mac===d.mac);const option=node("option",adapterLabel(d)+(occupants.length?" · "+occupants.map(p=>p.name).join(", "):""));option.value=d.mac;select.append(option);}
   if(p.mac&&!state.devices.some(d=>d.mac===p.mac)){const o=node("option",t("Missing adapter · {mac}",{mac:p.mac}));o.value=p.mac;select.append(o);}
   select.value=p.mac||[...select.options].find(o=>!state.config.telescopes.some(p=>p.enabled&&p.mac===o.value))?.value||select.options[0]?.value||"";
-  $("network-ssid").value=p.ssid||"";$("network-ssid").dataset.bssid=p.bssid||"";$("network-password").required=false;$("network-password").value="";$("network-password").placeholder=p.has_password?t("Saved · leave empty to keep"):t("Network password");$("network-open").checked=!!p.ssid&&!p.has_password;$("network-hidden").checked=!!p.hidden;$("target-ip").value=p.target_ip||"";$("target-ip").required=!home;$("radio-fields").hidden=!home;$("network-interface").required=home;
+  // An adapter already reserved for the private network in Wi-Fi adapters is not asked again.
+  const reservedHome=home?state.devices.find(d=>state.config.interface_roles?.[d.mac]==="home"):null;
+  if(reservedHome)select.value=reservedHome.mac;
+  $("network-ssid").value=p.ssid||"";$("network-ssid").dataset.bssid=p.bssid||"";$("network-password").required=false;$("network-password").value="";$("network-password").placeholder=p.has_password?t("Saved · leave empty to keep"):t("Network password");$("network-open").checked=!!p.ssid&&!p.has_password;$("network-hidden").checked=!!p.hidden;$("target-ip").value=p.target_ip||"";$("target-ip").required=!home;$("radio-fields").hidden=!home||!!reservedHome;$("network-interface").required=home&&!reservedHome;
   $("profile-preset-help").textContent=t("Choose a type to prefill known values. Select your instrument’s actual Wi-Fi network.");$("editor-error").hidden=true;$("scan-results").replaceChildren();$("physical-fields").hidden=home;$("scan").disabled=false;$("discover-reachable").disabled=false;scanning=false;$("binding-bssid").value="";$("binding-confirm").checked=false;$("bind-after-save").checked=false;$("discovery-info").textContent="";renderBinding(profile);radioHelp();loadMakerKey();if(!$("editor").open)$("editor").showModal();
 }
 function radioHelp(){const mac=$("network-interface").value;const other=state.config.telescopes.find(p=>p.enabled&&p.mac===mac&&p.id!==editing.id);$("radio-help").textContent=editing.home?t("Changing the home adapter may interrupt access to the interface."):other?t("Adapter used by {name}. Connect this profile to replace it, or save without connecting.",{name:other.name}):t("This adapter will be assigned to the instrument when connected.");}
@@ -945,13 +986,13 @@ function renderProtection(s){
   const summary=t("Client reservations: {leases} · Owner locks: {locks}",{leases:info.leases.length,locks:info.owner_locks.length});
   $("protection-summary").hidden=!info.leases.length&&!info.owner_locks.length;
   if($("protection-summary").textContent!==summary)$("protection-summary").textContent=summary;
-  const rows=info.leases.map(lease=>{const p=s.config.telescopes.find(p=>p.id===lease.profile_id),row=node("div",undefined,"radio-row"),label=node("div",p?.name||t("Telescope"));
+  const rows=info.leases.map(lease=>{const p=s.config.telescopes.find(p=>p.id===lease.profile_id),row=node("div",undefined,"radio-row"),label=node("div",p?.name||t("Instrument"));
     label.append(node("small",t(lease.owned?"Your session reservation · {seconds}s remaining":"Another client reservation · {seconds}s remaining",{seconds:lease.remaining_seconds})));
     const buttons=node("div",undefined,"table-actions");
     if(lease.owned){const renew=node("button",t("Renew 2 min"),"secondary");renew.type="button";renew.id="lease-"+lease.id+"-renew";renew.addEventListener("click",()=>changeProtection("renew",lease.id,{version:lease.version,ttl_seconds:120}));buttons.append(renew);}
     const release=node("button",t(lease.owned?"Release reservation":"Owner release…"),"text-button");release.type="button";release.id="lease-"+lease.id+"-release";
     release.addEventListener("click",()=>lease.owned?changeProtection("release",lease.id,{version:lease.version}):openProtection("owner_release",lease.id,{version:lease.version}));buttons.append(release);row.append(label,buttons);return row;});
-  for(const id of info.owner_locks){const profile=s.config.telescopes.find(p=>p.id===id),row=node("div",undefined,"radio-row"),button=node("button",t("Remove owner lock"),"text-button");button.type="button";button.id="owner-"+id+"-remove";button.addEventListener("click",()=>openProtection("owner_lock",id,{locked:false}));row.append(node("span",(profile?.name||t("Telescope"))+" · "+t("Owner locked")),button);rows.push(row);}
+  for(const id of info.owner_locks){const profile=s.config.telescopes.find(p=>p.id===id),row=node("div",undefined,"radio-row"),button=node("button",t("Remove owner lock"),"text-button");button.type="button";button.id="owner-"+id+"-remove";button.addEventListener("click",()=>openProtection("owner_lock",id,{locked:false}));row.append(node("span",(profile?.name||t("Instrument"))+" · "+t("Owner locked")),button);rows.push(row);}
   if(!rows.length)rows.push(node("p",t("No reservations or owner locks."),"small"));
   const focus=$("protection-list").contains(document.activeElement)?document.activeElement.id:null;$("protection-list").replaceChildren(...rows);if(focus)$(focus)?.focus({preventScroll:true});
 }
@@ -986,11 +1027,11 @@ function renderEnsure(){
   $("ensure-notice").hidden=!operation||operation.state==="succeeded"&&operation.restoration?.state!=="failed";
   $("ensure-endpoint").textContent="";
   if($("ensure-notice").hidden){$("ensure-message").textContent="";return;}
-  const name=state?.config.telescopes.find(p=>p.id===operation.profile_id)?.name||t("Telescope");
+  const name=state?.config.telescopes.find(p=>p.id===operation.profile_id)?.name||t("Instrument");
   const phases={restoring:"Restoring the previous instrument; readiness is not yet confirmed…",disconnecting_victim:"Releasing the selected consenting instrument…",selecting:"Selecting a genuinely free connection…",associating:"Associating Wi-Fi; readiness is not confirmed…",checking_services:"Wi-Fi associated; checking forwarding and services…",cleaning_up:"Cleaning up the automatic attempt…"};
   $("ensure-message").textContent=name+" · "+(operation.state==="running"?t(phases[operation.phase]||phases.selecting):ensureReason(operation.reason)+" "+t(operation.restoration?.state==="failed"?"Cleanup is unconfirmed. Keep management access and check diagnostics.":"Original desired settings were preserved; the automatic attempt stopped."));
   const displaced=state?.config.telescopes.find(p=>p.id===operation.displaced?.profile_id);
-  if(operation.displaced)$("ensure-message").textContent+=" · "+t(operation.displaced.reason==="FORCED_INTERRUPTION"?"Forced interruption of {name}":"Quiet replacement of {name}",{name:displaced?.name||t("Telescope")});
+  if(operation.displaced)$("ensure-message").textContent+=" · "+t(operation.displaced.reason==="FORCED_INTERRUPTION"?"Forced interruption of {name}":"Quiet replacement of {name}",{name:displaced?.name||t("Instrument")});
   if(operation.restoration?.state==="restored"&&operation.displaced)$("ensure-message").textContent+=" · "+t("Previous connection restored and ready.");
   if(operation.restoration?.state==="failed"&&operation.displaced)$("ensure-message").textContent+=" · "+t("Restoration unconfirmed: instrument paused until explicit owner action.");
 }
@@ -1012,7 +1053,7 @@ async function refreshEnsure(){
 setInterval(refreshEnsure,2000);
 function renderAutomation(s){
   const enabledApps=pluginCatalog.filter(p=>p.discovery.engine!=="none"&&s.config.auto_policy?.[p.id+"_demand"]).map(p=>t(p.name));
-  $("auto-switch-summary").textContent=!s.config.auto_connect?t("Automatic switching is off."):enabledApps.length?t("Included telescope types: {types}",{types:enabledApps.join(", ")}):t("Choose at least one telescope type in Advanced switching settings.");
+  $("auto-switch-summary").textContent=!s.config.auto_connect?t("Automatic switching is off."):enabledApps.length?t("Included instrument types: {types}",{types:enabledApps.join(", ")}):t("Choose at least one instrument type in Advanced switching settings.");
   $("auto-switch-risk").hidden=!s.config.auto_connect||!s.config.auto_policy?.force_first_profile;
   const policy=s.config.auto_policy||{quiet_seconds:120,cooldown_seconds:60,force_first_profile:false,seestar_demand:false,vespera_demand:false,dwarf_demand:false};
   if(!autoPolicyDirty){$("auto-quiet").value=policy.quiet_seconds;$("auto-cooldown").value=policy.cooldown_seconds;$("auto-force").checked=policy.force_first_profile;$("auto-protect-operations").checked=!!policy.protect_running_operations;$("auto-night-reservations").checked=policy.night_reservations!==false;for(const p of pluginCatalog)if(p.discovery.engine!=="none")$(pluginPolicyId(p.id)).checked=!!policy[p.id+"_demand"];}
@@ -1026,7 +1067,7 @@ function renderAutomation(s){
   const dwarfMessage=!s.config.auto_connect||!policy.dwarf_demand?"DWARF discovery trigger is disabled.":dwarf?.observer==="MANAGEMENT_UNAVAILABLE"?"Passive DWARF detection is waiting for a confirmed management interface.":!dwarf?.supported?"Passive DWARF detection is unavailable here.":dwarfReasons[dwarf.reason]||(dwarf.reason==="DISABLED"?"Listening for DWARF discovery requests.":"Maker discovery is bounded by cooldown and current connection safety checks.");
   $("dwarf-demand-status").textContent=t(dwarfMessage);
   const pauses=s.connection_pauses||{profiles:{},recovery_required:false},ids=Object.keys(pauses.profiles);$("pause-notice").hidden=!ids.length&&!pauses.recovery_required;
-  $("pause-message").textContent=t(pauses.recovery_required?"Connection pause state is unavailable. Recover it before retrying instruments. All instruments will remain paused.":"Paused instruments: {names}. Use an explicit manual Connect or Disconnect to retry safely.",{names:ids.map(id=>s.config.telescopes.find(p=>p.id===id)?.name||t("Telescope")).join(", ")});
+  $("pause-message").textContent=t(pauses.recovery_required?"Connection pause state is unavailable. Recover it before retrying instruments. All instruments will remain paused.":"Paused instruments: {names}. Use an explicit manual Connect or Disconnect to retry safely.",{names:ids.map(id=>s.config.telescopes.find(p=>p.id===id)?.name||t("Instrument")).join(", ")});
   $("pause-recover").hidden=!pauses.recovery_required;
 }
 $("pause-recover").addEventListener("click",()=>openProtection("recover_pauses","all",{}));
@@ -1105,9 +1146,9 @@ function chooseDetectedTelescope(candidate){
   editing.factoryPassword=suggestion.password||"";$("network-password").value=$("network-open").checked?"":editing.factoryPassword;
   $("factory-password-help").hidden=!$("network-password").value;$("network-password").required=!$("network-open").checked;
   $("binding-bssid").value=candidate.bssid;editing.candidate=candidate.candidate_id||null;
-  $("profile-preset-help").textContent=t("Settings filled in for this Wi-Fi network. You can add the telescope now or edit the details.");
+  $("profile-preset-help").textContent=t("Settings filled in for this Wi-Fi network. You can add the instrument now or edit the details.");
   $("scan").hidden=true;
-  if(!suggestion.target_ip){$("profile-advanced").open=true;$("profile-preset-help").textContent=t("This model's address is unknown. Enter the telescope IP shown in its app.");}
+  if(!suggestion.target_ip){$("profile-advanced").open=true;$("profile-preset-help").textContent=t("This model's address is unknown. Enter the instrument IP shown in its app.");}
 }
 function openDiscovery(scan=true){
   if(!state||!accessReady)return;
@@ -1125,7 +1166,7 @@ async function wifiCandidates(){
   try{return await request;}finally{if(wifiRequest===request)wifiRequest=null;}
 }
 async function scanTelescopes(){
-  const generation=++wizardEpoch,session=csrf;$("discovery-scan").disabled=true;localMessage("discovery-status",t("Looking for telescope Wi-Fi networks…"));
+  const generation=++wizardEpoch,session=csrf;$("discovery-scan").disabled=true;localMessage("discovery-status",t("Looking for instrument Wi-Fi networks…"));
   try{
     const result=await wifiCandidates();
     if(generation!==wizardEpoch||session!==csrf||!$("discovery-dialog").open)return;
@@ -1133,12 +1174,12 @@ async function scanTelescopes(){
     const cards=[];
     for(const candidate of found.values()){
       const card=node("article",undefined,"discovery-candidate"),heading=node("div"),title=node("h3",candidate.ssid),type=node("p",instrumentKind(candidate.suggested.kind),"small");type.dataset.i18n=pluginById(candidate.suggested.kind)?.name||"Generic";heading.append(title,type);
-      const saved=savedObservation(candidate),button=node("button",t(saved?"Already added — edit":"Add telescope"),saved?"secondary":"");button.type="button";button.dataset.i18n=saved?"Already added — edit":"Add telescope";
+      const saved=savedObservation(candidate),button=node("button",t(saved?"Already added — edit":"Add instrument"),saved?"secondary":"");button.type="button";button.dataset.i18n=saved?"Already added — edit":"Add instrument";
       button.addEventListener("click",()=>{if(generation===wizardEpoch&&session===csrf)chooseDetectedTelescope(candidate);});
       const signal=node("p",t("Signal: {signal}%",{signal:candidate.signal}),"small");signal.dataset.signal=String(candidate.signal);card.append(heading,signal,button);cards.push(card);
     }
     $("discovery-results").replaceChildren(...cards);
-    const message=result.scan_source==="cached"?"All adapters are in use. Showing networks already known to the bridge; their current availability is not confirmed.":cards.length?"Choose your telescope below. Its settings will be filled in for you.":"No supported telescope Wi-Fi found. Turn on the telescope and scan again, or add it manually.";
+    const message=result.scan_source==="cached"?"All adapters are in use. Showing networks already known to the bridge; their current availability is not confirmed.":cards.length?"Choose your instrument below. Its settings will be filled in for you.":"No supported instrument Wi-Fi found. Turn on the instrument and scan again, or add it manually.";
     localMessage("discovery-status",t(message));
   }catch(failure){if(generation===wizardEpoch&&session===csrf)localMessage("discovery-status",discoveryError(failure));}
   finally{if(generation===wizardEpoch&&session===csrf)$("discovery-scan").disabled=false;}
@@ -1167,7 +1208,7 @@ async function discoverCandidates(mode){
     const result=mode==="wifi"?await wifiCandidates():await api("/api/discovery",{mode});
     if(generation!==discoveryEpoch||!editing||editing.id!==id||!$("editor").open)return;
     discoveryChoices=result.candidates;const elements=[];
-    const reasons={NO_SPARE_RADIO:"No confidently spare radio is available. Management and telescope connections were preserved. Enter settings manually.",NO_CANDIDATES:"No networks found. You can enter the SSID manually.",NO_SUPPORTED_REACHABLE_DEVICE:"No supported directly attached device replied. Serial/model identity remains unknown."};
+    const reasons={NO_SPARE_RADIO:"No confidently spare radio is available. Management and instrument connections were preserved. Enter settings manually.",NO_CANDIDATES:"No networks found. You can enter the SSID manually.",NO_SUPPORTED_REACHABLE_DEVICE:"No supported directly attached device replied. Serial/model identity remains unknown."};
     $("discovery-info").textContent=t(reasons[result.reason]||"Observed candidates; device identity and observation time are unverified.");
     for(const candidate of discoveryChoices){
       if(candidate.mode==="reachable"){elements.push(node("p",candidate.address+" · "+(candidate.protocol_identity?t("Mount protocol response: {model}. This does not establish a physical binding.",{model:candidate.protocol_identity.model||instrumentKind(candidate.protocol_identity.family)}):t("Seestar scan response; serial/model unknown. This is not a physical binding.")),"small"));continue;}
@@ -1204,7 +1245,7 @@ $("hotspot-name-form").addEventListener("submit",async event=>{
   event.preventDefault();const name=$("hotspot-name").value,mac=$("hotspot-interface").value;
   if(new TextEncoder().encode(name).length>32){error(t("The hotspot name must contain 1 to 32 bytes, or be empty for the automatic name."));return;}
   hotspotNamePending=true;event.submitter.disabled=true;
-  try{const data=configPayload();data.hotspot={...data.hotspot,ssid:name,mac};await save(data);hotspotNameDirty=$("hotspot-name").value!==name;hotspotAdapterDirty=$("hotspot-interface").value!==mac;$("hotspot-name-result").textContent=t("Hotspot settings saved. Reconnect to the hotspot if necessary.");}
+  try{const data=configPayload();data.hotspot={...data.hotspot,ssid:name,mac};const secret=$("hotspot-name-password").value;if(secret)data.current_password=secret;$("hotspot-name-password").value="";await save(data);hotspotNameDirty=$("hotspot-name").value!==name;hotspotAdapterDirty=$("hotspot-interface").value!==mac;$("hotspot-name-result").textContent=t("Hotspot settings saved. Reconnect to the hotspot if necessary.");}
   catch(e){error(e.message);}
   finally{hotspotNamePending=false;if(state)render(state);}
 });
@@ -1247,13 +1288,21 @@ $("simple-configure").addEventListener("click",()=>{navigate("configuration","te
 $("simple-home-settings").addEventListener("click",()=>openEditor(null,true));
 setInterval(refresh,5000);refresh();
 
+// One bridge password: web interface, hotspot and Linux account (the SSH line comes from the bridge).
+function renderPassword(s){
+  const personal=!(s.default_credentials||{}).password;
+  $("default-warning").hidden=personal;$("default-warning").textContent=t("The default password 12345678 is still in use. Choose your own below.");
+  const ssh=s.ssh||{},line=$("ssh-state");line.hidden=typeof ssh.password_login!=="boolean"||!ssh.account;
+  line.textContent=line.hidden?"":ssh.password_login?t("SSH: open, account {account}, with this password.",{account:ssh.account}):t("SSH: closed while the default password is in use.");
+  $("hotspot-name-password-field").hidden=!personal;$("hotspot-name-password").required=false;
+}
 $("credentials-form").addEventListener("submit",async event=>{
   event.preventDefault();const button=event.submitter;button.disabled=true;localMessage("credentials-message","");
   try{if($("new-password").value!==$("confirm-password").value)throw new Error(t("The new passwords do not match."));
-    const result=await api("/api/credentials",{target:$("credential-target").value,current_password:$("current-password").value,password:$("new-password").value});
+    const result=await api("/api/credentials",{current_password:$("current-password").value,password:$("new-password").value});
     for(const id of ["current-password","new-password","confirm-password"])$(id).value="";
-    if(result.sessions_invalidated){showLogin();error(t("Web password changed. Sign in with the new password."));}
-    else{localMessage("credentials-message",result.hotspot_reconnect?"Password saved. Rejoin the hotspot with the new password.":"Password changed.");await refresh();}
+    if(result.sessions_invalidated){showLogin();error(t("Password changed. Join the hotspot again with the new password, then sign in."));}
+    else{localMessage("credentials-message","Password changed.");await refresh();}
   }catch(e){localMessage("credentials-message",e.message);}finally{button.disabled=false;}
 });
 
@@ -1274,7 +1323,7 @@ function renderUpdates(){
   if(!updateState)return;
     $("update-version").textContent="v"+updateState.current_version;
     $("running-version").textContent="v"+updateState.current_version;
-    const descriptions={recovery_required:t("Interrupted update needs console recovery."),unsupported:t("The OS updater prerequisites are not installed. Application updates require the matching platform updater."),unchecked:t("No update check yet."),current:t("The application is up to date."),available:t("Version {version} available.",{version:updateState.version}),installing:t("Installing. The interface will reconnect…"),installed:t("Update installed."),deferred:t("Installation deferred until management is available, all telescope profiles are disabled and pending operations have finished."),rolled_back:t("Previous application files restored."),error:t("Update check or installation failed. The repository may be private, have no release or be unreachable.")};
+    const descriptions={recovery_required:t("Interrupted update needs console recovery."),unsupported:t("The OS updater prerequisites are not installed. Application updates require the matching platform updater."),unchecked:t("No update check yet."),current:t("The application is up to date."),available:t("Version {version} available.",{version:updateState.version}),installing:t("Installing. The interface will reconnect…"),installed:t("Update installed."),deferred:t("Installation deferred until management is available, all instrument profiles are disabled and pending operations have finished."),rolled_back:t("Previous application files restored."),error:t("Update check or installation failed. The repository may be private, have no release or be unreachable.")};
     $("update-status").textContent=updateState.state==="rolled_back"&&updateState.rollback_service_ready===false?t("Previous files restored. The service needs a restart."):updateState.demo?t("Updates are unavailable in demonstration mode."):updateState.supported===false?descriptions.unsupported:descriptions[updateState.state]||updateState.state;
     if(!updatePreferencePending)$("update-automatic").checked=!!updateState.automatic;
     $("update-automatic").disabled=updatePreferencePending||!!updateState.demo||updateState.supported===false||updateState.maintenance;
@@ -1289,13 +1338,13 @@ setInterval(refreshUpdates,10000);refreshUpdates();
 // Locale changes update display text without resetting form fields or navigating.
 document.addEventListener("bridge:localechange",()=>{
   for(const signal of document.querySelectorAll("#discovery-results [data-signal]"))signal.textContent=t("Signal: {signal}%",{signal:signal.dataset.signal});
-  if(state && csrf)render(state);
+  if(state && csrf){render(state);renderBridgeClock(state.bridge_clock);}
   renderUpdates();if(state)renderAutomation(state);if($("protection-dialog").open)renderProtectionDialog();
   $("scan").textContent=t(scanning?"Scanning…":"↻ Scan");
   if($("move-dialog").open)renderMoveDescription();
   if($("connection-choice").open)renderConnectionChoice();
   if(editing && $("editor").open){
-    $("editor-title").textContent=editing.home?t("Private network"):state.config.telescopes.some(p=>p.id===editing.id)?t("Edit telescope"):t("Add telescope");
+    $("editor-title").textContent=editing.home?t("Private network"):state.config.telescopes.some(p=>p.id===editing.id)?t("Edit instrument"):t("Add instrument");
     const profile=editing.home?state.config.home:state.config.telescopes.find(p=>p.id===editing.id);
     $("network-password").placeholder=profile?.has_password?t("Saved · leave empty to keep"):t("Network password");
     radioHelp();
@@ -1383,7 +1432,7 @@ async function loadSessionSelection(epoch){
   $("seestar-session-enabled").checked=!!sessionSelection?.adapters.includes("seestar_events_v1");
   $("seestar-session-enabled").disabled=!sessionSelection;
   renderSessionSettings();
-  localMessage("seestar-session-feedback",sessionSelection?"":t("Save this telescope to choose session data."));
+  localMessage("seestar-session-feedback",sessionSelection?"":t("Save this instrument to choose session data."));
 }
 $("seestar-session-enabled").addEventListener("change",async()=>{
   const epoch=++makerKeyEpoch,checked=$("seestar-session-enabled").checked;clearTimeout(makerKeyTimer);
@@ -1399,11 +1448,11 @@ setupSessionCards();setupSessionPage();setupCameras();
 
 function renderSessionSettings(){
   const plugin=pluginById($("profile-kind").value),enabled=sessionSelection?.adapters||[];
-  $("link-session-state").textContent=t(!sessionSelection?"Save this telescope to choose session data.":enabled.includes("link_v1")?"Link quality · Always on":"Link quality is off in your saved settings. Your choice is preserved.");
+  $("link-session-state").textContent=t(!sessionSelection?"Save this instrument to choose session data.":enabled.includes("link_v1")?"Link quality · Always on":"Link quality is off in your saved settings. Your choice is preserved.");
   $("link-session-enable").hidden=!sessionSelection||enabled.includes("link_v1");
   $("adapter-session-switches").replaceChildren(...sessionAdapters(plugin).filter(id=>!["link_v1","seestar_events_v1"].includes(id)).map(id=>{
     const label=node("label",undefined,"checkbox"),input=node("input");input.type="checkbox";input.setAttribute("role","switch");input.id="session-adapter-"+id;input.checked=enabled.includes(id);input.disabled=!sessionSelection;
-    input.addEventListener("change",()=>saveSessionAdapter(id,input.checked));label.append(input,node("span",t(id==="alpaca_observer_v1"?"Telescope status · Alpaca":"Telescope status")));return label;
+    input.addEventListener("change",()=>saveSessionAdapter(id,input.checked));label.append(input,node("span",t(id==="alpaca_observer_v1"?"Instrument status · Alpaca":"Instrument status")));return label;
   }));
 }
 async function saveSessionAdapter(id,checked){

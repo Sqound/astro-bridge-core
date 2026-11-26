@@ -14,7 +14,7 @@ const folder=await mkdtemp(resolve(tmpdir(),'astro-plugins-')),workspace=resolve
 await cp(resolve(root,'wifi_bridge'),resolve(workspace,'wifi_bridge'),{recursive:true,filter:path=>!path.includes('__pycache__')});
 const catalog=JSON.parse(await readFile(resolve(workspace,'wifi_bridge/static/plugins.json'),'utf8'));
 const extra=structuredClone(catalog.plugins.find(p=>p.id==='zwo_mount'));
-Object.assign(extra,{id:'community_mount',name:'Community mount',description:'Synthetic community fixture.',default_address:'192.168.5.1',identification:'none',relay:{transport:'tcp',ports:[12345]},wifi:[{prefix:'Community_',min_suffix:1,suffix:'any'}],validation:{level:'simulation',models:[],checks:[],limitations:['physical_pending']}});
+Object.assign(extra,{id:'community_mount',name:'Community mount',description:'Synthetic community fixture.',default_address:'192.168.5.1',identification:'none',relay:{transport:'tcp',ports:[12345]},port_roles:[{port:12345,role:'control',protocol:extra.port_roles[0].protocol}],wifi:[{prefix:'Community_',min_suffix:1,suffix:'any'}],validation:{level:'simulation',models:[],checks:[],limitations:['physical_pending']}});
 catalog.plugins.push(extra);await writeFile(resolve(workspace,'wifi_bridge/static/plugins.json'),JSON.stringify(catalog));
 const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
 const server=spawn('python3',['-u','-m','wifi_bridge','--demo','--demo-radios','4','--state-dir',resolve(folder,'state'),'--port',String(port)],{cwd:workspace,stdio:['ignore','pipe','pipe']});
@@ -72,11 +72,11 @@ try{
  await check('mobile plugin settings and modals fit all ten languages with stable routes',async()=>{
   await page.locator('#tab-plugins').click();
   for(const locale of ['en','fr','ja','de','es','it','pt-BR','zh-Hans','zh-Hant','ru']){
-   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();
+   await clickUserControl(page, '#locale-menu summary');await page.locator(`#locale-menu button[data-locale="${locale}"]`).click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,locale);
    await page.setViewportSize({width:320,height:960});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,locale);
    await page.locator('#plugin-synscan-info').click();assert.equal(await page.locator('#plugin-info').evaluate(e=>e.scrollWidth<=e.clientWidth),true,'modal '+locale);await page.keyboard.press('Escape');
   }
-  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="fr"]').click();await page.screenshot({path:resolve(output,'plugins-320-fr.png'),fullPage:true});
+  await clickUserControl(page, '#locale-menu summary');await page.locator('#locale-menu button[data-locale="fr"]').click();await page.waitForFunction(tag=>BridgeI18n.locale===tag,'fr');await page.screenshot({path:resolve(output,'plugins-320-fr.png'),fullPage:true});
   await page.locator('#plugin-zwo_mount-info').click();await page.screenshot({path:resolve(output,'plugin-details-320-fr.png')});await page.keyboard.press('Escape');
   await page.reload();await page.locator('#dashboard').waitFor({state:'visible'});assert.equal(new URL(page.url()).hash,'#configuration/plugins');assert.equal(await page.locator('[data-plugin-id]').count(),7);
  });

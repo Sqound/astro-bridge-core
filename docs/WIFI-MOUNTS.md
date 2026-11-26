@@ -116,7 +116,7 @@ its current authentication instead of assuming a factory password or open Wi-Fi.
 | Hardware reference | Record exact mount, built-in Wi-Fi or external module, firmware, SynScan/SynScan Pro version and phone OS. Establish a working direct connection first. | Actual model/controller and direct connection, not an SSID-derived model guess. |
 | Bridge profile | With client apps closed, scan the mount Wi-Fi, select SynScan, check `192.168.4.1` and bind the observed access point. | Correct BSSID, security and association on the instrument radio; home/hotspot retained. |
 | Read-only identity | Use Reachable devices while the selected mount is associated. | A real motor-board version reply to `:e1\r`; retain the raw code, do not invent a serial or model. |
-| Fixed IP | In SynScan Pro, Settings → Connect Settings → Network, turn Find Device off and enter the bridge IP in Fixed IP. Then use Connect. | SynScan connects through the displayed UDP11880 proxy. Start with `192.168.77.1` on the AstroBridge hotspot, or `192.168.50.10` on the current owner private network. |
+| Fixed IP | In SynScan Pro, Settings → Connect Settings → Network, turn Find Device off and enter the bridge IP in Fixed IP. Then use Connect. | SynScan connects through the displayed UDP11880 proxy. Start with `192.168.77.1` on the AstroBridge hotspot, or the bridge address shown on the private network. |
 | Native discovery | Turn Find Device on and use Connect again. | A real search reaches the bridge; replies identify the bridge address and the native app accepts it. Test each management network separately. |
 | Protection | Observe ordinary app status, then close the app. | Every mount-control/guiding packet protects the connection. After traffic stops, require fresh measured quiet and the configured release interval; silence is not proof tracking ended. |
 | Automatic selection | Enable SynScan searches and this profile's eligibility, with an explicitly replaceable quiet previous instrument and no lock. Use Connect/Find Device. | Genuine SYNSCAN_DISCOVERY operation, readiness, measured duration and phone notifications; no forced replacement. |
@@ -163,6 +163,81 @@ queries followed by unicast status/position. It runs on both management interfac
 checks the upstream datagrams to prove non-version broadcasts were not forwarded,
 and tests selection requests with no selected mount or invented reply. Both reply
 correlation and routing are real Linux behavior against a synthetic mount.
+
+### Datagrams sent before the relay exists
+
+Address translation is decided once per flow. A client that writes to the
+bridge's UDP 11880 while the relay rule is absent (the mount is not linked yet,
+or its link dropped) leaves a flow delivered to the bridge itself. As long as it
+keeps writing from the same port, its datagrams follow that flow and never reach
+the mount, even after the relay is back.
+
+Each time the bridge installs a changed plan with a UDP relay, it now forgets
+the untranslated flows addressed to its own address and relay port
+(`conntrack -D -p udp --orig-dst <bridge> --orig-port-dst 11880 --reply-src <bridge>`).
+Relayed flows answer from the mount's address and are not touched. A missing
+`conntrack` tool changes nothing else. Checked with a patched command runner
+only; the Linux behavior remains to be verified.
+
+### One network on two interfaces
+
+The relay rules accept a client on the management interface whose address the
+bridge gives it. A bridge linked to the same network by a cable and by Wi-Fi
+answered address resolution for the Wi-Fi address through the cable too, so a
+client could enter by the cable: the interface and its API answered, and no
+relayed port did. The appliance images set `net.ipv4.conf.all.arp_ignore=1`:
+each interface answers for its own address only. Not yet verified on hardware.
+
+A client needs nothing else: no reservation, token or declared source address
+is checked by the relay, only the client's network and the bridge's address.
+
+## SynScan mount: Wi-Fi switched off when left without a client
+
+What was seen on the bench, on one AZ-GTiX, with the bridge on a Raspberry Pi 5:
+
+| Situation | Result | Status |
+| --- | --- | --- |
+| Powered on, no client joined, no movement | Its Wi-Fi stops 11 to 12 minutes after power-on. Its status light turns steady each time. | Observed on the AZ-GTiX |
+| A client joined the whole time | No stop in 28 minutes | Observed once |
+| Moved through the app | No stop in 55 minutes | Observed once |
+| 15 links one after the other | No stop | Observed once |
+| A movement, then no client at all | Not tried | Unknown |
+| Other SynScan models, other firmware | Not tried | Unknown |
+
+No Sky-Watcher document found describes this stop or the steady light. Only
+forum reports mention it. Treat it as observed behaviour of one mount, not as
+a documented feature.
+
+**Recovery:** switch the mount off, then on again. If its status light is steady,
+its Wi-Fi has stopped. Nothing the bridge or an app sends can wake it.
+
+What the bridge does about it:
+
+- While a SynScan mount is linked, the bridge stays joined to its Wi-Fi and sends
+  the read-only version query (`:e1`) of its service check every 30 seconds, skipped
+  while relayed traffic is already flowing. Nothing else is sent: no movement, no
+  setting. The bridge stays joined until the user disconnects it explicitly
+  (`POST /api/v1/instruments/{id}/disconnect`), says it was switched off, or the
+  mount itself goes away. Releasing an app reservation (`release`) keeps it joined.
+- A linked mount never gives its radio away silently. It is always `in_service`:
+  another request is refused with `409 NO_FREE_RADIO`, and the refusal names it.
+  Each holder entry of a sleep-prone mount carries `wifi_sleep` (the observed delay,
+  the steady light, the recovery). The refusal message says the mount may switch
+  its Wi-Fi off after about 11 minutes once left without a client. A confirmed
+  `force_replace` reports the same `wifi_sleep` in `displaced`.
+- The instrument entry carries `silence` once the mount has not been heard for a
+  minute, by its link or by the bridge scans: `since_seconds`, `last_heard`
+  (`link` or `scan`), `probable_cause`, `cause_established: false`, `sign` and
+  `recovery`. `probable_cause` is `MOUNT_WIFI_SLEEP` when the bridge was not joined
+  to the mount when it was last heard, and `UNKNOWN` when it was (with a client
+  joined, the stop was not seen). A failed connection whose reason is
+  `NETWORK_UNOBSERVED` carries the same `silence` in its operation.
+
+The usual case: the mount is switched on, the bridge only hears it in its scans,
+and the app asks for it a quarter of an hour later. The mount has stopped its Wi-Fi,
+the bridge reports `NETWORK_UNOBSERVED` with `silence.probable_cause`
+`MOUNT_WIFI_SLEEP`. The bridge does not join a mount nobody asked for, so it
+cannot prevent this case. Ask for the mount soon after switching it on.
 
 ## Primary references
 

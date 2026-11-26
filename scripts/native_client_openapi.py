@@ -126,6 +126,60 @@ def extend(schemas, paths):
         'description': 'Contract 1.1: true when it is connected or connecting it needs no replacement (a free radio exists). False means connecting it disconnects another instrument; adding a Wi-Fi adapter avoids that.'}
     schemas['NativeError']['properties']['error']['properties']['retry_after'] = {'type': 'integer', 'minimum': 1, 'maximum': 3600,
         'description': 'Contract 1.1: seconds before retrying; repeats the Retry-After header of every 429.'}
+    # Radio release (additive, proposed for contract 1.3): an absent instrument never keeps a radio from an explicit request.
+    kind = enum('smart_telescope', 'mount', 'camera', 'other')
+    # A mount family seen to stop its own Wi-Fi when left without a client (observed, not documented by its maker).
+    wifi_sleep = dict(obj({'without_client_after_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 86400},
+                           'observed_on': arr({'type': 'string', 'maxLength': 64}, 8), 'documented_by_maker': boolean,
+                           'sign': {'type': ['string', 'null'], 'enum': ['STATUS_LIGHT_STEADY', None]},
+                           'recovery': enum('POWER_CYCLE')}),
+        description='Present for a mount family seen to switch its own Wi-Fi off when no client stays joined: after about without_client_after_seconds from power-on, on the models in observed_on (documented_by_maker false: seen on the bench, not in the maker documentation). sign is what the user can see (STATUS_LIGHT_STEADY: its status light turns steady). recovery POWER_CYCLE: switch it off and on again. Leaving it without the bridge means it may stop answering; say so before the user confirms.')
+    displaced = dict(obj({'instrument_id': ident, 'name': {'type': ['string', 'null'], 'maxLength': 64}, 'kind': kind,
+                          'reason': enum('UNREACHABLE', 'STANDBY', 'FORCED'), 'wifi_sleep': wifi_sleep},
+                         ['instrument_id', 'name', 'kind', 'reason']),
+        description='The instrument that gives up its radio for this request. UNREACHABLE: its link was down and a new attempt had already failed. STANDBY: it was connected and quiet after its app released its reservation. FORCED: it was named in force_replace. Absent when a radio was free or allow_replace applied. Treat unknown reasons as FORCED.')
+    schemas['NativeConnectRequest']['properties']['force_replace'] = dict(arr(ident, 24),
+        description='Instruments the user explicitly confirmed to disconnect for this request, from error.holders of a 409 NO_FREE_RADIO. Unlike allow_replace it needs neither the owner replaceable consent nor a quiet connection; owner locks, pauses and other clients reservations still refuse. Earlier bridges answer 400 INVALID_FIELDS.')
+    schemas['NativeReady']['properties']['displaced'] = displaced
+    schemas['NativeConnecting']['properties']['displaced'] = displaced
+    schemas['NativeOperation']['properties']['displaced'] = displaced
+    schemas['NativeDisconnect']['properties']['reason'] = dict(enum('switched_off'),
+        description='Why the user disconnects: switched_off means the instrument was switched off on request. The bridge then reports released.reason SWITCHED_OFF instead of a lost link. Earlier bridges answer 400 INVALID_FIELDS: send the request again without it.')
+    schemas['NativeError']['properties']['error']['properties']['holders'] = dict(arr(obj({
+        'instrument_id': ident, 'name': {'type': 'string', 'maxLength': 64}, 'kind': kind,
+        'state': enum('unreachable', 'reconnecting', 'standby', 'connected', 'in_service'),
+        'current_operation': schemas['NativeInstrument']['properties']['current_operation'],
+        'blocker': {'type': ['string', 'null'], 'enum': ['CONNECTION_PAUSED', 'OWNER_LOCKED', 'LEASED_BY_OTHER_CLIENT', None]},
+        'forceable': boolean, 'wifi_sleep': wifi_sleep},
+        ['instrument_id', 'name', 'kind', 'state', 'current_operation', 'blocker', 'forceable']), 24),
+        description='On 409 NO_FREE_RADIO: the instruments that keep the instrument radios. state is unreachable (link down and a new attempt failed; only a blocker keeps it from giving way), reconnecting (link just lost), standby (connected and quiet after its app released its reservation; gives way like unreachable), connected, or in_service (running or unknown operation, recent traffic, or a mount: the bridge cannot prove it is idle). forceable says whether naming it in force_replace is accepted. Treat unknown states as in_service.')
+    silence = dict(obj({'since_seconds': {'type': 'integer', 'minimum': 0, 'maximum': 2**63-1},
+                        'last_heard': enum('link', 'scan'),
+                        'probable_cause': enum('MOUNT_WIFI_SLEEP', 'UNKNOWN'),
+                        'cause_established': {'type': 'boolean', 'const': False},
+                        'sign': {'type': ['string', 'null'], 'enum': ['STATUS_LIGHT_STEADY', None]},
+                        'recovery': {'type': ['string', 'null'], 'enum': ['POWER_CYCLE', None]}}),
+        description='Present on a mount that may switch its Wi-Fi off without a client (see wifi_sleep) once the bridge has not heard it for a minute, by its link or its scans, while it is not linked and answering. since_seconds counts from the last time it was heard (last_heard). probable_cause MOUNT_WIFI_SLEEP: the bridge was not joined to it then, so it has probably stopped its Wi-Fi (switch it off and on again, see recovery; its status light is then steady, see sign). UNKNOWN: it went silent while the bridge was joined to it (off, out of range or battery). cause_established is always false. Absent on earlier bridges.')
+    schemas['NativeInstrument']['properties']['silence'] = silence
+    schemas['NativeOperation']['properties']['silence'] = dict(silence,
+        description='On a failed operation with reason NETWORK_UNOBSERVED for a mount that may switch its Wi-Fi off without a client: the same silence as the instrument entry.')
+    schemas['NativeInstrument']['properties']['retry'] = dict(obj({
+        'attempts': {'type': 'integer', 'minimum': 1, 'maximum': 2**31-1},
+        'interval_seconds': {'type': 'integer', 'minimum': 15, 'maximum': 300},
+        'next_in_seconds': {'type': 'integer', 'minimum': 0, 'maximum': 300}}),
+        description='Present while the link is lost without any request and at least one new attempt failed: attempts in a row, the current wait between attempts (15 s doubling up to 300 s) and the time to the next one. Its radio is given to an explicit request for another instrument.')
+    schemas['NativeInstrument']['properties']['released'] = dict(obj({
+        'reason': enum('SWITCHED_OFF', 'RADIO_YIELDED', 'REPLACED_ON_REQUEST'),
+        'to': {'type': ['string', 'null'], 'pattern': '^[a-z0-9][a-z0-9-]{0,31}$'},
+        'age_seconds': {'type': ['integer', 'null'], 'minimum': 0, 'maximum': 2**63-1}}),
+        description='Present on a saved instrument that was disconnected on request, until it is linked again: SWITCHED_OFF (an app said it was switched off on purpose), RADIO_YIELDED (it was unreachable, or left connected after its app released it, and its radio went to the instrument named in to), REPLACED_ON_REQUEST (the user confirmed replacing it by the instrument named in to). age_seconds is null after a bridge restart. Not a lost link: the bridge does not retry it.')
+    # Failed link step (additive): the reason keeps its value, the step is said beside it.
+    stage = dict(enum('NETWORK_NOT_FOUND', 'NOT_ASSOCIATED', 'ADDRESS_NOT_OBTAINED'),
+        description='The step of joining the instrument Wi-Fi that failed, when the system named one: NETWORK_NOT_FOUND (its network is not heard: off, out of range, or its Wi-Fi is stuck), NOT_ASSOCIATED (heard, but the instrument did not accept the link), ADDRESS_NOT_OBTAINED (linked, but the instrument gave no address: restarting the instrument usually restores it). Absent when unknown and on earlier bridges; treat an unknown value as absent.')
+    schemas['NativeInstrument']['properties']['failure_stage'] = stage
+    schemas['NativeOperation']['properties']['failure_stage'] = stage
+    schemas['NativeInstrument']['properties']['address_fallback'] = {'type': 'boolean',
+        'description': 'Present and true while the instrument is linked with an address the bridge took itself: the instrument accepted the Wi-Fi link and gave no address, its address plan is fixed and known, and the owner switch auto_policy.address_fallback is on. The link works; restarting the instrument restores its own addressing.'}
     schemas['NativeInfo']['properties'].update({
         'contract_minor': {'type': 'integer', 'minimum': 0, 'description': 'Minor version of contract 1 (1 since 1.1, 2 since 1.2).'},
         'free_radios': {'type': 'integer', 'minimum': 0, 'maximum': 16, 'description': 'Instrument-capable radios currently unused: a connect needing a radio will not replace anything while this is above zero.'},

@@ -15,8 +15,9 @@ Manufacturer/product names are used for identification. Third-party trademarks r
 
 ASCOM Alpaca interoperability follows the [official Alpaca API specification](https://ascom-standards.org/api/) and [ASCOM standards documentation](https://ascom-standards.org/). Specification references do not confer ASCOM certification; official conformance and physical-device acceptance are separate gates.
 
-No vendor SDK binaries, manufacturer packages or authentication keys are included.
-ZWO and QHY libraries retain their vendor terms and require separate owner review
-and installation. The owner-only installer does not grant redistribution rights.
+No manufacturer packages or authentication keys are included. The core wheel, the app-only update and the appliance images include
+no camera manufacturer file at all: no library, no licence text and no access rule, for ZWO, Player One, QHYCCD, Atik or Moravian alike.
+Each driver is downloaded from its manufacturer's own site only when the owner asks (Astro Bridge Setup, or Install on the bridge's
+Cameras page), and stays subject to that manufacturer's terms. Other hosts can use the owner-run ZWO installer, which shows the full licence first.
 The optional INDI service uses separately installed INDI packages and their own
 licenses; no INDI executable, driver or bubblewrap binary is bundled.

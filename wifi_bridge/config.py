@@ -87,6 +87,10 @@ AUTO_POLICY_DEFAULTS = {'quiet_seconds':120, 'cooldown_seconds':60,'force_first_
                         # Owner switch: paired apps may hold night reservations (contract 1.1 reserve_seconds).
                         'night_reservations':True,
                         **dict.fromkeys(DEMAND_FLAGS,True)}
+# Owner switches saved only once set, so an untouched configuration stays readable by the release before.
+# address_fallback (on unless set to false): an instrument with a fixed address plan that gives no
+# address gets a free one of that plan from the bridge.
+OPTIONAL_POLICY_FLAGS = ('address_fallback',)
 LEGACY_AUTO_POLICY_DEFAULTS = dict(AUTO_POLICY_DEFAULTS, **dict.fromkeys(DEMAND_FLAGS,False))
 
 
@@ -98,8 +102,9 @@ def auto_policy(config):
 
 def validated_auto_policy(data, old):
     value=data.get('auto_policy', {})
-    if not isinstance(value,dict) or set(value)-set(AUTO_POLICY_DEFAULTS):raise Invalid('Unknown automatic connection policy fields.')
+    if not isinstance(value,dict) or set(value)-set(AUTO_POLICY_DEFAULTS)-set(OPTIONAL_POLICY_FLAGS):raise Invalid('Unknown automatic connection policy fields.')
     policy=auto_policy(old);policy.update(value)
+    if any(type(policy[field]) is not bool for field in OPTIONAL_POLICY_FLAGS if field in policy):raise Invalid('Automatic connection policy flags must be booleans.')
     for field in ('quiet_seconds','cooldown_seconds'):
         if type(policy[field]) is not int or not 30<=policy[field]<=3600:raise Invalid('Quiet/cooldown must be integer seconds from30 to3600.')
     for field in ('force_first_profile','protect_running_operations','night_reservations',*DEMAND_FLAGS):
@@ -128,6 +133,11 @@ def hotspot_ssid(config, mac):
     explicit = config.get('hotspot', {}).get('ssid', '')
     if explicit:
         return explicit
+    # A personal password is stored as a WPA key bound to one network name;
+    # that name stays the hotspot name on every radio (see password.py).
+    key = config.get('hotspot_key')
+    if isinstance(key, dict) and isinstance(key.get('ssid'), str) and key['ssid']:
+        return key['ssid']
     suffix = mac.replace(':', '')[-6:].lower()
     name = config['hostname']
     # The factory hostname already contains a radio suffix. Do not duplicate it.
@@ -348,16 +358,36 @@ def validate_config(data, old, devices):
     primary = next((p for p in normalized if p["id"] == "primary"), normalized[0] if normalized else {})
     return {"schema_version": 2, "interface_roles": roles, "connection_mode": mode, "hotspot_private_lan": private_lan, "auto_connect": automatic, "auto_policy":validated_auto_policy(data,old), "hostname": hostname, "country": country, "home": home,
             "admin_hash": encoded, "telescopes": normalized, "stations": stations, "serial_mounts": serial_mounts,
-            **{key: old[key] for key in ("hotspot_password", "linux_password_default") if key in old},
+            **{key: old[key] for key in ("hotspot_key", "linux_password_default") if key in old},
             "telescope": {k: v for k, v in primary.items() if k in ("ssid", "mac", "password", "bssid", "hidden")},
             "telescope_ip": primary.get("target_ip", "10.0.0.1"),
             "hotspot": {"enabled": hotspot.get("enabled", False), **({'ssid': hotspot_name} if 'ssid' in hotspot else {}),
                         **({'mac': hotspot_mac} if 'mac' in hotspot or 'mac' in old.get('hotspot', {}) else {})}}
 
 
+def migrate_hotspot_password(config, mac, bootstrap_password):
+    """Replace a stored hotspot password by its derived WPA key.
+
+    Earlier versions kept the hotspot password in clear in config.json. The key
+    is bound to the network name the hotspot uses now, which then stays its name.
+    A password equal to the initial one is simply dropped: the initial password
+    stays in bootstrap.json. Returns the new configuration, or None if unchanged.
+    """
+    if 'hotspot_password' not in config:
+        return None
+    from .password import hotspot_key
+    value = dict(config)
+    password = value.pop('hotspot_password')
+    if isinstance(password, str) and password and password != bootstrap_password:
+        radio = value.get('hotspot', {}).get('mac') or reserved_hotspot_mac(value) or mac
+        value['hotspot_key'] = hotspot_key(password, hotspot_ssid(value, radio))
+    return value
+
+
 class Store:
     def __init__(self, directory, mac):
         self.directory = Path(directory)
+        self.mac = mac
         self.path = self.directory / "config.json"
         self.config = json.loads(self.path.read_text()) if self.path.exists() else default_config(mac)
         for profile in self.config.get("telescopes", []): profile.setdefault("client_connect", True)

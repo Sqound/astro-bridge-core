@@ -4,13 +4,13 @@
 
 ## 1. Find the device
 
-Power on the instrument. In **Settings → Telescopes**, choose **Add telescope** and scan.
+Power on the instrument. In **Settings → Instruments**, choose **Add instrument** and scan.
 
 ![Recognized Wi-Fi networks in the scan assistant](../images/scan.png)
 
 A Wi-Fi prefix selects a likely plugin family. It does not authenticate the device. If no compatible family appears, use manual entry or [contribute a plugin](../plugins/README.md).
 
-When no telescope is selected or connected, an idle unreserved adapter can scan periodically. Fresh, recognized, unsaved devices appear on the home page. A new-device notification opens the retained observation's prefilled form after authentication.
+When no instrument is selected or connected, an idle unreserved adapter can scan periodically. Fresh, recognized, unsaved devices appear on the home page. A new-device notification opens the retained observation's prefilled form after authentication.
 
 ## 2. Review and save
 

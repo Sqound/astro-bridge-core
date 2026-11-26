@@ -4,6 +4,13 @@ Exact vendor/product rules outrank class rules. Duplicate rules at the same
 specificity fail closed. A match is a hint, never consent to open a device.
 UVC has a reviewed lazy platform factory; construction never probes a device.
 The source table is loaded explicitly; importing this module reads no files.
+
+Manufacturer drivers come from the versioned driver catalog (catalog.py): each
+manufacturer brings its driver identifier, its USB vendor identifiers and its
+optional INDI driver. A manufacturer without a reviewed adapter is known and
+matched, but never served (camera_driver_unavailable). A manufacturer table may
+match every product of its own vendor identifier, except listed products
+(vendor_id with except_product_ids), below exact rules and above class rules.
 """
 import copy
 import json
@@ -13,7 +20,6 @@ import re
 from .driver import CameraError, integer
 
 SCHEMA_VERSION = 1
-DRIVER_IDS = ('simulator', 'uvc', 'zwo_asi')
 MAX_MANIFESTS = 32
 MAX_MANIFEST_BYTES = 16384
 
@@ -23,10 +29,22 @@ def _fields(value, required):
         raise CameraError('invalid_camera_manifest')
 
 
+def driver_ids():
+    from .catalog import driver_ids as ids
+    return ids()
+
+
+def _vendor(driver):
+    from .catalog import entries
+    return entries().get(driver)
+
+
 def validate_manifest(value):
     fields = ('schema_version', 'id', 'driver', 'usb', 'validation')
     if isinstance(value, dict) and 'indi_driver' in value:
-        if value.get('driver') != 'zwo_asi' or value['indi_driver'] != 'indi_asi_ccd':
+        # The INDI driver of a manufacturer is named by its catalog entry, nowhere else.
+        vendor = _vendor(value.get('driver')) if isinstance(value.get('driver'), str) else None
+        if vendor is None or vendor['indi_driver'] is None or value['indi_driver'] != vendor['indi_driver']:
             raise CameraError('invalid_camera_manifest')
         fields += ('indi_driver',)
     _fields(value, fields)
@@ -34,7 +52,7 @@ def validate_manifest(value):
         raise CameraError('unsupported_camera_schema')
     if not isinstance(value['id'], str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,31}', value['id']):
         raise CameraError('invalid_camera_id')
-    if not isinstance(value['driver'], str) or value['driver'] not in DRIVER_IDS:
+    if not isinstance(value['driver'], str) or value['driver'] not in driver_ids():
         raise CameraError('unknown_camera_driver')
     if value['validation'] not in ('unverified', 'simulation'):
         raise CameraError('invalid_camera_validation')
@@ -49,9 +67,22 @@ def validate_manifest(value):
         elif set(rule) == {'class'}:
             if not integer(rule['class'], 1, 255):
                 raise CameraError('invalid_camera_usb')
+        elif set(rule) == {'vendor_id', 'except_product_ids'}:
+            # Every product of one manufacturer, except the listed ones (a filter wheel, for example).
+            excluded = rule['except_product_ids']
+            if (not integer(rule['vendor_id'], 1, 65535) or not isinstance(excluded, list) or len(excluded) > 32
+                    or len(set(excluded)) != len(excluded) or any(not integer(v, 0, 65535) for v in excluded)):
+                raise CameraError('invalid_camera_usb')
         else:
             raise CameraError('invalid_camera_usb')
-    if 'indi_driver' in value and (not value['usb'] or any(rule.get('vendor_id') != 0x03c3 for rule in value['usb'])):
+    vendor = _vendor(value['driver'])
+    # A manufacturer driver only matches that manufacturer's USB vendor identifiers.
+    if vendor is not None and any(rule.get('vendor_id') not in vendor['usb_vendors'] for rule in value['usb']):
+        raise CameraError('invalid_camera_manifest')
+    # A whole-vendor rule belongs to a manufacturer of the driver catalog only.
+    if vendor is None and any('except_product_ids' in rule for rule in value['usb']):
+        raise CameraError('invalid_camera_manifest')
+    if 'indi_driver' in value and not value['usb']:
         raise CameraError('invalid_camera_manifest')
     if value['driver'] == 'simulator' and value['usb']:
         raise CameraError('simulator_cannot_match_usb')
@@ -67,7 +98,8 @@ def validate_registry(values):
         if item['id'] in result:
             raise CameraError('duplicate_camera_id')
         for rule in item['usb']:
-            signature = tuple(sorted(rule.items()))
+            # A whole-vendor rule is one signature per vendor, whatever it excludes.
+            signature = (('vendor', rule['vendor_id']),) if 'except_product_ids' in rule else tuple(sorted(rule.items()))
             if signature in rules:
                 raise CameraError('ambiguous_camera_usb')
             rules.add(signature)
@@ -116,11 +148,15 @@ class CameraRegistry:
         self._manifests = validate_registry(values)
         # These callables come only from reviewed platform code, never a manifest.
         self._factories = dict(factories or {})
-        if any(key not in DRIVER_IDS or not callable(value) for key, value in self._factories.items()):
+        if any(key not in driver_ids() or not callable(value) for key, value in self._factories.items()):
             raise CameraError('unknown_camera_driver')
         self._factories.setdefault('simulator', _simulator)
         self._factories.setdefault('uvc', _uvc)
         self._factories.setdefault('zwo_asi', _zwo_asi)
+        from .vendor_process import ADAPTERS, factory
+        for vendor in ADAPTERS:
+            if vendor != 'zwo_asi' and vendor in driver_ids():
+                self._factories.setdefault(vendor, factory(vendor))
 
     def descriptors(self):
         return tuple(copy.deepcopy(list(self._manifests.values())))
@@ -149,9 +185,18 @@ class CameraRegistry:
                 if set(rule) == {'vendor_id', 'product_id'}:
                     if rule['vendor_id'] == vendor_id and rule['product_id'] == product_id:
                         return copy.deepcopy(descriptor)
-                elif rule['class'] == usb_class:
+                elif 'class' in rule and rule['class'] == usb_class:
                     fallback = descriptor
         return copy.deepcopy(fallback)
+
+    def match_vendor(self, vendor_id, product_id):
+        """A whole-vendor rule of a manufacturer driver; exact rules always win (match_device)."""
+        for descriptor in self._manifests.values():
+            for rule in descriptor['usb']:
+                if ('except_product_ids' in rule and rule['vendor_id'] == vendor_id
+                        and product_id not in rule['except_product_ids']):
+                    return copy.deepcopy(descriptor)
+        return None
 
     def match_device(self, device):
         """Exact IDs beat all class hints, including composite USB interfaces.
@@ -166,6 +211,9 @@ class CameraRegistry:
             return exact
         if any(value in (2, 10, 224) for value in classes):
             return None
+        whole = self.match_vendor(vendor, product)
+        if whole:
+            return whole
         for value in classes:
             match = self.match_usb(vendor, product, value)
             if match:
@@ -184,26 +232,37 @@ def _uvc(**options):
 
 
 def _zwo_asi(**options):
+    # Report a missing or deactivated SDK before starting the isolated process.
+    from .zwo_platform import resolve, warn_untested
+    warn_untested(resolve()['version'])
     from .zwo_process import IsolatedASI
     return IsolatedASI(**options)
 
 
 def manifest_schema():
+    from .catalog import entries
+    vendors = entries()
     def obj(properties):
         return {'type': 'object', 'properties': properties, 'required': list(properties), 'additionalProperties': False}
     usb_id = {'type': 'integer', 'minimum': 0, 'maximum': 65535}
     schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema', **obj({
         'schema_version': {'type': 'integer', 'const': SCHEMA_VERSION},
         'id': {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,31}$'},
-        'driver': {'enum': list(DRIVER_IDS)},
+        'driver': {'enum': list(driver_ids())},
         'usb': {'type': 'array', 'maxItems': 32, 'uniqueItems': True, 'items': {'oneOf': [
             obj({'vendor_id': usb_id, 'product_id': usb_id}),
-            obj({'class': {'type': 'integer', 'minimum': 1, 'maximum': 255}})]}},
+            obj({'class': {'type': 'integer', 'minimum': 1, 'maximum': 255}}),
+            obj({'vendor_id': usb_id, 'except_product_ids': {'type': 'array', 'maxItems': 32, 'uniqueItems': True,
+                                                             'items': usb_id}})]}},
         'validation': {'enum': ['unverified', 'simulation']}}),
         'allOf': [{'if': {'properties': {'driver': {'const': 'simulator'}}},
                    'then': {'properties': {'usb': {'maxItems': 0}}}}]}
-    schema['properties']['indi_driver'] = {'const': 'indi_asi_ccd'}
-    schema['allOf'].append({'if': {'required': ['indi_driver']}, 'then': {'properties': {
-        'driver': {'const': 'zwo_asi'}, 'usb': {'minItems': 1, 'items': {
-            'required': ['vendor_id'], 'properties': {'vendor_id': {'const': 0x03c3}}}}}}})
+    schema['properties']['indi_driver'] = {'enum': sorted({v['indi_driver'] for v in vendors.values() if v['indi_driver']})}
+    for ident, vendor in vendors.items():
+        # Each manufacturer: its own USB vendors only, and its own INDI driver if it has one.
+        schema['allOf'].append({'if': {'properties': {'driver': {'const': ident}}}, 'then': {'properties': {
+            'usb': {'items': {'required': ['vendor_id'], 'properties': {'vendor_id': {'enum': vendor['usb_vendors']}}}}}}})
+        if vendor['indi_driver']:
+            schema['allOf'].append({'if': {'required': ['indi_driver'], 'properties': {'indi_driver': {'const': vendor['indi_driver']}}},
+                                    'then': {'properties': {'driver': {'const': ident}, 'usb': {'minItems': 1}}}})
     return schema

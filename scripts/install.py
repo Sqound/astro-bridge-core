@@ -12,7 +12,7 @@ import tempfile
 import urllib.request
 import venv
 
-RELEASE_VERSION = '1.1.0'
+RELEASE_VERSION = '1.2.0'
 RELEASE_SHA256 = None  # The release builder embeds the exact wheel checksum.
 
 

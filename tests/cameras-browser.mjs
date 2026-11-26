@@ -49,7 +49,8 @@ try{
   fixture={...structuredClone(baseline),...patch};await page.evaluate(label=>{if(label==='Heavy images')state.devices=state.devices.map(d=>({...d,bands:['2.4']}));},label);await page.evaluate(()=>loadCameras());await page.locator(`[data-camera-state="${label}"]`).waitFor();
   if(label==='Heavy images')assert.ok((await page.locator('#camera-cards').innerText()).includes('Binning 2 is the initial default'));
  }
- for(const [stateName,description] of [['driver_missing','Install the ZWO ASI SDK'],['unsupported','Connect a single ASI camera']]){
+ // No manufacturer file comes with an image: a camera waiting for its driver points to Camera drivers, ZWO included.
+ for(const [stateName,description] of [['driver_missing','Install the ZWO ASI driver in Camera drivers below, then reconnect the camera.'],['unsupported','Connect a single ASI camera']]){
   fixture={...structuredClone(baseline),driver:'zwo_asi',alpaca:null,discovery:{state:stateName}};
   await page.evaluate(()=>loadCameras());
   await page.waitForFunction(text=>document.querySelector('#camera-cards').textContent.includes(text),description);
@@ -87,6 +88,22 @@ try{
  }
  await page.evaluate(()=>BridgeI18n.setLocale('en'));await page.setViewportSize({width:1280,height:960});await page.evaluate(()=>{localStorage.setItem('smart-telescope.theme','light');window.dispatchEvent(new StorageEvent('storage',{key:'smart-telescope.theme',newValue:'light'}));});await page.screenshot({path:resolve(output,'camera-settings-1280.png'),fullPage:true});
  results.push('Real INDI, serve and discovery saves; stale revision refuses write and retains draft; explicit reload; polling preserves draft; supported-camera SDK requirement, hardware status and dialog focus; ten complete locales at320px');
+ // ZWO is a line like the others: not installed, then downloaded on request after the owner accepts the manufacturer's terms.
+ await page.setViewportSize({width:375,height:960});
+ await page.locator('#camera-sdk').waitFor();
+ const zwoLine=page.locator('[data-driver-row="zwo_asi"]');await zwoLine.waitFor();
+ assert.match(await zwoLine.innerText(),/Not installed\. The bridge downloads it from the manufacturer\./);
+ assert.equal(await page.locator('#camera-driver-zwo_asi').count(),1);
+ for(const id of ['camera-sdk-review','camera-sdk-disable','camera-sdk-dialog','camera-sdk-accept','camera-sdk-license'])assert.equal(await page.locator('#'+id).count(),0,id+' is gone');
+ await page.locator('#camera-driver-install-zwo_asi').click();await page.locator('#camera-driver-dialog').waitFor();
+ assert.match(await page.locator('#camera-driver-dialog-text').innerText(),/downloads version 1\.42 from the manufacturer's site/);
+ assert.equal(await page.locator('#camera-driver-dialog-unverified').isVisible(),true,'ZWO SDK 1.42 is not verified on hardware');
+ await page.locator('#camera-driver-later').click();assert.equal(await page.locator('#camera-driver-dialog').isVisible(),false);
+ fixture={...structuredClone(baseline),id:'usb-zwo',name:'ZWO ASI',driver:'zwo_asi',alpaca:null,owner:null,discovery:{state:'driver_missing'}};
+ await page.locator('#nav-telescopes').click();await page.evaluate(()=>loadCameras());await page.locator('[data-camera-id="usb-zwo"]').waitFor();
+ assert.match(await page.locator('[data-camera-id="usb-zwo"]').innerText(),/Install the ZWO ASI driver in Camera drivers below/);
+ assert.equal(await page.locator('#camera-sdk-activate-usb-zwo').count(),0);
+ results.push('ZWO line offers the same download as the other manufacturers, no licence dialog for a supplied library, camera card points to Camera drivers');
  // gPhoto profile contract fixture: an absent Bayer value must never imply mono.
  await page.locator('#nav-telescopes').click();
  let generation='a'.repeat(32),profile={attachment_generation:generation,detected:{name:'Detected DSLR',width:4000},values:{name:'Detected DSLR',width:4000},missing:['height','pixel_um_x','pixel_um_y','bits','exposure_min','exposure_max','bayer_pattern'],ready:false},saved=null,failSave=false;

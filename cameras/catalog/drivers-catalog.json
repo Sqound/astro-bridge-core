@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "catalog_version": "2026.11.20.3",
+  "drivers": [
+    {
+      "id": "zwo_asi",
+      "name": "ZWO ASI",
+      "verified_on_hardware": false,
+      "terms_url": "https://www.zwoastro.com/software/product-sdk/",
+      "usb_vendors": [
+        963
+      ],
+      "indi_driver": "indi_asi_ccd",
+      "needs_firmware": false,
+      "builds": [
+        {
+          "version": "1.42",
+          "arch": "arm64",
+          "source": "download",
+          "url": "https://dl.zwoastro.com/software?app=DeveloperCameraSdk&platform=windows86&region=Overseas",
+          "redirect_hosts": [
+            "dl.zwoastro.com",
+            "api.zwoastro.com",
+            "e.zwoastro.com"
+          ],
+          "size": 114589633,
+          "sha256": "2293e356266d3d65e53af220080dc38e0c0c200d8697109c8460361f3fb111e7",
+          "nested": "ASI_Camera_SDK/ASI_linux_mac_SDK_V1.42.tar.bz2",
+          "files": [
+            {
+              "member": "ASI_linux_mac_SDK_V1.42/lib/armv8/libASICamera2.so.1.42",
+              "sha256": "a8300d27135a7510cc90558daa02ae3935a3b6ee5e3ce7b073b9386f44b499a8",
+              "install_as": "libASICamera2.so.1.42"
+            }
+          ],
+          "license_member": "ASI_linux_mac_SDK_V1.42/license.txt",
+          "license_sha256": "98ad1c18048bfdabc8463740ac36a8d8cd710bdc3102ac6c22978ec50056e5a2"
+        },
+        {
+          "version": "1.42",
+          "arch": "armv6",
+          "source": "download",
+          "url": "https://dl.zwoastro.com/software?app=DeveloperCameraSdk&platform=windows86&region=Overseas",
+          "redirect_hosts": [
+            "dl.zwoastro.com",
+            "api.zwoastro.com",
+            "e.zwoastro.com"
+          ],
+          "size": 114589633,
+          "sha256": "2293e356266d3d65e53af220080dc38e0c0c200d8697109c8460361f3fb111e7",
+          "nested": "ASI_Camera_SDK/ASI_linux_mac_SDK_V1.42.tar.bz2",
+          "files": [
+            {
+              "member": "ASI_linux_mac_SDK_V1.42/lib/armv6/libASICamera2.so.1.42",
+              "sha256": "e06c4b92461202cfe5e74b9c9c18a12cf3810dd057b7642fa2ac8ae1a6f5ee36",
+              "install_as": "libASICamera2.so.1.42"
+            }
+          ],
+          "license_member": "ASI_linux_mac_SDK_V1.42/license.txt",
+          "license_sha256": "98ad1c18048bfdabc8463740ac36a8d8cd710bdc3102ac6c22978ec50056e5a2"
+        }
+      ]
+    },
+    {
+      "id": "qhyccd",
+      "name": "QHYCCD",
+      "verified_on_hardware": false,
+      "terms_url": "https://www.qhyccd.com/html/prepub/log_en.html",
+      "usb_vendors": [
+        5656
+      ],
+      "indi_driver": null,
+      "needs_firmware": true,
+      "builds": [
+        {
+          "version": "26.07.28",
+          "arch": "arm64",
+          "source": "download",
+          "url": "https://www.qhyccd.com/file/repository/publish/SDK/260728/sdk_linux_arm64_26.07.28.tar.gz",
+          "redirect_hosts": [],
+          "size": 12530268,
+          "sha256": "031b85aed0d0edb6d237f4c7e04741550c2e0b652c0b458461bccb9ae1de18dc",
+          "nested": null,
+          "files": [
+            {
+              "member": "sdk_linux_arm64_26.07.28/usr/local/lib/libqhyccd.so.26.7.28.10",
+              "sha256": "3c655bd1f5d3776c4553cd7bc7bbdc93ed7e787b3fd1d967a22e727316283390",
+              "install_as": "libqhyccd.so.26.7.28.10"
+            }
+          ],
+          "license_member": null,
+          "license_sha256": null
+        }
+      ]
+    },
+    {
+      "id": "player_one",
+      "name": "Player One",
+      "verified_on_hardware": false,
+      "terms_url": "https://player-one-astronomy.com/service/software/",
+      "usb_vendors": [
+        41120
+      ],
+      "indi_driver": null,
+      "needs_firmware": false,
+      "builds": [
+        {
+          "version": "3.10.1",
+          "arch": "arm64",
+          "source": "download",
+          "url": "https://player-one-astronomy.com/download/softwares/PlayerOne_Camera_SDK_Linux_V3.10.1.tar.gz",
+          "redirect_hosts": [],
+          "size": 1764409,
+          "sha256": "d683a7a793846b35c5de82f7cfab9e7a12a911f0b99f9e5dbf653ba0300f2886",
+          "nested": null,
+          "files": [
+            {
+              "member": "PlayerOne_Camera_SDK_Linux_V3.10.1/lib/arm64/libPlayerOneCamera.so.3.10.1",
+              "sha256": "c38743491334007d4f31a285d5d34d48d577d7d0fcb16f43fbe3d53d2eafe6e1",
+              "install_as": "libPlayerOneCamera.so.3.10.1"
+            }
+          ],
+          "license_member": "PlayerOne_Camera_SDK_Linux_V3.10.1/license.txt",
+          "license_sha256": "f842967168887a4bc4d8b797a63b9787c2f0aab0201b0dfd55dda4bf94dcee4f"
+        },
+        {
+          "version": "3.10.1",
+          "arch": "armv6",
+          "source": "download",
+          "url": "https://player-one-astronomy.com/download/softwares/PlayerOne_Camera_SDK_Linux_V3.10.1.tar.gz",
+          "redirect_hosts": [],
+          "size": 1764409,
+          "sha256": "d683a7a793846b35c5de82f7cfab9e7a12a911f0b99f9e5dbf653ba0300f2886",
+          "nested": null,
+          "files": [
+            {
+              "member": "PlayerOne_Camera_SDK_Linux_V3.10.1/lib/arm32/libPlayerOneCamera.so.3.10.1",
+              "sha256": "421253cc1498600b54683264e196c6bcc149b7455a85823e93489c4a51a80f2d",
+              "install_as": "libPlayerOneCamera.so.3.10.1"
+            }
+          ],
+          "license_member": "PlayerOne_Camera_SDK_Linux_V3.10.1/license.txt",
+          "license_sha256": "f842967168887a4bc4d8b797a63b9787c2f0aab0201b0dfd55dda4bf94dcee4f"
+        }
+      ]
+    },
+    {
+      "id": "atik",
+      "name": "Atik",
+      "verified_on_hardware": false,
+      "terms_url": "https://www.atik-cameras.com/software-downloads/",
+      "usb_vendors": [
+        8423
+      ],
+      "indi_driver": null,
+      "needs_firmware": false,
+      "builds": [
+        {
+          "version": "2026.10.07",
+          "arch": "arm64",
+          "source": "download",
+          "url": "https://downloads.atik-cameras.com/AtikCamerasSDK_2026_10_07_Master_2139.zip",
+          "redirect_hosts": [],
+          "size": 38895500,
+          "sha256": "f8050155e0198835f6fee5522619d49bd27f8008231ddedd6c3c356d9842824e",
+          "nested": null,
+          "files": [
+            {
+              "member": "lib/ARM/64/NoFlyCapture/libatikcameras.so",
+              "sha256": "0b07d969d6ed1947f40a61904dbbe730eaa3848afc31017eb1c3c1b002265477",
+              "install_as": "libatikcameras.so"
+            }
+          ],
+          "license_member": "AtikCamerasSDKLicenseAgreement.pdf",
+          "license_sha256": "cf4e00d2edcabeff1be1541b1700456da6df71574e27b0e92d1127958c01588b"
+        }
+      ]
+    },
+    {
+      "id": "moravian",
+      "name": "Moravian",
+      "verified_on_hardware": false,
+      "terms_url": "https://www.gxccd.com/cat?id=156&lang=409",
+      "usb_vendors": [
+        4935
+      ],
+      "indi_driver": null,
+      "needs_firmware": false,
+      "builds": [
+        {
+          "version": "0.12.3",
+          "arch": "arm64",
+          "source": "download",
+          "url": "https://www.gxccd.com/download?id=472&lang=409",
+          "redirect_hosts": [
+            "www.gxccd.com"
+          ],
+          "size": 154345,
+          "sha256": "51766b2d99dde386e4437edf3081bc69ed5eee40b3cd6f27ccd387cbb8a706be",
+          "nested": null,
+          "files": [
+            {
+              "member": "libgxccd-0.12.3/lib/libgxccd.so",
+              "sha256": "bf011d9767b4e38c1c9ce994fb77e41fea8850f3fb8bb46e67c838ce13316ac7",
+              "install_as": "libgxccd.so"
+            }
+          ],
+          "license_member": "libgxccd-0.12.3/LICENSE",
+          "license_sha256": "a37c4c0e7cf1afe9aaa4589db778aae8de7dde209bbf327b6c57e9b51eee4a89"
+        }
+      ]
+    }
+  ]
+}

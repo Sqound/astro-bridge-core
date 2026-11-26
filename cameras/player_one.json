@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "player_one",
+  "driver": "player_one",
+  "usb": [
+    {"vendor_id": 41120, "except_product_ids": [61441]}
+  ],
+  "validation": "unverified"
+}

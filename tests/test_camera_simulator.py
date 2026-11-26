@@ -31,7 +31,8 @@ class SimulatorTests(unittest.TestCase):
         camera = SimulatedCamera()
         self.assertIsInstance(camera, CameraDriver)
         info = camera.info()
-        self.assertEqual(set(info), set(INFO_FIELDS))
+        self.assertEqual(set(info) - {'exposure_resolution'}, set(INFO_FIELDS))
+        self.assertEqual(info['exposure_resolution'], 0.0)  # any duration is accepted
         self.assertEqual((info['width'], info['height'], info['bits'], info['max_adu']), (1280, 960, 16, 65535))
         self.assertEqual(info['sensor_type'], 0)
         self.assertEqual(info['max_bin'], 4)

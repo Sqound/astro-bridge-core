@@ -2,6 +2,26 @@
   let locale = "en";
   try { const saved=localStorage.getItem(storageKey); if(locales.some(l=>l.tag===saved)) locale=saved; }
   catch (_) { /* Local storage is optional. */ }
+  // One language at a time: English is built in, any other catalog is its own file.
+  const revision=document.querySelector('meta[name="bridge-shell-revision"]')?.content||"";
+  const pending=new Map();
+  function catalogUrl(tag){return "/i18n-"+tag+".js"+(/^[0-9a-f]{64}$/.test(revision)?"?v="+revision:"");}
+  function addCatalog(tag,values){
+    if(!locales.some(l=>l.tag===tag)||tag==="en"||!values||typeof values!=="object")return;
+    catalogs[tag]=values;
+  }
+  function loadCatalog(tag){
+    if(catalogs[tag])return Promise.resolve(true);
+    if(pending.has(tag))return pending.get(tag);
+    const promise=new Promise(resolve=>{
+      const script=document.createElement("script");script.src=catalogUrl(tag);script.async=true;
+      script.onload=()=>resolve(!!catalogs[tag]);script.onerror=()=>{pending.delete(tag);resolve(false);};
+      document.head.append(script);
+    });
+    pending.set(tag,promise);return promise;
+  }
+  // Parse-time load keeps the first page in the chosen language without a flash of English.
+  if(locale!=="en"&&document.readyState==="loading")document.write('<script src="'+catalogUrl(locale)+'"><\/script>');
   function t(key, values={}) {
     const text = catalogs[locale]?.[key] ?? catalogs.en[key] ?? key;
     return text.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match,name) => Object.hasOwn(values,name) ? String(values[name]) : match);
@@ -29,13 +49,14 @@
     document.querySelectorAll("button[data-locale]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.locale===locale)));
     document.dispatchEvent(new CustomEvent("bridge:localechange", {detail:{locale}}));
   }
-  function setLocale(tag) {
+  async function setLocale(tag) {
     if(!locales.some(l=>l.tag===tag))return;
+    if(tag!=="en"&&!await loadCatalog(tag))return;
     locale=tag;
     try {localStorage.setItem(storageKey,locale);} catch (_) { /* Session-only preference. */ }
     apply();
   }
-  window.BridgeI18n={t,translate,sourceKey,setLocale,locales,catalogs,get locale(){return locale;}};
+  window.BridgeI18n={t,translate,sourceKey,setLocale,addCatalog,loadCatalog,locales,catalogs,get locale(){return locale;}};
   document.documentElement.lang=locales.find(l=>l.tag===locale).complete?locale:"en";
   document.addEventListener("DOMContentLoaded",()=>{
     const options=document.getElementById("locale-options"), select=document.getElementById("locale-select"),menu=document.getElementById("locale-menu");
@@ -54,9 +75,11 @@
     menu.addEventListener("keydown",event=>{if(event.key==="Escape"){menu.open=false;menu.querySelector("summary").focus();}});
     window.addEventListener("storage",event=>{
       if(event.key!==storageKey && event.key!==null)return;
-      const tag=event.newValue;
-      locale=locales.some(l=>l.tag===tag)?tag:"en";apply();
+      const tag=locales.some(l=>l.tag===event.newValue)?event.newValue:"en";
+      void loadCatalog(tag).then(()=>{locale=catalogs[tag]?tag:"en";apply();});
     });
+    // A parse-time catalog that failed to load falls back to English, then retries.
+    if(!catalogs[locale]){const wanted=locale;locale="en";void loadCatalog(wanted).then(ok=>{if(ok){locale=wanted;apply();}});}
     apply();
   });
 })();

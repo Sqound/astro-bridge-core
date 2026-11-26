@@ -42,10 +42,32 @@ try{
   const forbidden=await page.evaluate(mac=>[...connectionGroups(state).values()].some(g=>g.device?.mac===mac&&!g.reserved),target);assert.equal(forbidden,false);
   await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});await page.locator('#panel-radios').screenshot({path:resolve(output,'adapter-roles-night-375.png')});
  });
+ await check('private network form does not ask again for an adapter reserved for it',async()=>{
+  await page.evaluate(mac=>openEditor(null,true),third);
+  assert.equal(await page.locator('#radio-fields').isVisible(),true);await page.locator('#close-editor').click();
+  await page.locator(`select[data-role-mac="${third}"]`).selectOption('home');await page.locator('#interface-role-save').click();
+  await page.waitForFunction(mac=>state.config.interface_roles?.[mac]==='home',third);
+  await page.evaluate(()=>openEditor(null,true));
+  assert.equal(await page.locator('#radio-fields').isVisible(),false);assert.equal(await page.locator('#network-interface').inputValue(),third);
+  await page.locator('#close-editor').click();
+  await page.locator(`select[data-role-mac="${third}"]`).selectOption('telescope');await page.locator('#interface-role-save').click();
+  await page.waitForFunction(mac=>state.config.interface_roles?.[mac]==='telescope',third);
+ });
  await check('missing reserved adapters stay visible with a useful warning',async()=>{
   await page.evaluate(mac=>{const fake=structuredClone(state);fake.devices=fake.devices.filter(d=>d.mac!==mac);renderRadioRoles(fake);},target);
   assert.equal(await page.locator(`select[data-role-mac="${target}"]`).inputValue(),'hotspot');assert.equal(await page.locator('#interface-role-warning').isVisible(),true);assert.match(await page.locator('#interface-role-warning').innerText(),/missing/i);
   await page.locator('#panel-radios').screenshot({path:resolve(output,'adapter-missing-night-375.png')});await page.evaluate(()=>renderRadioRoles(state));
+ });
+ await check('an adapter behind a USB hub is flagged on its row and in the adapter notice',async()=>{
+  // The bridge reports the hub in its status; every later poll keeps saying so.
+  await page.route('**/api/status*',async route=>{const response=await route.fetch();const body=await response.json();body.devices=body.devices.map(d=>d.mac===third?{...d,usb:true,usb_hub:true}:d);await route.fulfill({response,json:body});});
+  await page.waitForFunction(mac=>state.devices.some(d=>d.mac===mac&&d.usb_hub),third);
+  const row=page.locator(`select[data-role-mac="${third}"]`).locator('xpath=ancestor::div[contains(@class,"radio-row")]');
+  assert.match(await row.locator('.radio-hub-warning').innerText(),/USB hub/);assert.equal(await page.locator('.radio-hub-warning').count(),1);
+  assert.match(await page.locator('#adapter-notice').textContent(),/USB hub/);
+  await page.evaluate(()=>BridgeI18n.setLocale('fr'));assert.match(await row.locator('.radio-hub-warning').innerText(),/hub USB/);
+  await page.locator('#panel-radios').screenshot({path:resolve(output,'adapter-usb-hub-night-fr-375.png')});await page.evaluate(()=>BridgeI18n.setLocale('en'));
+  await page.unroute('**/api/status*');await page.waitForFunction(()=>!state.devices.some(d=>d.usb_hub));await page.waitForFunction(()=>!document.querySelector('.radio-hub-warning'));
  });
  await check('ten locales fit at 320px',async()=>{
   await page.setViewportSize({width:320,height:900});

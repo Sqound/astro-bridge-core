@@ -255,5 +255,5 @@ def onboarding_defaults(ssid):
 def require_config_plugins(config):
     kinds={entry.get('kind','generic') for entry in config.get('telescopes',[])+config.get('stations',[])}
     if kinds-set(profile_kinds()):raise ValueError('This update is missing a plugin used by a saved profile.')
-    fields={'quiet_seconds','cooldown_seconds','force_first_profile','protect_running_operations','night_reservations'}|{demand_flag(p['id']) for p in demand_plugins()}
+    fields={'quiet_seconds','cooldown_seconds','force_first_profile','protect_running_operations','night_reservations','address_fallback'}|{demand_flag(p['id']) for p in demand_plugins()}
     if set(config.get('auto_policy',{}))-fields:raise ValueError('This update is missing a saved plugin policy.')

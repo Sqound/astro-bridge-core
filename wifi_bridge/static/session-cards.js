@@ -7,7 +7,7 @@ function cardTime(utc){const date=new Date(utc);return Number.isFinite(date.getT
 function sessionAdapters(plugin){return (plugin?.telemetry?.adapters||[]).map(a=>typeof a==="string"?a:a.id);}
 function sessionCapability(plugin){const ids=sessionAdapters(plugin);return ids.includes("seestar_events_v1")?["verified","unverified"].includes(makerSessionKeyState)?"Session: full (with your key)":"Session: position only":ids.includes("vespera_status_v1")?"Session: full":ids.includes("alpaca_observer_v1")?"Session: position only":"Session: link only";}
 function sessionInfo(profile,opener){
-  cardHistoryOpener=opener.id;const plugin=pluginById(profile.kind);$("session-info-body").replaceChildren(sessionCopy("p",plugin?.telemetry?.limitation||"Read-only observations. Available values depend on the instrument and enabled adapters."),sessionCopy("p","A reading becomes stale after three source cadences. Paused means the adapter yielded; it does not mean the telescope stopped. No instrument controls are sent."));
+  cardHistoryOpener=opener.id;const plugin=pluginById(profile.kind);$("session-info-body").replaceChildren(sessionCopy("p",plugin?.telemetry?.limitation||"Read-only observations. Available values depend on the instrument and enabled adapters."),sessionCopy("p","A reading becomes stale after three source cadences. Paused means the adapter yielded; it does not mean the instrument stopped. No instrument controls are sent."));
   $("session-info").showModal();
 }
 function renderSessionBlock(profile,primary=false){
@@ -16,7 +16,7 @@ function renderSessionBlock(profile,primary=false){
   const diagnostic=cardTelemetry?.adapter_status?.[profile.id]||[],paused=diagnostic.some(row=>row.adapter_state==="yielded");
   const operation=readings["operation.kind"],target=readings["target.name"],opState=readings["operation.state"];
   const headline=node("div",undefined,"session-headline");
-  const label=paused?t("Paused"):operation?t(cardEnums[operation.value]||"Telescope status"):readings["mount.tracking"]?.value?t("Tracking"):t("Session data");
+  const label=paused?t("Paused"):operation?t(cardEnums[operation.value]||"Instrument status"):readings["mount.tracking"]?.value?t("Tracking"):t("Session data");
   headline.append(node("strong",label+(target?" · "+target.value:"")));
   if(operation)headline.append(node("span",t("since {time}",{time:cardTime(target&&target.since>operation.since?target.since:operation.since)}),"small"));
   if(operation?.stale||opState?.stale||target?.stale||paused)headline.classList.add("stale");

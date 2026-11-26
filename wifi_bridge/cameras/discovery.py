@@ -65,16 +65,30 @@ def platform_supported(demo=False, *, indi=False):
                                pi5_test=(pi5_test_enabled() or pi5_gphoto_enabled()) if model.startswith('Raspberry Pi 5 ') else False)
 
 
-def pi5_gphoto_enabled():
+def _pi5_marker(marker):
     if platform.system() != 'Linux':
         return False
     try:
         with Path('/proc/device-tree/model').open('rb') as stream:
             model = stream.read(257)
         return (len(model) <= 256 and model.rstrip(b'\0\n').startswith(b'Raspberry Pi 5 ') and
-                pi5_test_enabled(Path('/etc/wifi-bridge/pi5-indi-gphoto-test')))
+                pi5_test_enabled(marker))
     except OSError:
         return False
+
+
+def pi5_gphoto_enabled():
+    return _pi5_marker(Path('/etc/wifi-bridge/pi5-indi-gphoto-test'))
+
+
+def pi5_appliance():
+    """The Pi 5 appliance image, public or private, on a real Pi 5.
+
+    Its root-owned image marker enables the appliance network behavior (DNS-SD
+    announcement, wired uplink for the onboard radio) without the private
+    gPhoto camera opt-in.
+    """
+    return pi5_gphoto_enabled() or _pi5_marker(Path('/etc/wifi-bridge/pi5-appliance'))
 
 
 class CameraDiscovery:

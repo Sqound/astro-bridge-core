@@ -117,12 +117,14 @@ class APITests(Fixture):
         code, initial, _ = self.request('GET', '/api/v1/system/time')
         self.assertEqual(code, 200)
         self.assertEqual(initial['clock_status'], 'unverified')
+        self.assertEqual(initial['last_sync']['kind'], 'never')
         self.assertEqual(self.request('POST', path, {})[0], 400)
         self.assertEqual(self.request('POST', path, 'null', raw=True)[0], 400)
         hint = {'utc_iso': utc(self.controller.event_store.clock.now() + 60), 'uncertainty_ms': 500}
         code, result, _ = self.request('POST', path, hint)
         self.assertEqual(code, 200)
         self.assertEqual(result['source'], 'client_hint')
+        self.assertEqual((result['last_sync']['kind'], result['last_sync']['this_run']), ('client_hint', True))
         self.assertAlmostEqual(result['offset_ms'], 60000, delta=50)
         self.assertEqual(self.request('POST', path, hint)[0], 429)
         self.server.sessions[self.token]['client_id'] = 'synthetic-paired-client'
@@ -136,6 +138,8 @@ class APITests(Fixture):
         self.server.sessions[self.token]['scopes'] = ['read']
         self.controller.event_store.clock = Clock(self.store.path.with_name('clock.json'), sync=lambda: True)
         self.assertEqual(self.request('POST', path, hint)[1]['source'], 'ntp')
+        synced = self.request('GET', '/api/v1/system/time')[1]['last_sync']
+        self.assertEqual((synced['kind'], synced['age_seconds'], synced['this_run']), ('network', 0, True))
         self.assertEqual(self.request('POST', path, hint)[1]['source'], 'ntp')
         self.server.sessions[self.token]['scopes'] = ['admin']
         self.assertEqual(self.request('POST', '/api/v1/system/time', {})[0], 405)

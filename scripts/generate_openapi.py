@@ -74,13 +74,17 @@ schemas = {
     'HotspotClient': obj({'mac': mac, 'ip': string, 'hostname': string}),
     'HotspotConnection': obj({'active': boolean, 'reason': string, 'interface': string, 'mac': mac, 'ip': string,
                               'clients_available': boolean, 'clients': {'type': 'array', 'items': ref('HotspotClient')}}),
-    'HotspotPatch': obj({'enabled': boolean, 'mac': {'type':'string', 'pattern':'^(?:|(?:[a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2})$', 'description':'Permanent MAC of the selected AP-capable adapter; empty selects automatically. Recovery may use another free adapter if private Wi-Fi is unavailable.'}, 'ssid': dict(string, maxLength=32, description='Custom hotspot name (1–32 UTF-8 bytes); empty uses the device name and AP MAC suffix.')}, additionalProperties=False),
+    'HotspotPatch': obj({'enabled': boolean, 'mac': {'type':'string', 'pattern':'^(?:|(?:[a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2})$', 'description':'Permanent MAC of the selected AP-capable adapter; empty selects automatically. Recovery may use another free adapter if private Wi-Fi is unavailable.'}, 'ssid': dict(string, maxLength=32, description='Custom hotspot name (1–32 UTF-8 bytes); empty uses the device name and AP MAC suffix.'),
+                         'current_password': dict(string, writeOnly=True, maxLength=128, description='Current bridge password: required to give the hotspot a new name once a personal password is set (409 PASSWORD_REQUIRED otherwise), because only its derived key is stored.')}, additionalProperties=False),
     'HotspotEnvelope': obj(dict(meta, hotspot=obj({'enabled': boolean, 'mac': string, 'ssid': string, 'configured_ssid': string,
                          'connection': ref('HotspotConnection')}))),
     'SettingsPatch': obj({'auto_connect':dict(boolean,default=False), 'hostname': {'type': 'string', 'maxLength': 63}, 'country': {'type': 'string', 'pattern': '^[A-Za-z]{2}$'}}, additionalProperties=False),
-    'Defaults': obj({'web': boolean, 'linux': boolean, 'hotspot': boolean}),
+    'Defaults': obj({'password': dict(boolean, description='One bridge password: true while the initial password 12345678 is accepted anywhere (web, hotspot or Linux account). web, linux and hotspot repeat it.'),
+                     'web': boolean, 'linux': boolean, 'hotspot': boolean}),
     'SettingsEnvelope': obj(dict(meta, settings=ref('SettingsPatch'), default_credentials=ref('Defaults'))),
-    'Interface': obj({'name': string, 'mac': mac, 'usb': boolean, 'bands': {'type': 'array', 'items': string},
+    'Interface': obj({'name': string, 'mac': mac, 'usb': boolean,
+                      'usb_hub': dict(boolean, description='Present and true when this USB Wi-Fi adapter is plugged through a USB hub other than the board own (read from the USB topology). Plug it directly into a port of the board when it has enough ports.'),
+                      'bands': {'type': 'array', 'items': string},
                       'ap': boolean, 'label': string, 'available_for_telescope': boolean, 'can_assign_telescope': boolean,
                       'assignments': {'type': 'array', 'items': obj({'role': string, 'id': ident})}}),
     'Interfaces': obj(dict(meta, interfaces={'type': 'array', 'items': ref('Interface')})),
@@ -96,10 +100,10 @@ schemas = {
                        default_credentials=ref('Defaults'), connection_operation={'anyOf':[ref('ConnectionOperation'),{'type':'null'}]}, connection_protection=ref('Protection'), connection_activity=ref('Activity'), last_error=string)),
     'Action': obj(dict(meta, ok=boolean, status_url=string)),
     'OK': obj({'ok': boolean}),
-    'Credentials': obj({'target': {'type':'string','enum':['web','hotspot','linux']},
+    'Credentials': obj({'target': {'type':'string','enum':['all','web','hotspot','linux'],'default':'all','description':'One bridge password: every target changes the web interface, the hotspot and the Linux account together. linux is refused where the bridge has no Linux account.'},
                         'current_password': dict(string, writeOnly=True, maxLength=128),
-                        'password': dict(string, writeOnly=True, minLength=8, maxLength=128)},
-                       ['target','current_password','password'], additionalProperties=False),
+                        'password': dict(string, writeOnly=True, minLength=8, maxLength=63, pattern='^[!-~]{8,63}$', description='Printable ASCII without spaces; not 12345678.')},
+                       ['current_password','password'], additionalProperties=False),
     'CredentialResult': obj({'ok':boolean, 'sessions_invalidated':boolean, 'hotspot_reconnect':boolean}),
     'Reboot': obj({'ok':boolean, 'reboot_in':{'type':'integer'}}),
     'Info': obj({'product':{'type':'string','const':'astro-bridge'}, 'version':string, 'api_version':string,
@@ -126,8 +130,13 @@ schemas['ConnectionEvent']['properties']['utc_corrected'] = dict(string, format=
 schemas['SystemTime'] = obj({'clock_status': event_fields['clock_status'],
     'system_utc': dict(string, format='date-time'), 'corrected_utc': dict(string, format='date-time'),
     'offset_ms': {'type': 'integer'}, 'source': {'enum': ['client_hint', 'ntp', 'lower_bound']},
-    'hint_age_seconds': {'type': ['integer', 'null'], 'minimum': 0}},
-    ['clock_status', 'system_utc', 'corrected_utc', 'offset_ms', 'source', 'hint_age_seconds'], additionalProperties=False)
+    'hint_age_seconds': {'type': ['integer', 'null'], 'minimum': 0},
+    'last_sync': obj({'kind': {'enum': ['network', 'client_hint', 'never'], 'description': 'network: chrony measured network time; client_hint: only an approximate time from a client; never: no setting recorded.'},
+                      'age_seconds': {'type': ['integer', 'null'], 'minimum': 0, 'description': 'Monotonic seconds since that setting during this run; null when it was not seen since the bridge started.'},
+                      'this_run': boolean,
+                      'last_network_sync_utc': {'type': ['string', 'null'], 'format': 'date-time', 'description': 'Last network time setting recorded, possibly before a restart. A date to show, never a basis for a duration.'}},
+                     ['kind', 'age_seconds', 'this_run', 'last_network_sync_utc'], additionalProperties=False)},
+    ['clock_status', 'system_utc', 'corrected_utc', 'offset_ms', 'source', 'hint_age_seconds', 'last_sync'], additionalProperties=False)
 schemas['TimeHint'] = obj({'utc_iso': dict(string, format='date-time', maxLength=40),
     'uncertainty_ms': {'type': 'integer', 'minimum': 0, 'maximum': 86400000}},
     ['utc_iso', 'uncertainty_ms'], additionalProperties=False)
@@ -235,7 +244,7 @@ schemas['ConnectionOperation'] = obj({'api_version':string,'id':string,'boot_id'
     'cause':{'enum':['AUTOMATIC','SEESTAR_DISCOVERY','VESPERA_CONNECTION','DWARF_DISCOVERY','ZWO_MOUNT_CONNECTION','SYNSCAN_DISCOVERY']},'state':{'enum':['running','succeeded','failed']},'phase':string,'reason':string,'age_seconds':{'type':'integer'},
     'endpoint':{'oneOf':[ref('ConnectionEndpoint'),{'type':'null'}]},'endpoint_current':boolean,
     'physical_selection':{'oneOf':[{'type':'null'},obj({'bssid':mac,'frequency':{'type':'integer'},'verification':{'const':'wifi-observed-not-manufacturer-verified'}})]},
-    'restoration':obj({'state':{'enum':['not_needed','in_progress','restored','failed','superseded']},'reason':{'type':['string','null']}}),'status_url':string,'displaced':obj({'profile_id':ident,'reason':{'enum':['QUIET_REPLACEMENT','FORCED_INTERRUPTION']}})})
+    'restoration':obj({'state':{'enum':['not_needed','in_progress','restored','failed','superseded']},'reason':{'type':['string','null']}}),'status_url':string,'failure_stage':{'enum':['NETWORK_NOT_FOUND','NOT_ASSOCIATED','ADDRESS_NOT_OBTAINED']},'displaced':obj({'profile_id':ident,'reason':{'enum':['QUIET_REPLACEMENT','FORCED_INTERRUPTION','UNREACHABLE','STANDBY','FORCED']}})})
 schemas['EnsureResult'] = {'oneOf':[ref('ConnectionOperation'),obj({'state':{'const':'ready'},'profile_id':ident,'endpoint':ref('ConnectionEndpoint'),'api_version':string})]}
 schemas['InterfaceRoles'] = {'type':'object','maxProperties':64,'propertyNames':mac,
     'additionalProperties':{'enum':['auto','home','hotspot','telescope']},
@@ -265,6 +274,7 @@ schemas['AutoPolicy'] = obj({'quiet_seconds':{'type':'integer','minimum':30,'max
     'protect_running_operations':dict(boolean,default=False),'force_first_profile':dict(boolean,default=False),'seestar_demand':dict(boolean,default=True),'vespera_demand':dict(boolean,default=True),'dwarf_demand':dict(boolean,default=True),'zwo_mount_demand':dict(boolean,default=True),'synscan_demand':dict(boolean,default=True)},additionalProperties=False)
 schemas['SettingsPatch']['properties'].update(auto_policy=ref('AutoPolicy'),acknowledge_interruption=dict(boolean,writeOnly=True,description='Required true when enabling running-operation protection, force or manufacturer demand; actual revision required for every policy change.'))
 schemas['PublicConfig']['properties']['auto_policy']=ref('AutoPolicy')
+schemas['AutoPolicy']['properties']['address_fallback']=dict(boolean,default=True,description='Owner switch, absent until set: when an instrument whose address plan is fixed and known (a SynScan mount: 192.168.4.1/24) accepts the Wi-Fi link but gives no address, the bridge takes a free address of that network itself, after checking that nobody answers for it and that the instrument answers. The instrument entry then says address_fallback.')
 schemas['AutoPolicy']['properties']['night_reservations']=dict(boolean,default=True,description='Owner switch: paired apps may hold night reservations (reserve_seconds). False answers 403 RESERVATIONS_DISABLED.')
 station_fields={'name':{'type':'string','minLength':1,'maxLength':64},'kind':{'enum':['seestar','dwarf']},
     'target_ip':dict(string,format='ipv4',description='Instrument address on the bridge network (hotspot DHCP lease or private LAN).'),
@@ -332,6 +342,8 @@ for schema in ('SettingsPatch','PublicConfig'):
 schemas['NetworkAccess']=obj({'mode':access_mode,'configured':boolean,'available':boolean,
     'reason':string,'private_lan_allowed':boolean,'internet_verified':{'const':False}})
 schemas['Status']['properties']['network_access']=ref('NetworkAccess')
+schemas['Status']['properties']['ssh']=obj({'account':{'type':['string','null'],'enum':['root','bridge',None],'description':'Linux account protected by the bridge password.'},
+                                            'password_login':{'type':['boolean','null'],'description':'What SSH accepts now, written by the image rule; null when this host has no such rule.'}},['account','password_login'])
 schemas['SettingsEnvelope']['properties']['network_access']=ref('NetworkAccess')
 schemas['ActivityProfile']['properties'].update(
     consultation={'enum':['unknown','background_control','mount_control','probable_content','none','unclassified']},raw_active={'type':['boolean','null']},interval_seconds={'type':['number','null']},
@@ -458,7 +470,7 @@ add('/system/connection-pauses/recover','post','recoverConnectionPauses','Reauth
 add('/operations/{id}','get','getConnectionOperation','Read bounded service-run operation status; no mutation replay','ConnectionOperation')
 paths['/api/v1/operations/{id}']['get']['parameters']=[dict(id_param,schema=string)]
 paths['/api/v1/operations/{id}']['get']['responses']['410']={'description':'Operation expired or service run changed','content':{'application/json':{'schema':ref('Error')}}}
-add('/credentials','post','changePassword','Change web, hotspot or fixed bridge account password','CredentialResult','Credentials')
+add('/credentials','post','changePassword','Change the single bridge password (web interface, hotspot and Linux account)','CredentialResult','Credentials')
 add('/system/https','get','getHTTPS','Read cached certificate diagnostics and actual listener readiness','HTTPSStatus')
 add('/system/https','post','manageHTTPS','Queue one bounded certificate operation; accepted is not ready','HTTPSStatus','HTTPSAction',status=202)
 add('/system/https/certificate','get','getPublicCA','Download the authenticated public CA certificate only','OK')

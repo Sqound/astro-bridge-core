@@ -122,8 +122,24 @@ def main():
         if dwarf: dwarf.join(timeout=3)
         for mount in mounts: mount.join(timeout=3)
         if wifi_observer:wifi_observer.join(timeout=3)
-        if hasattr(net, "close"):
-            with controller.net_lock: net.close()
+        close_network(controller, net)
+
+
+def close_network(controller, net, timeout=5):
+    """Release the network backend at shutdown without waiting forever on the network lock.
+
+    A cycle still blocked in a network command keeps the lock. The backend is then
+    left as it is (the process ends anyway) and the service log says so.
+    """
+    if not hasattr(net, "close"): return True
+    if not controller.net_lock.acquire(timeout=timeout):
+        print("wifi-bridge: network still busy after " + str(timeout) + " s at shutdown, isolated radios left as they are", flush=True)
+        return False
+    try:
+        net.close()
+    finally:
+        controller.net_lock.release()
+    return True
 
 
 if __name__ == "__main__":

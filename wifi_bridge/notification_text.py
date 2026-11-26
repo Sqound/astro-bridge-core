@@ -8,7 +8,7 @@ _ROWS={
 Notifications are enabled.
 Wi-Fi detected for {name}.
 Switching to {name}.
-Usual time for this saved telescope: {usual} s.
+Usual time for this saved instrument: {usual} s.
 Switched to {name} in {seconds} s.
 Could not switch to {name} ({seconds} s). Check Astro Bridge.
 {name} joined the hotspot.
@@ -26,16 +26,16 @@ not active''',
 Les notifications sont activées.
 Wi-Fi détecté pour {name}.
 Basculement vers {name}.
-Durée habituelle pour ce télescope enregistré : {usual} s.
+Durée habituelle pour cet instrument enregistré : {usual} s.
 Basculement vers {name} terminé en {seconds} s.
 Impossible de basculer vers {name} ({seconds} s). Vérifiez Astro Bridge.
 {name} a rejoint le hotspot.
 Mode de connexion : {mode}.
 La mise à jour {version} est disponible.
 La mise à jour {version} est installée.
-Bridge démarré. Hotspot : {hotspot}. Mode : {mode}.
+Pont démarré. Hotspot : {hotspot}. Mode : {mode}.
 {name} : la connexion nécessite une intervention.
-Bridge sur Wi-Fi privé
+Pont sur Wi-Fi privé
 Hotspot sans Internet
 Hotspot avec Internet
 inactif''',
@@ -44,7 +44,7 @@ inactif''',
 通知が有効です。
 {name} のWi-Fiを検出しました。
 {name} に切替中です。
-この保存済み望遠鏡の通常の所要時間：{usual}秒。
+この保存済み機器の通常の所要時間：{usual}秒。
 {seconds}秒で{name}への切替が完了しました。
 {name}に切り替えられませんでした（{seconds}秒）。Astro Bridgeを確認してください。
 {name}がホットスポットに接続しました。
@@ -62,15 +62,15 @@ inactif''',
 Benachrichtigungen sind aktiviert.
 WLAN für {name} erkannt.
 Wechsel zu {name} läuft.
-Übliche Dauer für dieses gespeicherte Teleskop: {usual} s.
+Übliche Dauer für dieses gespeicherte Instrument: {usual} s.
 In {seconds} s zu {name} gewechselt.
-Wechsel zu {name} fehlgeschlagen ({seconds} s). Prüfen Sie Astro Bridge.
+Wechsel zu {name} fehlgeschlagen ({seconds} s). Prüfe Astro Bridge.
 {name} hat sich mit dem Hotspot verbunden.
 Verbindungsmodus: {mode}.
 Update {version} ist verfügbar.
 Update {version} ist installiert.
 Bridge gestartet. Hotspot: {hotspot}. Modus: {mode}.
-{name}: Die Verbindung erfordert Ihre Aufmerksamkeit.
+{name}: Die Verbindung erfordert deine Aufmerksamkeit.
 Bridge im privaten WLAN
 Hotspot ohne Internet
 Hotspot mit Internet
@@ -80,9 +80,9 @@ nicht aktiv''',
 Las notificaciones están activadas.
 Wi-Fi detectado para {name}.
 Cambiando a {name}.
-Tiempo habitual para este telescopio guardado: {usual} s.
+Tiempo habitual para este instrumento guardado: {usual} s.
 Cambio a {name} completado en {seconds} s.
-No se pudo cambiar a {name} ({seconds} s). Compruebe Astro Bridge.
+No se pudo cambiar a {name} ({seconds} s). Comprueba Astro Bridge.
 {name} se ha unido al punto de acceso.
 Modo de conexión: {mode}.
 La actualización {version} está disponible.
@@ -98,7 +98,7 @@ inactivo''',
 Le notifiche sono attive.
 Wi-Fi rilevato per {name}.
 Passaggio a {name} in corso.
-Tempo abituale per questo telescopio salvato: {usual} s.
+Tempo abituale per questo strumento salvato: {usual} s.
 Passaggio a {name} completato in {seconds} s.
 Impossibile passare a {name} ({seconds} s). Controlla Astro Bridge.
 {name} si è collegato all’hotspot.
@@ -116,7 +116,7 @@ inattivo''',
 As notificações estão ativadas.
 Wi-Fi detectado para {name}.
 Trocando para {name}.
-Tempo habitual deste telescópio salvo: {usual} s.
+Tempo habitual deste instrumento salvo: {usual} s.
 Troca para {name} concluída em {seconds} s.
 Não foi possível trocar para {name} ({seconds} s). Verifique o Astro Bridge.
 {name} entrou no ponto de acesso.
@@ -134,7 +134,7 @@ inativo''',
 通知已启用。
 已检测到 {name} 的 Wi-Fi。
 正在切换到 {name}。
-此已保存望远镜的通常耗时：{usual} 秒。
+此已保存设备的通常耗时：{usual} 秒。
 已在 {seconds} 秒内切换到 {name}。
 无法切换到 {name}（{seconds} 秒）。请检查 Astro Bridge。
 {name} 已加入热点。
@@ -152,7 +152,7 @@ inativo''',
 通知已啟用。
 已偵測到 {name} 的 Wi-Fi。
 正在切換至 {name}。
-此已儲存望遠鏡的通常所需時間：{usual} 秒。
+此已儲存設備的通常所需時間：{usual} 秒。
 已在 {seconds} 秒內切換至 {name}。
 無法切換至 {name}（{seconds} 秒）。請檢查 Astro Bridge。
 {name} 已加入熱點。
@@ -168,9 +168,9 @@ inativo''',
 'ru':'''{name}: подключено.
 {name}: отключено.
 Уведомления включены.
-Обнаружен Wi-Fi телескопа {name}.
+Обнаружен Wi-Fi инструмента {name}.
 Переключение на {name}.
-Обычное время для этого сохранённого телескопа: {usual} с.
+Обычное время для этого сохранённого инструмента: {usual} с.
 Переключение на {name} завершено за {seconds} с.
 Не удалось переключиться на {name} ({seconds} с). Проверьте Astro Bridge.
 {name}: подключение к точке доступа.
@@ -197,14 +197,14 @@ def message(locale,code,values):
 
 # Newly discovered, unsaved devices open their prefilled addition form.
 _NEW_DETECTED={
-'en':'New telescope Wi-Fi detected: {name}. Tap to add it.',
-'fr':'Nouveau Wi-Fi de télescope détecté : {name}. Touchez pour l’ajouter.',
-'ja':'新しい望遠鏡のWi-Fiを検出：{name}。タップして追加。',
-'de':'Neues Teleskop-WLAN erkannt: {name}. Zum Hinzufügen antippen.',
-'es':'Nueva Wi-Fi de telescopio detectada: {name}. Toca para añadirlo.',
-'it':'Rilevato un nuovo Wi-Fi del telescopio: {name}. Tocca per aggiungerlo.',
-'pt-BR':'Novo Wi-Fi de telescópio detectado: {name}. Toque para adicionar.',
-'ru':'Обнаружена новая сеть телескопа: {name}. Нажмите, чтобы добавить.',
-'zh-Hans':'发现新的望远镜 Wi-Fi：{name}。轻点以添加。',
-'zh-Hant':'發現新的望遠鏡 Wi-Fi：{name}。點一下以加入。'}
+'en':'New instrument Wi-Fi detected: {name}. Tap to add it.',
+'fr':'Nouveau Wi-Fi d’instrument détecté : {name}. Touchez pour l’ajouter.',
+'ja':'新しい機器のWi-Fiを検出：{name}。タップして追加。',
+'de':'Neues Instrument-WLAN erkannt: {name}. Zum Hinzufügen antippen.',
+'es':'Nueva Wi-Fi de instrumento detectada: {name}. Toca para añadirlo.',
+'it':'Rilevato un nuovo Wi-Fi dello strumento: {name}. Tocca per aggiungerlo.',
+'pt-BR':'Novo Wi-Fi de instrumento detectado: {name}. Toque para adicionar.',
+'ru':'Обнаружена новая сеть инструмента: {name}. Нажмите, чтобы добавить.',
+'zh-Hans':'发现新的设备 Wi-Fi：{name}。轻点以添加。',
+'zh-Hant':'發現新的設備 Wi-Fi：{name}。點一下以加入。'}
 for _locale,_template in _NEW_DETECTED.items():TEXT[_locale]['new_detected']=_template

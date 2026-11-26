@@ -1,7 +1,8 @@
 "use strict";
 // Attached-camera UI. Bridge endpoint leases never transfer Alpaca ownership.
+let cameraDrivers=null,cameraDriverOpener=null,cameraDriverPoll=null;
 let cameraEpoch=0,cameraLoading=false,cameraRows=[],cameraRevision=null,cameraSettings=null,cameraDirty=false,cameraPending=false,cameraSignature="",cameraRelease=null,cameraProfile=null;
-function resetCameras(){cameraEpoch++;cameraLoading=false;cameraRows=[];cameraRevision=null;cameraSettings=null;cameraDirty=false;cameraPending=false;cameraSignature="";cameraRelease=null;$("camera-cards").replaceChildren();$("camera-table-body").replaceChildren();for(const id of ["camera-feedback","camera-release-feedback"])localMessage(id,"");for(const id of ["camera-release-description","camera-alpaca-address"])$(id).textContent="";$("camera-release-dialog").close();$("camera-profile-dialog").close();cameraProfile=null;$("camera-profile-fields").replaceChildren();localMessage("camera-profile-feedback","");}
+function resetCameras(){cameraEpoch++;cameraLoading=false;cameraRows=[];cameraRevision=null;cameraSettings=null;cameraDirty=false;cameraPending=false;cameraSignature="";cameraRelease=null;$("camera-cards").replaceChildren();$("camera-table-body").replaceChildren();for(const id of ["camera-feedback","camera-release-feedback"])localMessage(id,"");for(const id of ["camera-release-description","camera-alpaca-address"])$(id).textContent="";$("camera-release-dialog").close();$("camera-profile-dialog").close();cameraProfile=null;$("camera-profile-fields").replaceChildren();localMessage("camera-profile-feedback","");cameraDrivers=null;for(const row of $("camera-driver-list").querySelectorAll("[data-driver-row]"))row.remove();$("camera-driver-dialog").close();cameraDriverOpener=null;clearTimeout(cameraDriverPoll);cameraDriverPoll=null;$("camera-sdk").hidden=true;}
 async function cameraRequest(path,method="GET",body,revision=cameraRevision){
  const epoch=cameraEpoch,auth=statusEpoch,abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),1500);
  try{
@@ -12,7 +13,7 @@ async function cameraRequest(path,method="GET",body,revision=cameraRevision){
 }
 async function loadCameras(){
  if(!accessReady||cameraLoading||cameraPending)return;cameraLoading=true;const epoch=cameraEpoch;
- try{const [rows,settings]=await Promise.all([cameraRequest(""),cameraRequest("/settings")]);if(epoch!==cameraEpoch)return;cameraRows=rows;cameraSettings=settings.settings;if(!cameraDirty)cameraRevision=settings.config_revision;renderCameras();}
+ try{const [rows,settings,drivers]=await Promise.all([cameraRequest(""),cameraRequest("/settings"),cameraRequest("/drivers").catch(()=>null)]);if(epoch!==cameraEpoch)return;cameraRows=rows;cameraSettings=settings.settings;cameraDrivers=drivers;if(!cameraDirty)cameraRevision=settings.config_revision;renderCameras();}
  catch(failure){if(epoch===cameraEpoch){cameraRows=[];cameraSignature="";renderCameras();}}
  finally{if(epoch===cameraEpoch)cameraLoading=false;}
 }
@@ -40,7 +41,8 @@ function renderCameras(){
  if(cameraSettings&&!cameraDirty){$("camera-serve").checked=cameraSettings.serve;$("camera-discover").checked=cameraSettings.discover;$("camera-indi").checked=!!cameraSettings.indi;}
  for(const id of ["camera-serve","camera-discover","camera-indi"])$(id).disabled=cameraPending;
  $("camera-save").disabled=cameraPending||!cameraSettings;$("camera-reload").disabled=cameraPending;
- const signature=JSON.stringify([cameraRows,BridgeI18n.locale,state?.devices,cameraSettings?.serve]);
+ renderCameraDrivers();
+ const signature=JSON.stringify([cameraRows,BridgeI18n.locale,state?.devices,cameraSettings?.serve,(cameraDrivers?.drivers||[]).map(item=>item.id)]);
  if(signature===cameraSignature)return;cameraSignature=signature;
  const active=document.activeElement?.id,cards=[],rows=[];
  for(const row of cameraRows){
@@ -48,11 +50,13 @@ function renderCameras(){
   const heading=node("div",undefined,"card-heading");heading.append(node("h2",row.name),node("span",t(label),"badge"));card.append(heading);
   const sensor=row.sensor;card.append(node("p",t("Camera")+" · "+row.driver+(sensor?` · ${sensor.width} × ${sensor.height} · ${sensor.bits} ${t("bit")}`:""),"small"));
   const copy={"Detecting camera":"Detecting camera information. Please wait.","Profile needed":"Complete the camera profile before serving it.",Detected:cameraSettings?.serve?"Preparing the camera…":"Camera serving is off.",Ready:"Served to your apps · waiting for an app","Driver missing":"This bridge has no driver for this camera.","Camera unsupported":"This camera needs supported capture settings and owner calibration before it can be served.","Unstable power":"The camera disconnected repeatedly. Check its cable and use a powered USB hub.","Busy":"Another Alpaca client was refused. One app can use the camera at a time.","Heavy images":row.defaults?.bin===2?"Large images over 2.4 GHz. Binning 2 is the initial default; apps can choose supported settings.":"Large images over 2.4 GHz may transfer slowly. This camera keeps its supported binning."};
-  if(row.driver==="zwo_asi"){
-   copy["Driver missing"]="Install the ZWO ASI SDK on the bridge, then reconnect the camera.";
-   copy["Camera unsupported"]="Connect a single ASI camera and check that the driver supports its capture format and sensor size.";
+  const maker=(cameraDrivers?.drivers||[]).find(item=>item.id===row.driver);
+  if(maker){
+   copy["Driver missing"]="Install the {name} driver in Camera drivers below, then reconnect the camera.";
+   copy["Camera unsupported"]=row.driver==="zwo_asi"?"Connect a single ASI camera and check that the driver supports its capture format and sensor size.":"Connect only one {name} camera at a time. Some models cannot be served yet.";
   }
-  if(copy[label]&&row.indi?.state!=="ready")card.append(node("p",t(copy[label]),["Driver missing","Camera unsupported","Unstable power","Busy","Heavy images"].includes(label)?"notice":"small"));
+  if(copy[label]&&row.indi?.state!=="ready")card.append(node("p",t(copy[label],{name:maker?.name||row.driver}),["Driver missing","Camera unsupported","Unstable power","Busy","Heavy images"].includes(label)?"notice":"small"));
+  if(row.verified_on_hardware===false){const unverified=node("p",t("Driver not verified on hardware. Tell us if it works."),"small");unverified.dataset.cameraUnverified="";card.append(unverified);}
   if(row.owner)card.append(node("p",t("Used by {owner}",{owner:cameraOwner(row.owner)})));
   if(row.refused)card.append(node("p",t("Refused: {client}",{client:cameraOwner(row.refused)}),"small"));
   if(row.owner&&row.current)card.append(node("p",t("{state} · {seconds} s · bin {bin}",{state:t(row.state),seconds:row.current.exposure_seconds,bin:row.current.bin}),"small"));
@@ -125,7 +129,118 @@ async function saveCameraAction(path,method,body,revision){
  catch(failure){localMessage("camera-feedback",failure.message);localMessage("camera-release-feedback",failure.message);return false;}
  finally{cameraPending=false;await loadCameras();renderCameras();}
 }
+function cameraDriverDate(value){const date=new Date(value);return Number.isNaN(date.getTime())?String(value||""):date.toLocaleDateString(BridgeI18n.locale);}
+// One line per manufacturer of the driver catalog for this hardware (Configuration, Cameras).
+// No manufacturer file is part of the image: every line offers the same download and install.
+const DRIVER_TEXT={installed:"Installed on this bridge · version {version}",deactivated:"Installed on this bridge · version {version}",
+ available:"Not installed. The bridge downloads it from the manufacturer.",impossible:"Could not install: the manufacturer's file has not been checked for this bridge yet."};
+function driverStateText(row){
+ if(row.state==="accepted"){
+  return t(row.origin==="setup"?"Installed at setup on {date} · version {version}":"Installed on {date} · version {version}",{version:row.version||"",date:cameraDriverDate(row.accepted_utc)});
+ }
+ return DRIVER_TEXT[row.state]?t(DRIVER_TEXT[row.state],{version:row.version||""}):"";
+}
+// What the first boot did with a driver ticked in Astro Bridge Setup (setup-results.json), in plain words.
+const SETUP_TEXT={unknown_driver:"Astro Bridge Setup placed a driver this bridge does not know. It was not installed.",
+ unknown_build:"Astro Bridge Setup placed a version this bridge does not know. It was not installed.",
+ wrong_architecture:"Astro Bridge Setup placed a driver made for other hardware. It was not installed.",
+ fingerprint_missing:"Astro Bridge Setup placed a driver this bridge cannot check yet. It was not installed.",
+ archive_changed:"The file Astro Bridge Setup placed on the card is not the expected one. It was not installed.",
+ file_changed:"The file Astro Bridge Setup placed on the card is not the expected one. It was not installed.",
+ member_missing:"The file Astro Bridge Setup placed on the card is not the expected one. It was not installed.",
+ archive_truncated:"The file Astro Bridge Setup placed on the card is incomplete. It was not installed.",
+ licence_changed:"The licence of the driver Astro Bridge Setup placed has changed. It was not installed.",
+ invalid_drop:"The camera drivers placed by Astro Bridge Setup could not be read. None was installed."};
+function driverSetupText(row){
+ const code=row.setup_result;if(!code||row.state==="accepted")return "";
+ if(code==="installed")return t("Ticked in Astro Bridge Setup, no longer active.");
+ return t(SETUP_TEXT[code]||"The driver placed by Astro Bridge Setup could not be installed.");
+}
+// Installation started from this page: the bridge downloads from the manufacturer, then installs.
+const INSTALL_TEXT={offline:"No Internet connection on the bridge. Connect it to a Wi-Fi network with Internet in Networks, then try again. You can also write the card again with Astro Bridge Setup and tick this driver.",
+ certificate:"The manufacturer's site could not be verified. The bridge's clock may be wrong: leave it connected to Internet for a few minutes, then try again.",
+ redirect_refused:"The manufacturer's site did not give the expected file. Try again later.",download_failed:"The manufacturer's site did not give the expected file. Try again later.",
+ download_interrupted:"The download stopped before the end. Try again.",
+ file_changed:"The manufacturer's file has changed. It was not installed. An update of the bridge will accept the new file.",
+ archive_changed:"The manufacturer's file has changed. It was not installed. An update of the bridge will accept the new file.",
+ licence_changed:"The manufacturer's licence has changed. It was not installed. An update of the bridge will accept the new file.",
+ wrong_architecture:"This driver is not made for this hardware. It was not installed."};
+function driverInstallText(job){
+ if(!job)return "";
+ if(job.state==="downloading")return t("Downloading from the manufacturer… {percent} %",{percent:job.total?Math.floor(100*job.received/job.total):0});
+ if(job.state==="installing")return t("Checking and installing…");
+ if(job.state==="failed")return t(INSTALL_TEXT[job.error]||"Installation failed. Nothing was changed on the bridge.");
+ return "";
+}
+function driverRow(row){
+ const item=document.createElement("li");item.className="driver-row";item.dataset.driverRow=row.id;item.id="camera-driver-"+row.id;
+ const text=node("div","","driver-text"),name=node("p","","driver-name"),strong=document.createElement("strong");strong.textContent=row.name;name.append(strong);
+ if(!row.verified_on_hardware)name.append(node("span",t("not verified on hardware"),"driver-unverified"));
+ const terms=document.createElement("a");terms.className="driver-terms";terms.href=row.terms_url;terms.target="_blank";terms.rel="noopener noreferrer";terms.textContent=t("Read the licence");name.append(terms);
+ text.append(name,node("p",driverStateText(row),"small"));
+ if(row.state==="deactivated"){const off=node("p",t("Camera driver deactivated. Cameras that use it are no longer served."),"small notice");off.id="camera-driver-deactivated-"+row.id;text.append(off);}
+ const setup=driverSetupText(row);if(setup){const line=node("p",setup,"small notice");line.id="camera-driver-setup-"+row.id;text.append(line);}
+ const job=row.install,running=job&&["downloading","installing"].includes(job.state);
+ const progress=driverInstallText(job);if(progress&&!(job.state==="done")){const line=node("p",progress,job.state==="failed"?"small notice":"small");line.id="camera-driver-install-state-"+row.id;line.setAttribute("role","status");text.append(line);}
+ const feedback=node("p","","small");feedback.id="camera-driver-feedback-"+row.id;feedback.setAttribute("role","status");text.append(feedback);
+ const actions=node("div","","driver-actions");
+ if(row.state==="accepted"){const off=node("button",t("Deactivate"),"secondary");off.type="button";off.id="camera-driver-withdraw-"+row.id;off.disabled=cameraPending||running;
+  off.addEventListener("click",async()=>{await saveCameraAction("/drivers/"+encodeURIComponent(row.id)+"/withdraw","POST",{},cameraDrivers?.config_revision);});actions.append(off);}
+ if(row.state==="deactivated"){const again=node("button",t("Reactivate"),"secondary");again.type="button";again.id="camera-driver-reactivate-"+row.id;again.disabled=cameraPending||running||(cameraDrivers?.drivers||[]).some(other=>other.install&&["downloading","installing"].includes(other.install.state));
+  again.addEventListener("click",()=>openCameraDriver(row,again.id));actions.append(again);}
+ if(row.state==="available"){const install=node("button",t(job?.state==="failed"?"Try again":"Install"),"secondary");install.type="button";install.id="camera-driver-install-"+row.id;
+  install.disabled=cameraPending||running||(cameraDrivers?.drivers||[]).some(other=>other.install&&["downloading","installing"].includes(other.install.state));
+  install.addEventListener("click",()=>openCameraDriver(row,install.id));actions.append(install);
+  if(!job)text.append(node("p",t("The bridge needs Internet to download it."),"small"));}
+ item.append(text,actions);return item;
+}
+function cameraDriverDialogText(){
+ const consent=cameraDriverOpener;if(!consent)return;
+ $("camera-driver-dialog-title").textContent=t("{name} camera driver",{name:consent.name});
+ $("camera-driver-dialog-text").textContent=consent.reactivate?t("Version {version} is already on this bridge and nothing is downloaded. Reactivating the driver means you accept the manufacturer's licence again.",{version:consent.version}):t("Astro Bridge downloads version {version} from the manufacturer's site, checks it and installs it on this bridge.",{version:consent.version});
+}
+function openCameraDriver(row,opener){
+ const reactivate=row.state==="deactivated";if(cameraPending||(row.state!=="available"&&!reactivate))return;
+ cameraDriverOpener={id:row.id,name:row.name,version:row.version,opener,reactivate,revision:cameraDrivers?.config_revision};cameraDriverDialogText();
+ $("camera-driver-dialog-internet").hidden=reactivate;$("camera-driver-accept").hidden=reactivate;$("camera-driver-reactivate-accept").hidden=!reactivate;
+ $("camera-driver-dialog-unverified").hidden=!!row.verified_on_hardware;$("camera-driver-dialog-terms").href=row.terms_url;
+ localMessage("camera-driver-dialog-feedback","");$("camera-driver-accept").disabled=false;$("camera-driver-reactivate-accept").disabled=false;$("camera-driver-dialog").showModal();$("camera-driver-later").focus();
+}
+async function acceptCameraDriver(){
+ const consent=cameraDriverOpener;if(!consent||cameraPending)return;const button=$(consent.reactivate?"camera-driver-reactivate-accept":"camera-driver-accept");button.disabled=true;
+ const ok=await saveCameraAction("/drivers/"+encodeURIComponent(consent.id)+(consent.reactivate?"/reactivate":"/install"),"POST",{version:consent.version,accept_terms:true},consent.revision);
+ if(ok)$("camera-driver-dialog").close();
+ else{localMessage("camera-driver-dialog-feedback",$("camera-feedback").textContent);button.disabled=false;}
+}
+function pollCameraDrivers(){
+ clearTimeout(cameraDriverPoll);cameraDriverPoll=null;
+ const running=(cameraDrivers?.drivers||[]).some(row=>row.install&&["downloading","installing"].includes(row.install.state));
+ if(running&&accessReady)cameraDriverPoll=setTimeout(()=>{cameraDriverPoll=null;void loadCameras();},1000);
+}
+function renderDriversSetup(){
+ const box=$("camera-drivers-setup"),drivers=cameraDrivers,lines=[];
+ for(const [id,code] of Object.entries(drivers?.setup_other||{})){
+  if(code==="installed"||code==="clear_failed")continue;
+  lines.push(id==="*"?t(SETUP_TEXT[code]||"The driver placed by Astro Bridge Setup could not be installed."):id+" · "+t(SETUP_TEXT[code]||"The driver placed by Astro Bridge Setup could not be installed."));
+ }
+ box.replaceChildren(...lines.map(line=>node("p",line)));box.hidden=!lines.length||drivers?.supported===false;
+}
+function renderCameraDrivers(){
+ const drivers=cameraDrivers,section=$("camera-sdk"),list=$("camera-driver-list"),rows=drivers?.drivers||[];
+ section.hidden=!drivers;
+ $("camera-drivers-unsupported").hidden=!drivers||drivers.supported!==false;
+ list.hidden=drivers?.supported===false;$("camera-drivers-note").hidden=drivers?.supported===false||!rows.some(row=>!row.verified_on_hardware);
+ renderDriversSetup();pollCameraDrivers();
+ const signature=JSON.stringify([rows,BridgeI18n.locale,cameraPending]);
+ if(list.dataset.signature===signature)return;list.dataset.signature=signature;
+ for(const row of list.querySelectorAll("[data-driver-row]"))row.remove();
+ for(const row of rows)list.append(driverRow(row));
+}
 function setupCameras(){
+ $("camera-driver-later").addEventListener("click",()=>$("camera-driver-dialog").close());
+ $("camera-driver-accept").addEventListener("click",()=>void acceptCameraDriver());
+ $("camera-driver-reactivate-accept").addEventListener("click",()=>void acceptCameraDriver());
+ $("camera-driver-dialog").addEventListener("close",()=>{const previous=cameraDriverOpener;cameraDriverOpener=null;if(previous)($(previous.opener)||$("camera-driver-"+previous.id))?.focus();});
  for(const id of ["camera-serve","camera-discover","camera-indi"])$(id).addEventListener("change",()=>{cameraDirty=true;});
  $("camera-form").addEventListener("submit",async event=>{event.preventDefault();if(await saveCameraAction("/settings","PATCH",{serve:$("camera-serve").checked,discover:$("camera-discover").checked,indi:$("camera-indi").checked},cameraRevision)){cameraDirty=false;renderCameras();localMessage("camera-feedback","Camera settings saved.");}});
  $("camera-reload").addEventListener("click",()=>{cameraDirty=false;void loadCameras();});
@@ -136,5 +251,5 @@ function setupCameras(){
  $("camera-release-cancel").addEventListener("click",()=>$("camera-release-dialog").close());
  $("camera-release-dialog").addEventListener("close",()=>{if(cameraRelease)($(cameraRelease.opener)||$("camera-settings-"+cameraRelease.id))?.focus();cameraRelease=null;});
  $("camera-release-confirm").addEventListener("click",async()=>{const consent=cameraRelease;if(!consent||cameraPending)return;$("camera-release-confirm").disabled=true;const ok=await saveCameraAction('/'+encodeURIComponent(consent.id)+'/release-owner',"POST",{confirm_release:true,owner_generation:consent.generation},consent.revision);$("camera-release-confirm").disabled=false;if(ok)$("camera-release-dialog").close();});
- document.addEventListener("bridge:localechange",()=>{BridgeI18n.translate($("camera-profile-fields"));const pattern=$("camera-profile-field-bayer_pattern");if(pattern)pattern.setCustomValidity(pattern.value==="__missing__"?t("Choose a sensor color pattern."):"");cameraSignature="";renderCameras();});
+ document.addEventListener("bridge:localechange",()=>{BridgeI18n.translate($("camera-profile-fields"));cameraDriverDialogText();const pattern=$("camera-profile-field-bayer_pattern");if(pattern)pattern.setCustomValidity(pattern.value==="__missing__"?t("Choose a sensor color pattern."):"");cameraSignature="";renderCameras();});
 }

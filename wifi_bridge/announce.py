@@ -48,6 +48,11 @@ def txt_records(settings, runtime):
         if type(radios) is not int or not 0 <= radios <= 16: raise ValueError('Invalid announcement radio count')
         values['free_radios'] = str(radios)
     if runtime.get('hotspot') is True: values['hotspot'] = '1'
+    # Changes at every start of the bridge: a client that kept an earlier answer knows it must ask again.
+    boot = runtime.get('boot')
+    if boot is not None:
+        if not isinstance(boot, str) or not re.fullmatch('[0-9a-f]{8}', boot): raise ValueError('Invalid announcement boot mark')
+        values['boot'] = boot
     records = [key + '=' + value for key, value in values.items()]
     validate_txt(records)
     return records
@@ -133,6 +138,11 @@ def update(directory, hostname, devices, settings, runtime, execute):
     if legacy.exists(): legacy.unlink()
     # --reload refreshes services, not daemon host-name; a hostname-only edit
     # therefore takes effect for .local on the next interface/owner restart.
-    execute(['systemctl', 'restart', 'avahi-daemon'] if restart else ['avahi-daemon', '--reload'])
+    try:
+        execute(['systemctl', 'restart', 'avahi-daemon'] if restart else ['avahi-daemon', '--reload'])
+    except Exception:
+        # A reload fails when the daemon is not running: the next try starts it.
+        if not restart: write_changed(pending_path, b'restart')
+        raise
     pending_path.unlink()
     return True

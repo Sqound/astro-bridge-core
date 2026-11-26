@@ -5,7 +5,7 @@ para leitura: operação, alvo, valores com unidades e idade. Após três interv
 da fonte, o valor é marcado como última leitura. Pausado significa que o observador
 cedeu acesso, não que o instrumento parou. Valores ausentes continuam desconhecidos.
 Escolha os dados em cada perfil. O empilhamento Seestar precisa de uma chave
-fornecida pelo proprietário; obtê-la exige ação explícita e Internet no bridge.
+fornecida pelo proprietário; obtê-la exige ação explícita e Internet na ponte.
 As escolhas de escuta são mantidas ao trocar a chave. DWARF só oferece enlace e
 aceita um app por vez.
 
@@ -29,7 +29,7 @@ instrumento. O histórico fica local mesmo sem um app leitor.
 Pi Zero W e Zero 2 W são apenas para conexões e telemetria. Câmeras exigem um Pi da
 classe 3/4 aprovada; inicie a aceitação física em uma bancada Pi 3B. Em Configurações
 → Câmeras, ative o serviço e a descoberta deliberadamente. A demo começa vazia;
-o botão de conexão só adiciona um simulador local. Os clientes descobrem o bridge
+o botão de conexão só adiciona um simulador local. Os clientes descobrem a ponte
 e pedem seus endpoints reais por conexão; não é preciso digitar o endereço do
 instrumento. A descoberta Alpaca só responde em redes de gerenciamento confirmadas,
 e o endereço só aparece após a abertura bem-sucedida do serviço de escuta.

@@ -21,7 +21,7 @@ class NotificationTests(unittest.TestCase):
         self.source=NotificationSource(self.folder,clock=lambda:self.now,kernel_boot=BOOT1)
         self.profile=dict(id='test-scope',name='Synthetic scope',kind='dwarf',ssid='DEMO-ONLY',bssid='',target_ip='192.168.88.1')
         self.config={'connection_mode':'private','telescopes':[self.profile]}
-        self.state={'notification_cycle_ok':True,'setup_ssid':'AstroBridge-Setup-DEMO','hotspot':{'active':False}}
+        self.state={'notification_cycle_ok':True,'setup_ssid':'astro-bridge-12abcd','hotspot':{'active':False}}
         self.operations={};self.scans=[]
     def collect(self,updates=None):
         return self.source.collect((copy.deepcopy(self.config),copy.deepcopy(self.state),copy.deepcopy(self.operations),tuple(self.scans)),updates)
@@ -33,7 +33,7 @@ class NotificationTests(unittest.TestCase):
         self.state['notification_cycle_ok']=False;self.assertEqual(self.collect(),[])
         self.state['notification_cycle_ok']=True
         notices=self.collect();self.assertEqual([n['category']for n in notices],['boot'])
-        self.assertEqual(notices[0]['values']['hotspot'],'AstroBridge-Setup-DEMO')
+        self.assertEqual(notices[0]['values']['hotspot'],'astro-bridge-12abcd')
         self.assertEqual(self.collect(),[])
         self.assertEqual(self.source.path.stat().st_mode&0o777,0o600)
     def test_successful_distinct_stable_scans_and_two_missing_scans_rearm(self):
