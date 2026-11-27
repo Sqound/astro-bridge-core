@@ -19,7 +19,7 @@ A compatible initial TCP connection to the bridge proxy can request selection of
 
 ## SynScan
 
-The adapter recognizes a scoped version search, selects eligible saved equipment, and relays the supported request/reply exchange. Replies must match the expected axis, sender/interface and format. Unselected devices do not receive arbitrary broadcast commands.
+The adapter recognizes a scoped version search, selects eligible saved instruments, and relays the supported request/reply exchange. Replies must match the expected axis, sender/interface and format. Unselected devices do not receive arbitrary broadcast commands.
 
 UDP **11880 is a protocol transport**, not an unsolicited beacon. If automatic search is unavailable in a client, select its fixed-IP connection mode and enter the bridge address.
 

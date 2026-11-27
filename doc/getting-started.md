@@ -24,7 +24,7 @@ python3 -m wifi_bridge --demo --demo-radios 4
 
 Open **http://127.0.0.1:8787**. Password: **`12345678`**. Configuration is stored in `.runtime/`; no real radios or telescope commands are used.
 
-![Saved equipment in the demo](images/saved-equipment.png)
+![Instruments in the demo](images/saved-equipment.png)
 
 ## Install a verified release
 
